@@ -30,6 +30,8 @@ class ClaudeLLM:
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL):
         self.client = client or anthropic.Anthropic()
         self.model = model
+        # (schema name, input tokens, output tokens) per successful call, for cost checks.
+        self.usage: list[tuple[str, int, int]] = []
 
     def parse(self, *, system: str, user: str, schema: type[T], effort: str = "medium") -> T:
         try:
@@ -45,13 +47,12 @@ class ClaudeLLM:
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
             )
-        except anthropic.RateLimitError as exc:
-            raise LLMError("Claude rate limit hit; try again shortly.") from exc
-        except anthropic.APIStatusError as exc:
-            raise LLMError(f"Claude API error ({exc.status_code}).") from exc
-        except anthropic.APIConnectionError as exc:
-            raise LLMError("Couldn't reach the Claude API.") from exc
+        except anthropic.APIError as exc:
+            log.warning("Claude call for %s failed: %s", schema.__name__, exc)
+            raise LLMError(_describe(exc)) from exc
 
+        self.usage.append((schema.__name__, response.usage.input_tokens,
+                           response.usage.output_tokens))
         if response.stop_reason == "refusal":
             raise LLMError("Claude declined this request.")
         if response.stop_reason == "max_tokens":
@@ -59,6 +60,16 @@ class ClaudeLLM:
         if response.parsed_output is None:
             raise LLMError("Claude returned output that didn't match the schema.")
         return response.parsed_output
+
+
+def _describe(exc: anthropic.APIError) -> str:
+    if isinstance(exc, anthropic.RateLimitError):
+        return "Claude rate limit hit; try again shortly."
+    if isinstance(exc, anthropic.APIStatusError):
+        return f"Claude API error ({exc.status_code})."
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Couldn't reach the Claude API."
+    return "Claude API error."
 
 
 def get_llm() -> LLM | None:

@@ -24,7 +24,8 @@ class StubClient:
 
 
 def resp(stop_reason="end_turn", parsed=Out(answer="ok")):
-    return SimpleNamespace(stop_reason=stop_reason, parsed_output=parsed)
+    return SimpleNamespace(stop_reason=stop_reason, parsed_output=parsed,
+                           usage=SimpleNamespace(input_tokens=10, output_tokens=5))
 
 
 def test_request_shape():

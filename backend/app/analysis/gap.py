@@ -23,7 +23,7 @@ from app.models import (
     SectionKind,
 )
 from app.parsing.jd_parser import keyword_groups
-from app.parsing.lexicon import DEGREE_WORDS, IMPLIES, find_skills
+from app.parsing.lexicon import DEGREE_WORDS, IMPLIES, display_list, find_skills
 from app.parsing.text import content_words
 
 from .experience import years_of_experience
@@ -157,18 +157,18 @@ def _classify_keywords(req: Requirement, index: _Index, base: dict) -> GapItem:
         status = GapStatus.IMPLIED
         parts = []
         if direct:
-            parts.append(f"shown: {', '.join(direct)}")
+            parts.append(f"shown: {display_list(direct)}")
         if implied:
             vias = _dedupe(v for kw in implied for v in per_kw[kw].implied_via)
-            via = f" (via {', '.join(vias)})" if vias else " (via job title)"
-            parts.append(f"suggested but not named: {', '.join(implied)}{via}")
+            via = f" (via {display_list(vias)})" if vias else " (via job title)"
+            parts.append(f"suggested but not named: {display_list(implied)}{via}")
         if missing:
-            parts.append(f"not found: {', '.join(missing)}")
+            parts.append(f"not found: {display_list(missing)}")
         rationale = _sentence("; ".join(parts))
         missing_out = implied + missing
     else:
         status = GapStatus.MISSING
-        rationale = f"No mention of {', '.join(missing)} anywhere in the resume."
+        rationale = f"No mention of {display_list(missing, 'or')} anywhere in the resume."
         missing_out = missing
 
     return GapItem(
@@ -186,9 +186,9 @@ def _evidenced_rationale(direct: list[str], per_kw: dict[str, _Evidence]) -> str
     only_listed = [kw for kw in direct if not per_kw[kw].bullets]
     parts = []
     if in_bullets:
-        parts.append(f"{', '.join(in_bullets)} named in your bullets")
+        parts.append(f"{display_list(in_bullets)} named in your bullets")
     if only_listed:
-        parts.append(f"{', '.join(only_listed)} listed in Skills/summary but not shown in "
+        parts.append(f"{display_list(only_listed)} listed in Skills/summary but not shown in "
                      f"any bullet")
     return _sentence("; ".join(parts))
 

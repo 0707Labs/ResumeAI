@@ -6,6 +6,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.local.example
 node_modules/
 .next/
 .DS_Store
+*.tsbuildinfo
+frontend/.env.local
+.claude/launch.json

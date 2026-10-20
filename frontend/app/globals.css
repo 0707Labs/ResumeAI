@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: #f6f7f9;
+  color: #0f172a;
+}
+
+/* Inline word diff */
+.diff-added {
+  padding: 0 1px;
+  background: #dcfce7;
+  color: #14532d;
+  border-radius: 3px;
+}
+.diff-removed {
+  padding: 0 1px;
+  margin-right: 2px;
+  background: #fee2e2;
+  color: #7f1d1d;
+  text-decoration: line-through;
+  border-radius: 3px;
+}

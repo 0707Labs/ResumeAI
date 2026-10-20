@@ -120,7 +120,7 @@ def test_confirmed_answer_downgrades_gap():
     _, _, adv = advise(JUNIOR, JD, ans)
     tab = next(g for g in adv.gaps if g.text == "Tableau")
     assert tab.severity == GapSeverity.MINOR and "cites your answer" in tab.why_it_matters
-    assert any(a.kind == ActionKind.RESUME_EDIT and "Re-run tailoring" in a.text
+    assert any(a.kind == ActionKind.RESUME_EDIT and "cite the answer" in a.text
                for a in adv.actions)
 
 

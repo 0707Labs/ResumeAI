@@ -86,7 +86,7 @@ def test_related_tool_only_implies_never_evidences(resume):
     assert item.evidence_bullet_ids == ["exp1.b2"]
     assert item.missing_keywords == ["python"]
     assert "pandas" in item.rationale
-    assert "Did you use python directly?" in item.question.question
+    assert "Did you use Python directly?" in item.question.question
 
 
 def test_job_title_implies_skill(resume):
@@ -100,7 +100,7 @@ def test_all_of_requires_every_keyword(resume):
     [item] = one(resume, req("SQL and Airflow"))
     assert item.status == GapStatus.IMPLIED  # partial: SQL yes, Airflow no
     assert item.matched_keywords == ["sql"] and item.missing_keywords == ["airflow"]
-    assert "not found: airflow" in item.rationale
+    assert "not found: Airflow" in item.rationale
 
 
 def test_any_of_needs_one_keyword(resume):
@@ -119,7 +119,7 @@ def test_absent_skill_is_missing_with_neutral_question(resume):
     assert item.status == GapStatus.MISSING
     assert item.evidence_bullet_ids == [] and item.question is not None
     q = item.question.question
-    assert "kubernetes" in q and "If not, just say no" in q
+    assert "Kubernetes" in q and "If not, just say no" in q
 
 
 # --- years ------------------------------------------------------------------------------

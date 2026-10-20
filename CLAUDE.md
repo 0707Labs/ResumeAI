@@ -48,13 +48,14 @@ backend/
     mentor/        strengths/gaps/actions, verdict, 2-week plan, optional Claude polish
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
   tests/           pytest; fixtures/ holds sample resumes + JDs
-frontend/          Next.js + TS + Tailwind                    (phase 7)
+frontend/          Next.js 16 + TS + Tailwind 4: upload, JD, gaps, diff review, score, mentor, export
 ```
 
 ## Commands
 - Setup: `cd backend && python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"`
 - Tests: `cd backend && .venv/bin/pytest`
-- Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload`
+- Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload` (port 8000)
+- Frontend: `cd frontend && npm install && npm run dev` (port 3000); `npm run typecheck`, `npm run build`
 
 ## Verifier policy
 - BLOCK: missing/unknown source, cross-role merge, new tool, new number (incl. rounding,

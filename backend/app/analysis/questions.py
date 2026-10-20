@@ -13,6 +13,7 @@ from app.models import (
     RequirementCategory,
     Resume,
 )
+from app.parsing.lexicon import display_list
 
 MAX_ANSWER_CHARS = 2000
 
@@ -100,6 +101,4 @@ def apply_answers(analysis: GapAnalysis, answers: dict[str, str]) -> GapAnalysis
 
 
 def _join(words: list[str]) -> str:
-    if len(words) <= 2:
-        return " or ".join(words) if len(words) == 2 else words[0]
-    return ", ".join(words[:-1]) + f", or {words[-1]}"
+    return display_list(words, "or")

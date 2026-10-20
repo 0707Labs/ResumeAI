@@ -210,8 +210,9 @@ def _actions(resume: Resume, analysis: GapAnalysis, ats: ATSReport, verdict: Ver
     for item in analysis.items:
         if _answer_kind(item) == AnswerKind.CONFIRMED and item.status != GapStatus.EVIDENCED:
             add(ActionKind.RESUME_EDIT,
-                f"Re-run tailoring so a bullet cites your answer to {item.question.id} "
-                f"({_short(item.requirement_text, 50)}).", "2 min",
+                f"Put your answer to {item.question.id} ({_short(item.requirement_text, 50)}) "
+                f"into a bullet: re-tailor with Claude on, or edit the related bullet and cite "
+                f"the answer.", "5 min",
                 requirement_ids=[item.requirement_id], question_id=item.question.id)
 
     # 3. Metrics: only real ones.

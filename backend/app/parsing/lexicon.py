@@ -60,7 +60,7 @@ SKILLS: dict[str, list[str]] = {
     "nlp": ["natural language processing"],
     "computer vision": [],
     "llm": ["llms", "large language models", "large language model"],
-    "statistics": ["statistical analysis"],
+    "statistics": ["statistical analysis", "statistical"],
     "a/b testing": ["ab testing", "a/b tests", "a/b test", "ab tests", "split testing"],
     "data analysis": ["data analytics"],
     "data visualization": ["data viz"],

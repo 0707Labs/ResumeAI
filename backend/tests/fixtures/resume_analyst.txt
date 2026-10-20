@@ -1,0 +1,30 @@
+ASHA RAO
+asha.rao@example.com | +91 98765 43210 | linkedin.com/in/asharao | Bengaluru, India
+
+SUMMARY
+Data analyst with 3 years of experience turning messy operational data into dashboards.
+
+EXPERIENCE
+Data Analyst | Acme Retail Pvt Ltd | Jan 2022 – Present
+• Contributed to a churn dashboard in Tableau used by the
+  customer success team
+• Cut weekly reporting time by 30% by automating SQL extracts
+• Partnered with product managers on A/B test readouts
+Junior Analyst, Brightline Logistics
+Bengaluru, India                Jun 2020 - Dec 2021
+• Cleaned shipment data in Excel and Python (pandas)
+• Built 12 recurring reports for regional operations leads
+
+PROJECTS
+Inventory Forecasting
+• Trained a simple ARIMA model to forecast weekly SKU demand
+
+EDUCATION
+B.Tech in Computer Science, Visvesvaraya Technological University   2016 – 2020
+
+SKILLS
+Languages: Python, SQL
+Tools: Tableau, Excel, Git
+
+CERTIFICATIONS
+Google Data Analytics Professional Certificate (2021)

@@ -40,6 +40,23 @@ class Section(StrictModel):
     entries: list[Entry] = Field(default_factory=list)
 
 
+class ParseWarningCode(StrEnum):
+    TABLES_DETECTED = "tables_detected"
+    IMAGES_DETECTED = "images_detected"
+    MULTI_COLUMN_SUSPECTED = "multi_column_suspected"
+    NO_SECTIONS_FOUND = "no_sections_found"
+    NO_BULLETS_FOUND = "no_bullets_found"
+    CONTACT_MISSING = "contact_missing"
+    NAME_NOT_FOUND = "name_not_found"
+
+
+class ParseWarning(StrictModel):
+    """Format problems found while parsing; feeds the ATS parseability score."""
+
+    code: ParseWarningCode
+    message: str
+
+
 class ContactInfo(StrictModel):
     email: str | None = None
     phone: str | None = None
@@ -54,6 +71,7 @@ class Resume(StrictModel):
     skills: list[str] = Field(default_factory=list)
     sections: list[Section] = Field(default_factory=list)
     raw_text: str = ""
+    parse_warnings: list[ParseWarning] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _ids_are_unique(self) -> "Resume":

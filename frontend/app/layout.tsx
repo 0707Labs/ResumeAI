@@ -1,15 +1,35 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
+
+import { AppShell } from "@/components/AppShell";
+import { THEME_COOKIE } from "@/lib/theme";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Resume Tailor",
-  description: "Tailor your resume to a job description without inventing anything.",
+  description: "Tailor your resume to a job honestly. You approve every change.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f7f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#141517" },
+  ],
+};
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // An explicit light/dark choice lives in a cookie so the server renders it
+  // from the first byte (no flash, no inline script). Absent = follow the system.
+  const saved = (await cookies()).get(THEME_COOKIE)?.value;
+  const theme = saved === "light" || saved === "dark" ? saved : undefined;
   return (
-    <html lang="en">
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+    <html lang="en" data-theme={theme} suppressHydrationWarning>
+      <body className="min-h-screen font-sans antialiased">
+        <AppShell initialTheme={theme ?? "system"}>{children}</AppShell>
+      </body>
     </html>
   );
 }

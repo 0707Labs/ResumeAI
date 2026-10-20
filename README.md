@@ -62,5 +62,5 @@ cd backend && .venv/bin/pytest
 ```
 
 ```bash
-cd frontend && npm run typecheck && npm run build
+cd frontend && npm test && npm run typecheck && npm run build
 ```

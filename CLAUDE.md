@@ -48,14 +48,30 @@ backend/
     mentor/        strengths/gaps/actions, verdict, 2-week plan, optional Claude polish
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
   tests/           pytest; fixtures/ holds sample resumes + JDs
-frontend/          Next.js 16 + TS + Tailwind 4: upload, JD, gaps, diff review, score, mentor, export
+frontend/
+  app/             routes: / (input), /analysis, /review, /score, /mentor, /export
+  components/      AppShell, UploadDropzone, ResumePreview, ui, icons (+ later steps)
+  lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
+                   store.ts (zustand, sessionStorage), theme.ts, diff.ts
+  tests/           vitest + Testing Library; contract.test.ts hits the real backend
 ```
 
 ## Commands
 - Setup: `cd backend && python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"`
 - Tests: `cd backend && .venv/bin/pytest`
 - Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload` (port 8000)
-- Frontend: `cd frontend && npm install && npm run dev` (port 3000); `npm run typecheck`, `npm run build`
+- Frontend: `cd frontend && npm install && npm run dev` (port 3000)
+- Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
+  `npm run test:contract` with the backend running validates every endpoint against the zod schemas
+- Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
+  `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.
+
+## Frontend conventions
+- Validate every API response with the zod schema in lib/schemas.ts; add the schema first.
+- Semantic color tokens only (bg-surface, text-muted, text-ok...); light/dark via CSS variables.
+- Status is never color-only: pair it with an icon and a word.
+- No network calls except NEXT_PUBLIC_API_URL. No analytics.
+- UI copy: warm, honest, mentor-like; never salesy.
 
 ## Verifier policy
 - BLOCK: missing/unknown source, cross-role merge, new tool, new number (incl. rounding,

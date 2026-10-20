@@ -13,7 +13,15 @@ describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
     const sample = await api.sample();
     const resume = await api.parseResumeText(sample.resume_text);
     const jd = await api.parseJD(sample.jd_text);
-    const analysis = await api.analyze(resume, jd, false);
+    const analyzed = await api.analyze(resume, jd, false);
+    const qids = analyzed.items.flatMap((i) => (i.question ? [i.question.id] : []));
+    const analysis = await api.submitAnswers(analyzed, {
+      [qids[0]]: { choice: "yes", text: "No formal course, but I ran t-tests on our A/B readouts." },
+      [qids[1]]: { choice: "no", text: "" },
+      [qids[2]]: { choice: "skip", text: "" },
+    });
+    expect(analysis.items.flatMap((i) => (i.question ? [i.question.answer_kind] : [])).slice(0, 3))
+      .toEqual(["confirmed", "declined", "unanswered"]);
     const tailored = await api.tailor(resume, jd, analysis, false);
     const verified = await api.verify(resume, tailored.bullets, analysis, jd.raw_text, null);
     const score = await api.score(resume, jd, tailored, analysis, false);

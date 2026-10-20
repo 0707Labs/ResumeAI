@@ -343,3 +343,49 @@ def test_questions_renumbered_after_llm(mixed, resume):
     out, _ = refine_with_llm(mixed, resume, FakeLLM([v("req2", "missing"),
                                                     v("req3", "missing")]))
     assert [q.id for q in out.questions()] == ["q1", "q2"]
+
+
+# --- explicit yes/no/skip from the UI ------------------------------------------------------------
+
+
+def test_explicit_yes_wins_over_negative_wording(analysis):
+    from app.models import AnswerIn
+
+    updated = apply_answers(analysis, {
+        "q1": AnswerIn(choice="yes", text="No formal training, but I run our Airflow DAGs."),
+    })
+    q = updated.questions()[0]
+    assert q.answer_kind == AnswerKind.CONFIRMED and q.answer_choice == "yes"
+    assert "q1" in updated.confirmed_answers()
+
+
+def test_explicit_no_and_skip(analysis):
+    from app.models import AnswerIn
+
+    updated = apply_answers(analysis, {"q1": AnswerIn(choice="no"), "q2": AnswerIn(choice="skip")})
+    q1, q2 = updated.questions()
+    assert q1.answer_kind == AnswerKind.DECLINED and q1.answer == "No"
+    assert q2.answer_kind == AnswerKind.UNANSWERED and q2.answer is None
+
+
+def test_skip_clears_an_earlier_answer(analysis):
+    from app.models import AnswerIn
+
+    answered = apply_answers(analysis, {"q1": AnswerIn(choice="yes", text="Airflow at Lumen.")})
+    skipped = apply_answers(answered, {"q1": AnswerIn(choice="skip")})
+    assert skipped.questions()[0].answer_kind == AnswerKind.UNANSWERED
+    assert skipped.confirmed_answers() == {}
+
+
+def test_yes_needs_a_description(analysis):
+    from app.models import AnswerIn
+
+    with pytest.raises(AnswerError, match="describe"):
+        apply_answers(analysis, {"q1": AnswerIn(choice="yes", text="   ")})
+
+
+def test_answer_choice_cannot_be_forged_into_confirmed(analysis):
+    dumped = analysis.model_dump()
+    dumped["items"][0]["question"]["answer_choice"] = "yes"  # but no answer text
+    reloaded = type(analysis).model_validate(dumped)
+    assert reloaded.questions()[0].answer_kind == AnswerKind.UNANSWERED

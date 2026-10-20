@@ -1,5 +1,5 @@
 from .ats import DISCLAIMER, WEIGHTS, ATSReport, Component, ScoreComponent
-from .gap import AnswerKind, ClarifyingQuestion, GapAnalysis, GapItem, GapStatus
+from .gap import AnswerIn, AnswerKind, ClarifyingQuestion, GapAnalysis, GapItem, GapStatus
 from .jd import JobDescription, Priority, Requirement, RequirementCategory, Seniority
 from .resume import (
     Bullet,
@@ -24,7 +24,7 @@ from .tailor import (
 )
 
 __all__ = [
-    "ATSReport", "AnswerKind", "Bullet", "ChangeType", "ClarifyingQuestion", "Component",
+    "ATSReport", "AnswerIn", "AnswerKind", "Bullet", "ChangeType", "ClarifyingQuestion", "Component",
     "ContactInfo", "DISCLAIMER", "Entry", "FlagKind", "GapAnalysis", "GapItem",
     "GapStatus", "JobDescription", "ParseWarning", "ParseWarningCode", "Priority", "Requirement", "RequirementCategory",
     "RejectedAttempt", "Resume", "ReviewStatus", "Severity", "ScoreComponent", "Section", "SectionKind", "Seniority",

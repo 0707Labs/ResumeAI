@@ -1,5 +1,6 @@
 import re
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, computed_field, model_validator
 
@@ -33,13 +34,28 @@ class ClarifyingQuestion(StrictModel):
     question: str = Field(min_length=1)
     # Filled in only by the candidate. Tailoring may cite an answer only when confirmed.
     answer: str | None = Field(default=None, max_length=2000)
+    # The candidate's explicit Yes/No, when the UI asked for one. It wins over
+    # guessing from the text, so "No formal training, but I built..." with Yes
+    # counts as a yes.
+    answer_choice: Literal["yes", "no"] | None = None
 
     @computed_field
     @property
     def answer_kind(self) -> AnswerKind:
+        if self.answer_choice == "no":
+            return AnswerKind.DECLINED
         if not self.answer or not self.answer.strip():
             return AnswerKind.UNANSWERED
+        if self.answer_choice == "yes":
+            return AnswerKind.CONFIRMED
         return AnswerKind.DECLINED if _NEGATIVE.match(self.answer) else AnswerKind.CONFIRMED
+
+
+class AnswerIn(StrictModel):
+    """One answer from the UI. "skip" clears any earlier answer."""
+
+    choice: Literal["yes", "no", "skip"]
+    text: str = Field(default="", max_length=2000)
 
 
 class GapItem(StrictModel):

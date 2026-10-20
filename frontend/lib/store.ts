@@ -45,6 +45,8 @@ type Actions = {
   setJobInputs: (patch: Partial<Pick<Data, "jdText" | "jobTitle" | "company">>) => void;
   setAnalyzed: (jd: JobDescription, analysis: GapAnalysis) => void;
   setAnswer: (questionId: string, answer: Answer) => void;
+  /** Answers were saved on the server; anything tailored before is now stale. */
+  setAnswered: (analysis: GapAnalysis) => void;
   clearAll: () => void;
 };
 
@@ -84,6 +86,7 @@ export const useSession = create<Data & Actions>()(
       setAnalyzed: (jd, analysis) =>
         set({ jd, analysis, answers: {}, tailored: null, decisions: {}, score: null, mentor: null }),
       setAnswer: (id, answer) => set((s) => ({ answers: { ...s.answers, [id]: answer } })),
+      setAnswered: (analysis) => set({ analysis, tailored: null, decisions: {}, score: null, mentor: null }),
       clearAll: () => {
         set({ ...EMPTY });
         try {

@@ -8,6 +8,7 @@ import { useSession } from "@/lib/store";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
 import { MonitorIcon, MoonIcon, SunIcon, TrashIcon } from "./icons";
+import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
 const STEPS = [
@@ -65,10 +66,15 @@ function StepNav() {
   const pathname = usePathname();
   const s = useSession();
   // A step is reachable once the data it needs exists.
+  // Review opens once every missing requirement has been answered or skipped,
+  // the same rule as the "Continue to tailoring" button.
+  const questionsDone = !!s.analysis && s.analysis.items
+    .filter((i) => i.status === "missing" && i.question)
+    .every((i) => isResolved(s.answers[i.question!.id]));
   const reachable: Record<string, boolean> = {
     "/": true,
     "/analysis": !!s.analysis,
-    "/review": !!s.tailored,
+    "/review": !!s.tailored || questionsDone,
     "/score": !!s.tailored,
     "/mentor": !!s.analysis,
     "/export": !!s.tailored,

@@ -6,6 +6,7 @@ in a bullet. Wording is neutral: it never presumes the candidate has the skill.
 """
 
 from app.models import (
+    AnswerIn,
     ClarifyingQuestion,
     GapAnalysis,
     GapItem,
@@ -79,23 +80,40 @@ def assign_questions(items: list[GapItem], resume: Resume) -> list[GapItem]:
     return out
 
 
-def apply_answers(analysis: GapAnalysis, answers: dict[str, str]) -> GapAnalysis:
+def apply_answers(analysis: GapAnalysis, answers: dict[str, str | AnswerIn]) -> GapAnalysis:
     """Record the candidate's answers. Statuses don't change: an answer is a new,
     candidate-supplied source the tailor may cite (source_answer_ids), not a
-    retroactive edit of what the resume says."""
+    retroactive edit of what the resume says.
+
+    Values are plain text (kind inferred from the wording) or an AnswerIn with an
+    explicit yes/no/skip choice from the UI."""
     known = {q.id for q in analysis.questions()}
     unknown = sorted(set(answers) - known)
     if unknown:
         raise AnswerError(f"unknown question id(s): {', '.join(unknown)}")
-    too_long = [qid for qid, a in answers.items() if len(a) > MAX_ANSWER_CHARS]
+    normalized: dict[str, tuple[str | None, str | None]] = {}  # qid -> (answer, choice)
+    for qid, a in answers.items():
+        if isinstance(a, AnswerIn):
+            text = a.text.strip()
+            if a.choice == "yes" and not text:
+                raise AnswerError(f"{qid}: please describe where and how you used it")
+            if a.choice == "skip":
+                normalized[qid] = (None, None)
+            elif a.choice == "no":
+                normalized[qid] = (text or "No", "no")
+            else:
+                normalized[qid] = (text, "yes")
+        else:
+            normalized[qid] = (a.strip() or None, None)
+    too_long = [qid for qid, (a, _) in normalized.items() if a and len(a) > MAX_ANSWER_CHARS]
     if too_long:
         raise AnswerError(f"answer too long for: {', '.join(sorted(too_long))}")
     items = []
     for item in analysis.items:
-        if item.question and item.question.id in answers:
-            answer = answers[item.question.id].strip() or None
-            item = item.model_copy(update={
-                "question": item.question.model_copy(update={"answer": answer})})
+        if item.question and item.question.id in normalized:
+            answer, choice = normalized[item.question.id]
+            item = item.model_copy(update={"question": item.question.model_copy(
+                update={"answer": answer, "answer_choice": choice})})
         items.append(item)
     return analysis.model_copy(update={"items": items})
 

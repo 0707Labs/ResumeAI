@@ -166,3 +166,26 @@ def test_mentor_endpoint():
     assert out["verdict"]["decision"] == "apply"
     assert len(out["plan"]["weeks"]) == 2
     assert out["actions"][0]["id"] == "a1"
+
+
+def test_gap_answers_with_explicit_choices():
+    analysis = client.post("/api/gap/analyze", json=_gap_body()).json()
+    qids = [i["question"]["id"] for i in analysis["items"] if i["question"]]
+    res = client.post("/api/gap/answers", json={"analysis": analysis, "answers": {
+        qids[0]: {"choice": "yes", "text": "Not at work, but I ran t-tests in a side project."},
+        qids[1]: {"choice": "no"},
+        qids[2]: {"choice": "skip"},
+    }})
+    assert res.status_code == 200
+    kinds = {i["question"]["id"]: i["question"]["answer_kind"] for i in res.json()["items"]
+             if i["question"]}
+    assert (kinds[qids[0]], kinds[qids[1]], kinds[qids[2]]) == ("confirmed", "declined",
+                                                                 "unanswered")
+
+
+def test_gap_answers_rejects_empty_yes():
+    analysis = client.post("/api/gap/analyze", json=_gap_body()).json()
+    qid = next(i["question"]["id"] for i in analysis["items"] if i["question"])
+    res = client.post("/api/gap/answers", json={"analysis": analysis,
+                                                "answers": {qid: {"choice": "yes", "text": ""}}})
+    assert res.status_code == 422 and "describe" in res.json()["detail"]

@@ -13,6 +13,7 @@ from app.mentor import build_advice, polish
 from app.models import (
     WEIGHTS,
     ATSReport,
+    AnswerIn,
     GapAnalysis,
     JobDescription,
     MentorAdvice,
@@ -88,7 +89,8 @@ def gap_analyze(body: GapRequest) -> GapAnalysis:
 
 class AnswersRequest(BaseModel):
     analysis: GapAnalysis
-    answers: dict[str, str]
+    # Plain text, or {"choice": "yes"|"no"|"skip", "text": "..."} from the UI.
+    answers: dict[str, AnswerIn | str]
 
 
 @router.post("/api/gap/answers")

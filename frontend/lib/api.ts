@@ -118,7 +118,8 @@ export const api = {
   analyze: (resume: S.Resume, jd: S.JobDescription, useLLM = true) =>
     request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM })),
 
-  submitAnswers: (analysis: S.GapAnalysis, answers: Record<string, string>) =>
+  /** Explicit yes/no/skip per question id. "skip" clears an earlier answer. */
+  submitAnswers: (analysis: S.GapAnalysis, answers: Record<string, { choice: "yes" | "no" | "skip"; text: string }>) =>
     request(S.GapAnalysis, "/api/gap/answers", json({ analysis, answers })),
 
   tailor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, useLLM = true) =>

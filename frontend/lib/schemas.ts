@@ -88,6 +88,7 @@ export const ClarifyingQuestion = z.object({
   requirement_id: z.string(),
   question: z.string(),
   answer: z.string().nullable(),
+  answer_choice: z.enum(["yes", "no"]).nullable(),
   answer_kind: AnswerKind,
 });
 

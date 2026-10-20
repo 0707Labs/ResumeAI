@@ -1,0 +1,24 @@
+Senior Data Analyst at Northwind Analytics
+
+About Northwind Analytics
+We help mid-size retailers make sense of their supply chain data.
+
+What you'll do
+- Own the weekly business review dashboards for the operations org
+- Partner with product and engineering on experiment design
+- Mentor junior analysts
+
+Requirements
+- 5+ years of experience in data analysis or business intelligence
+- Expert SQL and strong Python (pandas)
+- Experience building dashboards in Tableau or Power BI
+- Solid grasp of statistics and A/B testing
+- Experience with dbt or Airflow is a plus
+- Bachelor's degree in a quantitative field
+
+Nice to have
+- Familiarity with Snowflake or BigQuery
+- Exposure to JS charting libraries
+
+Benefits
+- Health insurance and a learning budget

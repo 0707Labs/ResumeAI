@@ -61,7 +61,9 @@ def apply_tailoring(resume: Resume, tailored: TailoredResume, *,
 
     summary = resume.summary
     sv = tailored.summary_verification
-    if tailored.summary and sv is not None and sv.passed:
+    summary_ok = tailored.summary_review == ReviewStatus.APPROVED or (
+        not approved_only and tailored.summary_review != ReviewStatus.REJECTED)
+    if tailored.summary and sv is not None and sv.passed and summary_ok:
         summary = tailored.summary
 
     out = resume.model_copy(update={"sections": sections, "summary": summary})

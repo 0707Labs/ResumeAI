@@ -12,6 +12,7 @@ def create_app() -> FastAPI:
         allow_origins=get_settings().cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],  # so the browser sees export filenames
     )
     app.include_router(router)
     return app

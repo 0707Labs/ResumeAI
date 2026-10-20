@@ -1,8 +1,13 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+import re
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
 from app.config import get_settings
+from app.export.render import to_docx, to_pdf
 from app.llm.client import get_llm
 from app.mentor import build_advice, polish
 from app.models import (
@@ -134,6 +139,18 @@ def verify(body: VerifyRequest) -> VerifyResponse:
     return VerifyResponse(bullets=bullets, summary_verification=summary)
 
 
+def reverify(tailored: TailoredResume, resume: Resume, analysis: GapAnalysis | None,
+             jd_text: str) -> TailoredResume:
+    """Recompute every verification server-side; what the client sent is ignored."""
+    checked = tailored.model_copy(update={"bullets": [
+        b.model_copy(update={"verification": verify_bullet(b, resume, analysis, jd_text)})
+        for b in tailored.bullets]})
+    if checked.summary:
+        checked = checked.model_copy(update={"summary_verification": verify_summary(
+            checked.summary, resume, analysis, jd_text)})
+    return checked
+
+
 @router.get("/api/ats/synonyms")
 def ats_synonyms() -> dict[str, list[str]]:
     """Terms the scorer treats as the same skill, e.g. javascript: [JS, ES6, ...]."""
@@ -160,14 +177,7 @@ def ats_score(body: ScoreRequest) -> ScoreResponse:
     before = score(body.resume, body.jd, llm=llm)
     if body.tailored is None:
         return ScoreResponse(before=before)
-    # Re-verify server-side: only bullets that pass now count toward "after".
-    checked = body.tailored.model_copy(update={"bullets": [
-        b.model_copy(update={"verification": verify_bullet(b, body.resume, body.analysis,
-                                                           body.jd.raw_text)})
-        for b in body.tailored.bullets]})
-    if checked.summary:
-        checked = checked.model_copy(update={"summary_verification": verify_summary(
-            checked.summary, body.resume, body.analysis, body.jd.raw_text)})
+    checked = reverify(body.tailored, body.resume, body.analysis, body.jd.raw_text)
     after = score(apply_tailoring(body.resume, checked), body.jd, llm=llm)
     return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))
 
@@ -187,3 +197,38 @@ def mentor(body: MentorRequest) -> MentorAdvice:
     advice = build_advice(body.resume, body.jd, analysis, ats)
     llm = get_llm() if body.use_llm else None
     return polish(advice, llm) if llm is not None else advice
+
+
+_SAMPLES = Path(__file__).resolve().parent.parent / "samples"
+
+
+@router.get("/api/sample")
+def sample() -> dict[str, str]:
+    """A demo resume and JD, so the UI can be tried without uploading anything."""
+    return {"resume_text": (_SAMPLES / "resume.txt").read_text(),
+            "jd_text": (_SAMPLES / "jd.txt").read_text()}
+
+
+class ExportRequest(BaseModel):
+    resume: Resume
+    tailored: TailoredResume
+    analysis: GapAnalysis | None = None
+    jd_text: str = ""
+
+
+_MEDIA = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
+}
+
+
+@router.post("/api/export/{fmt}")
+def export(fmt: Literal["docx", "pdf"], body: ExportRequest) -> Response:
+    """Only bullets that pass verification now AND were approved by the user use
+    tailored text; everything else exports in its original wording."""
+    checked = reverify(body.tailored, body.resume, body.analysis, body.jd_text)
+    final = apply_tailoring(body.resume, checked, approved_only=True)
+    data = to_docx(final) if fmt == "docx" else to_pdf(final)
+    stem = re.sub(r"[^A-Za-z0-9]+", "_", final.name or "resume").strip("_") or "resume"
+    return Response(content=data, media_type=_MEDIA[fmt], headers={
+        "Content-Disposition": f'attachment; filename="{stem}_tailored.{fmt}"'})

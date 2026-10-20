@@ -83,6 +83,7 @@ class TailoredResume(StrictModel):
     bullets: list[TailoredBullet] = Field(default_factory=list)
     summary: str | None = None
     summary_verification: VerificationResult | None = None
+    summary_review: ReviewStatus = ReviewStatus.PENDING
     notes: list[str] = Field(default_factory=list)
 
     @computed_field

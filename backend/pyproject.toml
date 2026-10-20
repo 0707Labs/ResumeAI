@@ -10,10 +10,11 @@ dependencies = [
     "python-docx>=1.2",
     "python-multipart>=0.0.32",
     "anthropic>=1.15",
+    "reportlab>=5.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1", "httpx>=0.28", "reportlab>=5.0"]
+dev = ["pytest>=9.1", "httpx>=0.28"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,6 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["samples/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

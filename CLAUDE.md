@@ -47,6 +47,8 @@ backend/
     scoring/       hybrid ATS scorer (synonyms in parsing/synonyms.py)
     mentor/        strengths/gaps/actions, verdict, 2-week plan, optional Claude polish
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
+    db/            SQLAlchemy models (auth, invites, waitlist, consent) + async session
+  alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
   app/             routes: / (input), /analysis, /review, /score, /mentor, /export
@@ -61,6 +63,11 @@ frontend/
 - Setup: `cd backend && python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"`
 - Tests: `cd backend && .venv/bin/pytest`
 - Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload` (port 8000)
+- Database: Postgres via `RT_DATABASE_URL` (default: local socket, db `resume_tailor`).
+  `createdb resume_tailor && cd backend && .venv/bin/alembic upgrade head`.
+  The app connects lazily, so the rules-only pipeline and e2e run without a DB.
+  DB tests create and drop a throwaway `rt_test_*` database (`RT_TEST_ADMIN_DATABASE_URL`);
+  they skip if Postgres is unreachable, except under `CI`.
 - Frontend: `cd frontend && npm install && npm run dev` (port 3000)
 - Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
   `npm run test:contract` with the backend running validates every endpoint against the zod schemas

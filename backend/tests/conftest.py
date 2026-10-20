@@ -1,14 +1,26 @@
-"""Build PDF/DOCX resumes at test time so no binary fixtures live in git."""
+"""Build PDF/DOCX resumes at test time so no binary fixtures live in git.
+
+Database tests get a throwaway Postgres database per run (migrated with Alembic)
+and a per-test transaction that is rolled back."""
 
 import io
+import os
+import uuid
 from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from docx import Document
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
+from sqlalchemy import create_engine, make_url, text
+from sqlalchemy.orm import Session
 
 FIXTURES = Path(__file__).parent / "fixtures"
+BACKEND = Path(__file__).parent.parent
+# A server we may create and drop databases on; the local socket by default.
+ADMIN_URL = os.environ.get("RT_TEST_ADMIN_DATABASE_URL", "postgresql+psycopg:///postgres")
 
 
 def fixture_text(name: str) -> str:
@@ -92,3 +104,54 @@ def analyst_docx() -> bytes:
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+def alembic_config(url: str) -> Config:
+    cfg = Config(str(BACKEND / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def pg_url() -> str:
+    """URL of a fresh database migrated to head; dropped after the run.
+    Skips DB tests when no Postgres is reachable, except in CI where that fails."""
+    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
+    name = f"rt_test_{uuid.uuid4().hex[:8]}"
+    try:
+        with admin.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+    except Exception as exc:  # noqa: BLE001 - any connection failure means "no Postgres here"
+        admin.dispose()
+        if os.environ.get("CI"):
+            raise
+        pytest.skip(f"Postgres not reachable at {ADMIN_URL}: {exc.__class__.__name__}")
+    url = make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
+    try:
+        command.upgrade(alembic_config(url), "head")
+        yield url
+    finally:
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()
+
+
+@pytest.fixture(scope="session")
+def pg_engine(pg_url):
+    engine = create_engine(pg_url)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def db(pg_engine):
+    """A Session inside one outer transaction that is rolled back after the test.
+    Commits inside the test become savepoints."""
+    with pg_engine.connect() as conn:
+        outer = conn.begin()
+        session = Session(bind=conn, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            session.close()
+            outer.rollback()

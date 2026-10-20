@@ -15,6 +15,19 @@ class Settings:
     llm_configured: bool = field(
         default_factory=lambda: bool(os.environ.get("ANTHROPIC_API_KEY"))
     )
+    # Postgres via psycopg 3. The app connects lazily, so the rules-only pipeline
+    # (and the e2e run) still starts without a database.
+    database_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "RT_DATABASE_URL", "postgresql+psycopg:///resume_tailor"
+        )
+    )
+    # Signs short-lived cookies (OAuth state, pending sign-up). Required outside dev.
+    auth_secret: str = field(default_factory=lambda: os.environ.get("RT_AUTH_SECRET", ""))
+    # Base for OAuth redirect URIs and the CSRF Origin check.
+    public_url: str = field(
+        default_factory=lambda: os.environ.get("RT_PUBLIC_URL", "http://localhost:3000").rstrip("/")
+    )
 
 
 def get_settings() -> Settings:

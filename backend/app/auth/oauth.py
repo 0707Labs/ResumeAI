@@ -83,6 +83,8 @@ class Flow:
     verifier: str
     nonce: str
     next: str
+    intent: Literal["login", "link"] = "login"
+    user_id: str | None = None  # for "link": the signed-in user who started it
 
 
 def credentials(provider: OAuthProvider) -> tuple[str, str] | None:
@@ -135,10 +137,11 @@ def flow_cookie() -> str:
     return cookie_name("rt_oauth")
 
 
-def begin(provider: OAuthProvider, next_path: str | None, response: Response) -> str:
+def begin(provider: OAuthProvider, next_path: str | None, response: Response, *,
+          intent: Literal["login", "link"] = "login", user_id: str | None = None) -> str:
     """Store a new flow in the cookie and return the provider's authorization URL."""
     flow = Flow(provider=provider, state=secrets.token_urlsafe(32), verifier=secrets.token_urlsafe(48),
-                nonce=secrets.token_urlsafe(24), next=safe_next(next_path))
+                nonce=secrets.token_urlsafe(24), next=safe_next(next_path), intent=intent, user_id=user_id)
     payload = base64.urlsafe_b64encode(json.dumps(flow.__dict__).encode()).decode().rstrip("=")
     set_cookie(response, flow_cookie(), sign("oauth", payload), max_age=FLOW_TTL)
     extra = {"nonce": flow.nonce} if provider == "google" else {}

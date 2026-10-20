@@ -271,7 +271,8 @@ class PendingAuth(Base):
 
 
 class EmailToken(Base):
-    """Single-use magic-link token: sign-in, or verifying a pending identity's email."""
+    """Single-use magic-link token: sign-in, verifying a pending identity's email,
+    or adding email sign-in to a signed-in user's account (bound to that user)."""
 
     __tablename__ = "email_tokens"
 
@@ -282,14 +283,18 @@ class EmailToken(Base):
     pending_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("pending_auth.id", ondelete="CASCADE")
     )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
-        CheckConstraint(_in("purpose", ("login", "verify_pending")), name="purpose"),
+        CheckConstraint(_in("purpose", ("login", "verify_pending", "link")), name="purpose"),
         CheckConstraint(
             "(purpose = 'verify_pending') = (pending_id IS NOT NULL)", name="pending_matches_purpose"
         ),
+        CheckConstraint("(purpose = 'link') = (user_id IS NOT NULL)", name="user_matches_purpose"),
     )

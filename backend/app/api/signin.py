@@ -21,6 +21,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.account import AccountError, link
 from app.auth.csrf import require_csrf
 from app.auth.events import log_auth_event
 from app.auth.identity import AccountUnavailable, resolve_identity
@@ -28,7 +29,7 @@ from app.auth.invites import find_bound, find_usable
 from app.auth.mailer import get_mailer, magic_link_mail
 from app.auth.pending import clear_pending, create_pending, load_pending
 from app.auth.ratelimit import limiter, rate_limit
-from app.auth.sessions import start_session
+from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
 from app.db.models import EmailToken, PendingAuth, Waitlist
@@ -60,7 +61,7 @@ class TokenIn(BaseModel):
 class AuthStep(BaseModel):
     """Where the frontend goes next."""
 
-    next: Literal["signed_in", "invite", "consent", "verify_email"]
+    next: Literal["signed_in", "invite", "consent", "verify_email", "linked"]
 
 
 class Accepted(BaseModel):
@@ -107,17 +108,17 @@ def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _per_key_limit(key: str, limit: int, window: int) -> None:
+def per_key_limit(key: str, limit: int, window: int) -> None:
     if limiter.hit(key, limit, window) is not None:
         log_auth_event("rate_limited", outcome="denied", reason=key.split(":", 1)[0])
         raise _fail(429, "rate_limited")
 
 
-async def _send_link(db: AsyncSession, email: str, purpose: Literal["login", "verify_pending"],
-                     pending_id: uuid.UUID | None = None) -> None:
+async def send_magic_link(db: AsyncSession, email: str, purpose: Literal["login", "verify_pending", "link"],
+                     pending_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None) -> None:
     token = new_token()
     db.add(EmailToken(
-        token_hash=hash_token(token), email=email, purpose=purpose, pending_id=pending_id,
+        token_hash=hash_token(token), email=email, purpose=purpose, pending_id=pending_id, user_id=user_id,
         expires_at=datetime.now(UTC) + EMAIL_TOKEN_TTL,
     ))
     await db.commit()
@@ -152,8 +153,8 @@ async def sign_in_or_gate(
              dependencies=[Depends(rate_limit("email_start", 5, FIFTEEN_MIN)), Depends(require_csrf)])
 async def email_start(body: EmailIn, db: AsyncSession = Depends(get_db)) -> Accepted:
     """Send a sign-in link. Same answer whether or not the address has an account."""
-    _per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
-    await _send_link(db, body.email, "login")
+    per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
+    await send_magic_link(db, body.email, "login")
     return Accepted()
 
 
@@ -166,8 +167,8 @@ async def pending_email(body: EmailIn, request: Request, db: AsyncSession = Depe
         raise _fail(400, "pending_expired")
     if pending.kind != "needs_email":
         raise _fail(409, "email_already_verified")
-    _per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
-    await _send_link(db, body.email, "verify_pending", pending.id)
+    per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
+    await send_magic_link(db, body.email, "verify_pending", pending.id)
     return Accepted()
 
 
@@ -176,17 +177,23 @@ async def pending_email(body: EmailIn, request: Request, db: AsyncSession = Depe
 async def email_verify(body: TokenIn, request: Request, response: Response,
                        db: AsyncSession = Depends(get_db)) -> AuthStep:
     """The page behind a magic link posts its token here. Single use, 15 minutes."""
+    # Before touching the token: resolving may commit (session refresh/expiry), and a
+    # rejected link must stay unconsumed.
+    signed_in = await resolve_session(db, request)
     row = (await db.execute(
         update(EmailToken)
         .where(EmailToken.token_hash == hash_token(body.token), EmailToken.consumed_at.is_(None),
                EmailToken.expires_at > datetime.now(UTC))
         .values(consumed_at=datetime.now(UTC))
-        .returning(EmailToken.email, EmailToken.purpose, EmailToken.pending_id)
+        .returning(EmailToken.email, EmailToken.purpose, EmailToken.pending_id, EmailToken.user_id)
     )).one_or_none()
     if row is None:
         await db.rollback()
         raise _fail(400, "link_invalid")
-    email, purpose, pending_id = row
+    email, purpose, pending_id, link_user_id = row
+
+    if purpose == "link":
+        return await _finish_email_link(db, request, response, signed_in, email, link_user_id)
 
     if purpose == "login":
         await db.commit()
@@ -218,6 +225,25 @@ async def email_verify(body: TokenIn, request: Request, response: Response,
     return AuthStep(next="invite")
 
 
+async def _finish_email_link(db: AsyncSession, request: Request, response: Response,
+                             signed_in: SignedIn | None, email: str, user_id: uuid.UUID) -> AuthStep:
+    """Add email sign-in for the user who asked, only while they are the one signed in."""
+    if signed_in is None or signed_in.user.id != user_id or signed_in.user.status != "active":
+        await db.rollback()  # leave the link usable once they sign in to the right account
+        raise _fail(400, "wrong_account")
+    user = signed_in.user
+    await db.commit()
+    log_auth_event("magic_link_used", provider="email", reason="link")
+    try:
+        result = await link(db, user, "email", email, email)
+    except AccountError as exc:
+        log_auth_event("account_link_failed", outcome="denied", user_id=user.id, provider="email", reason=exc.code)
+        raise _fail(409, exc.code) from None
+    if result == "linked":
+        await start_session(db, request, response, user, provider="email", event="account_linked")
+    return AuthStep(next="linked")
+
+
 # --- invite gate -------------------------------------------------------------------------------
 
 
@@ -242,7 +268,7 @@ async def signup_invite(body: InviteIn, request: Request, db: AsyncSession = Dep
         raise _fail(400, "pending_expired")
     if pending.kind != "signup" or not pending.verified_email:
         raise _fail(400, "email_unverified")
-    _per_key_limit(f"invite_pending:{pending.id}", 10, FIFTEEN_MIN)
+    per_key_limit(f"invite_pending:{pending.id}", 10, FIFTEEN_MIN)
     email, provider = pending.verified_email, pending.provider  # rollback below expires `pending`
     invite_id = await (find_usable(db, body.code, email) if body.code else find_bound(db, email))
     if invite_id is None:

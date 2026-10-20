@@ -8,6 +8,7 @@ session row is deleted and a new token and CSRF cookie are issued."""
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import Request, Response
 from sqlalchemy import delete, select, update
@@ -40,9 +41,11 @@ async def start_session(
     response: Response,
     user: User,
     provider: str | None = None,
+    event: Literal["login", "account_linked"] = "login",
 ) -> None:
     """Sign `user` in: drop the request's existing session (rotation), store a new
-    one, set the session and a fresh CSRF cookie, and commit."""
+    one, set the session and a fresh CSRF cookie, and commit. Also used after
+    linking a new login method (event="account_linked"), which rotates too."""
     old = read_cookie(request, session_cookie())
     if old:
         await db.execute(delete(AuthSession).where(AuthSession.session_token_hash == hash_token(old)))
@@ -55,11 +58,12 @@ async def start_session(
         last_seen_at=now,
         expires_at=now + SLIDING,
     ))
-    user.last_login_at = now
+    if event == "login":
+        user.last_login_at = now
     await db.commit()
     set_cookie(response, session_cookie(), token, max_age=int(SLIDING.total_seconds()))
     issue_csrf(response)
-    log_auth_event("login", user_id=user.id, provider=provider)
+    log_auth_event(event, user_id=user.id, provider=provider)
 
 
 async def resolve_session(db: AsyncSession, request: Request) -> SignedIn | None:

@@ -27,6 +27,10 @@ AuthEvent = Literal[
     "waitlist_joined",
     "oauth_started",
     "oauth_failed",
+    "account_linked",
+    "account_unlinked",
+    "account_link_failed",
+    "account_deleted",
 ]
 
 

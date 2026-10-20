@@ -10,11 +10,12 @@ from app.config import get_settings
 
 OUTBOX = Path(__file__).resolve().parents[2] / ".dev-outbox"
 
-Purpose = Literal["login", "verify_pending"]
+Purpose = Literal["login", "verify_pending", "link"]
 
 SUBJECTS = {
     "login": "Your sign-in link for Resume Tailor",
     "verify_pending": "Confirm your email for Resume Tailor",
+    "link": "Add email sign-in to your Resume Tailor account",
 }
 
 

@@ -142,6 +142,11 @@ export const api = {
   mentor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, ats: S.ATSReport | null = null, useLLM = true) =>
     request(S.MentorAdvice, "/api/mentor", json({ resume, jd, analysis, ats, use_llm: useLLM })),
 
+  /** What the download will contain, after the same server-side checks. */
+  exportPreview: (resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string,
+    signal?: AbortSignal) =>
+    request(S.ExportPreview, "/api/export/preview", { ...json({ resume, tailored, analysis, jd_text: jdText }), signal }),
+
   async exportFile(fmt: "docx" | "pdf", resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string) {
     let res: Response;
     try {

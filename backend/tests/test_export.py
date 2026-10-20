@@ -93,3 +93,21 @@ def test_unknown_format_rejected(payload):
 def test_sample_endpoint():
     s = client.get("/api/sample").json()
     assert "ASHA RAO" in s["resume_text"] and "Senior Data Analyst" in s["jd_text"]
+
+
+def test_preview_matches_what_downloads(payload):
+    res = client.post("/api/export/preview", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    texts = [b["text"] for s in body["resume"]["sections"] for e in s["entries"] for b in e["bullets"]]
+    assert HONEST in texts  # approved + verified
+    assert not any("Snowflake" in t for t in texts)  # forged "verified" bullet re-checked out
+    assert "Built 12 recurring reports for regional operations leads" in texts  # pending -> original
+    assert body["changed_lines"] == [HONEST, body["resume"]["summary"]]
+    docx = docx_text(client.post("/api/export/docx", json=payload).content)
+    for t in texts:
+        assert t in docx
+
+
+def test_preview_route_is_not_a_format(payload):
+    assert client.post("/api/export/preview", json=payload).status_code == 200

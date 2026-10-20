@@ -269,6 +269,11 @@ export const MentorAdvice = z.object({
   notes: z.array(z.string()),
 });
 
+export const ExportPreview = z.object({
+  resume: Resume, // exactly what the downloaded file will contain
+  changed_lines: z.array(z.string()),
+});
+
 export const Health = z.object({ status: z.string(), llm_configured: z.boolean() });
 export const Sample = z.object({ resume_text: z.string(), jd_text: z.string() });
 
@@ -292,3 +297,4 @@ export type ScoreComponent = z.infer<typeof ScoreComponent>;
 export type ATSReport = z.infer<typeof ATSReport>;
 export type ScoreResponse = z.infer<typeof ScoreResponse>;
 export type MentorAdvice = z.infer<typeof MentorAdvice>;
+export type ExportPreview = z.infer<typeof ExportPreview>;

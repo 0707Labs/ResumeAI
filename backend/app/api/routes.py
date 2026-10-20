@@ -228,6 +228,23 @@ _MEDIA = {
 }
 
 
+class PreviewResponse(BaseModel):
+    resume: Resume  # exactly what the DOCX/PDF will contain
+    changed_lines: list[str]  # final texts that differ from the original resume
+
+
+@router.post("/api/export/preview")
+def export_preview(body: ExportRequest) -> PreviewResponse:
+    """The resume the download will contain, after the same server-side checks."""
+    checked = reverify(body.tailored, body.resume, body.analysis, body.jd_text)
+    final = apply_tailoring(body.resume, checked, approved_only=True)
+    original = {b.text for b in body.resume.bullets()}
+    changed = [b.text for b in final.bullets() if b.text not in original]
+    if final.summary and final.summary != body.resume.summary:
+        changed.append(final.summary)
+    return PreviewResponse(resume=final, changed_lines=changed)
+
+
 @router.post("/api/export/{fmt}")
 def export(fmt: Literal["docx", "pdf"], body: ExportRequest) -> Response:
     """Only bullets that pass verification now AND were approved by the user use

@@ -26,6 +26,8 @@ describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
     const verified = await api.verify(resume, tailored.bullets, analysis, jd.raw_text, null);
     const score = await api.score(resume, jd, tailored, analysis, { approvedOnly: true });
     const mentor = await api.mentor(resume, jd, analysis, score.before, false);
+    const preview = await api.exportPreview(resume, tailored, analysis, jd.raw_text);
+    expect(preview.resume.name).toBe(resume.name);
     const out = await api.exportFile("pdf", resume, tailored, analysis, jd.raw_text);
     expect(resume.sections.length).toBeGreaterThan(0);
     expect(analysis.items.length).toBe(jd.requirements.length);

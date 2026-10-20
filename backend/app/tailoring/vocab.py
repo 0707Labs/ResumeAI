@@ -104,32 +104,6 @@ SELF_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Stems that count as the same idea when rewording ("cut" -> "reduced").
-SYNONYM_GROUPS: list[set[str]] = [
-    {"build", "built", "creat", "develop", "made", "make", "produc", "implement", "set"},
-    {"reduc", "cut", "lower", "decreas", "shrank", "shrink", "trim", "shorten", "sav", "saved"},
-    {"increas", "grew", "grow", "boost", "rais", "improv", "lift", "expand"},
-    {"clean", "prepar", "wrangl", "process", "transform", "standardiz"},
-    {"analyz", "analys", "analysi", "examin", "evaluat", "assess", "investigat", "studi"},
-    {"automat", "script", "schedul"},
-    {"partner", "collaborat", "work", "worked", "join"},
-    {"wrote", "writ", "author", "draft", "document"},
-    {"report", "dashboard", "readout", "summari", "insight"},
-    {"team", "group", "squad", "org"},
-    {"customer", "client", "user"},
-    {"time", "hour", "effort"},
-    {"weekly", "week"},
-    {"monthly", "month"},
-    {"data", "dataset", "record"},
-    {"query", "queri", "extract", "pull"},
-    {"model", "forecast", "predict"},
-    {"migrat", "mov", "port", "transition"},
-    {"speed", "faster", "latency", "performanc", "quick", "accelerat"},
-    {"test", "experiment", "trial"},
-    {"stakeholder", "partner", "leader", "manag"},
-    {"present", "communicat", "shar", "share"},
-]
-
 # Connective words a rewrite may add freely.
 FILLER = {
     "result", "resulting", "enabl", "enable", "ensur", "ensure", "support", "deliver",

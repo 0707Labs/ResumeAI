@@ -82,14 +82,14 @@ via per over under their its it them they which while also both each""".split())
 
 def stem(word: str) -> str:
     """Crude suffix stripper; good enough to match "reporting" with "reports"."""
-    for suffix in ("ational", "ations", "ation", "ional", "ments", "ment", "ings", "ing",
-                   "ers", "er", "ed", "es", "s"):
+    # No "-er"/"-ment": they mangle more than they match ("partner" -> "partn").
+    for suffix in ("ational", "ations", "ation", "ional", "ings", "ing", "ed", "es", "s"):
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             word = word[: -len(suffix)]
             # "cutting" -> "cutt" -> "cut"; "planned" -> "plann" -> "plan"
             if len(word) >= 3 and word[-1] == word[-2] and word[-1] not in "lsz":
                 word = word[:-1]
-            if suffix in ("ing", "ed", "es", "er", "ers", "ings") and word.endswith("e"):
+            if suffix in ("ing", "ed", "es", "ings") and word.endswith("e"):
                 word = word[:-1]
             return word
     if word.endswith("e") and len(word) >= 4:

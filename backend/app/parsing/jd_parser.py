@@ -82,7 +82,7 @@ def parse_jd(text: str) -> JobDescription:
     return JobDescription(
         title=title,
         company=company,
-        seniority=_seniority(title, years),
+        seniority=infer_seniority(title, years),
         years_experience_min=years,
         responsibilities=responsibilities,
         requirements=requirements,
@@ -184,7 +184,19 @@ def _years(text: str) -> int | None:
     return max(found) if found else None
 
 
-def _seniority(title: str | None, years: int | None) -> Seniority:
+SENIORITY_ORDER = [Seniority.INTERN, Seniority.JUNIOR, Seniority.MID, Seniority.SENIOR,
+                   Seniority.LEAD, Seniority.PRINCIPAL]
+
+
+def keyword_groups(req: Requirement) -> list[list[str]]:
+    """How a requirement's keywords are satisfied: "Tableau or Power BI" is one
+    group (any one will do); "SQL and Python" is two groups (each needed)."""
+    if len(req.keywords) > 1 and re.search(r"\bor\b|\beither\b", req.text, re.I):
+        return [list(req.keywords)]
+    return [[k] for k in req.keywords]
+
+
+def infer_seniority(title: str | None, years: float | None) -> Seniority:
     if title:
         for pattern, level in _SENIORITY_WORDS:
             if pattern.search(title):

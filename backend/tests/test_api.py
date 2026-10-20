@@ -127,3 +127,32 @@ def test_verify_recomputes_and_ignores_client_verdict():
     assert v["passed"] is False
     assert {"inflated_verb", "new_tool"} <= {f["kind"] for f in v["flags"]}
     assert out["summary_verification"]["passed"] is False
+
+
+def test_ats_score_before_after():
+    body = _gap_body()
+    analysis = client.post("/api/gap/analyze", json=body).json()
+    tailored = client.post("/api/tailor", json={**body, "analysis": analysis}).json()
+    res = client.post("/api/ats/score", json={**body, "tailored": tailored,
+                                              "analysis": analysis})
+    assert res.status_code == 200
+    out = res.json()
+    assert len(out["before"]["components"]) == 6 and "disclaimer" in out["before"]
+    assert out["after"] is not None and isinstance(out["delta"], float)
+
+
+def test_ats_score_ignores_forged_verification():
+    body = _gap_body()
+    forged = {"bullets": [{
+        "id": "t1", "text": "Built Snowflake pipelines in Python and dbt",
+        "source_bullet_ids": ["exp1.b1"], "entry_id": "exp1", "change_type": "reword",
+        "verification": {"flags": []}, "review": "approved"}]}
+    out = client.post("/api/ats/score", json={**body, "tailored": forged}).json()
+    pref = next(c for c in out["after"]["components"] if c["name"] == "preferred_keywords")
+    assert "dbt / airflow" in pref["missing"] and "snowflake / bigquery" in pref["missing"]
+    assert out["delta"] == 0.0
+
+
+def test_ats_synonyms_endpoint():
+    syn = client.get("/api/ats/synonyms").json()
+    assert "k8s" in syn["kubernetes"]

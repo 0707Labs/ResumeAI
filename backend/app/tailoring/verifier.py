@@ -30,7 +30,9 @@ from app.models import (
 from app.parsing.lexicon import ORG_SUFFIX, canonicalize, find_skills, skill_spans
 from app.parsing.text import content_words, stem
 
-from .vocab import FILLER, SCOPE_RE, SELF_TITLE_RE, SYNONYM_GROUPS, TITLE_RE, verb_level
+from app.parsing.synonyms import expand_words
+
+from .vocab import FILLER, SCOPE_RE, SELF_TITLE_RE, TITLE_RE, verb_level
 
 # --- numbers --------------------------------------------------------------------------
 
@@ -288,10 +290,7 @@ def check_text(text: str, sources: Sources, jd_text: str = "") -> list[Verificat
 
 
 def _novel_words(text: str, src: str, jd_text: str) -> list[str]:
-    allowed = content_words(src) | content_words(jd_text)
-    for group in SYNONYM_GROUPS:
-        if allowed & group:
-            allowed |= group
+    allowed = expand_words(content_words(src) | content_words(jd_text))
     # Skill names and numbers are judged by the stricter checks above.
     stripped = text
     for s, e, _ in reversed(skill_spans(text)):

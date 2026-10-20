@@ -22,6 +22,7 @@ from app.models import (
     Resume,
     SectionKind,
 )
+from app.parsing.jd_parser import keyword_groups
 from app.parsing.lexicon import DEGREE_WORDS, IMPLIES, find_skills
 from app.parsing.text import content_words
 
@@ -132,7 +133,7 @@ def _classify(req: Requirement, index: _Index, years: float | None) -> GapItem:
 
 
 def _classify_keywords(req: Requirement, index: _Index, base: dict) -> GapItem:
-    any_of = bool(re.search(r"\bor\b|\beither\b", req.text, re.I)) and len(req.keywords) > 1
+    any_of = len(keyword_groups(req)) == 1 and len(req.keywords) > 1
     per_kw = {kw: index.evidence_for(kw) for kw in req.keywords}
     direct = [kw for kw, ev in per_kw.items() if ev.bullets or ev.stated]
     implied = [kw for kw, ev in per_kw.items() if kw not in direct and
@@ -221,6 +222,12 @@ def _degree_level(text: str) -> tuple[int, str] | None:
         if pattern.search(text):
             return level, name
     return None
+
+
+def degree_meets(req: Requirement, resume: Resume) -> bool:
+    item = _classify_degree(req, resume, dict(requirement_id=req.id,
+                                               requirement_text=req.text))
+    return item.status == GapStatus.EVIDENCED
 
 
 def _classify_degree(req: Requirement, resume: Resume, base: dict) -> GapItem:

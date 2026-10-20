@@ -44,7 +44,7 @@ backend/
     parsing/       resume (PDF/DOCX) + JD parsers            (phase 2)
     analysis/      gap analysis, clarifying questions, optional Claude review
     tailoring/     tailor (rules + Claude w/ repair) + deterministic verifier
-    scoring/       hybrid ATS scorer + synonym map            (phase 5)
+    scoring/       hybrid ATS scorer (synonyms in parsing/synonyms.py)
     mentor/        advice, verdict, upskilling plan           (phase 6)
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
   tests/           pytest; fixtures/ holds sample resumes + JDs

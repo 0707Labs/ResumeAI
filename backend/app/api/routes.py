@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.llm.client import get_llm
 from app.models import (
     WEIGHTS,
+    ATSReport,
     GapAnalysis,
     JobDescription,
     Resume,
@@ -13,7 +14,9 @@ from app.models import (
     TailoredResume,
     VerificationResult,
 )
-from app.tailoring import tailor, verify_bullet, verify_summary
+from app.parsing.synonyms import skill_synonyms
+from app.scoring import score
+from app.tailoring import apply_tailoring, tailor, verify_bullet, verify_summary
 from app.parsing import (
     MAX_BYTES,
     ExtractionError,
@@ -127,3 +130,41 @@ def verify(body: VerifyRequest) -> VerifyResponse:
     summary = (verify_summary(body.summary, body.resume, body.analysis, body.jd_text)
                if body.summary else None)
     return VerifyResponse(bullets=bullets, summary_verification=summary)
+
+
+@router.get("/api/ats/synonyms")
+def ats_synonyms() -> dict[str, list[str]]:
+    """Terms the scorer treats as the same skill, e.g. javascript: [JS, ES6, ...]."""
+    return skill_synonyms()
+
+
+class ScoreRequest(BaseModel):
+    resume: Resume
+    jd: JobDescription
+    tailored: TailoredResume | None = None
+    analysis: GapAnalysis | None = None  # needed for bullets backed by confirmed answers
+    use_llm: bool = True
+
+
+class ScoreResponse(BaseModel):
+    before: ATSReport
+    after: ATSReport | None = None
+    delta: float | None = None
+
+
+@router.post("/api/ats/score")
+def ats_score(body: ScoreRequest) -> ScoreResponse:
+    llm = get_llm() if body.use_llm else None
+    before = score(body.resume, body.jd, llm=llm)
+    if body.tailored is None:
+        return ScoreResponse(before=before)
+    # Re-verify server-side: only bullets that pass now count toward "after".
+    checked = body.tailored.model_copy(update={"bullets": [
+        b.model_copy(update={"verification": verify_bullet(b, body.resume, body.analysis,
+                                                           body.jd.raw_text)})
+        for b in body.tailored.bullets]})
+    if checked.summary:
+        checked = checked.model_copy(update={"summary_verification": verify_summary(
+            checked.summary, body.resume, body.analysis, body.jd.raw_text)})
+    after = score(apply_tailoring(body.resume, checked), body.jd, llm=llm)
+    return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))

@@ -189,3 +189,35 @@ def test_gap_answers_rejects_empty_yes():
     res = client.post("/api/gap/answers", json={"analysis": analysis,
                                                 "answers": {qid: {"choice": "yes", "text": ""}}})
     assert res.status_code == 422 and "describe" in res.json()["detail"]
+
+
+def test_ats_score_approved_only_counts_just_approved_bullets():
+    from app.parsing import parse_jd, parse_resume_text
+    from app.tailoring import tailor
+    from tests.test_tailor import JD, ScriptedLLM, b
+    from tests.test_verifier import RESUME
+
+    resume, jd = parse_resume_text(RESUME), parse_jd(JD)
+    analysis = client.post("/api/gap/analyze", json={
+        "resume": resume.model_dump(mode="json"), "jd": jd.model_dump(mode="json"),
+        "use_llm": False}).json()
+    qid = next(i["question"]["id"] for i in analysis["items"]
+               if i["question"] and "airflow" in i["missing_keywords"])
+    analysis = client.post("/api/gap/answers", json={"analysis": analysis, "answers": {
+        qid: {"choice": "yes", "text": "I wrote the Airflow DAGs for our SQL extracts at Acme."}}}).json()
+    from app.models import GapAnalysis
+    tailored = tailor(resume, jd, GapAnalysis.model_validate(analysis), llm=ScriptedLLM({"bullets": [
+        b(["exp1.b2"], "Cut weekly reporting time by 30% by automating SQL extracts as Airflow DAGs",
+          answers=[qid])]})).model_dump(mode="json")
+    body = {"resume": resume.model_dump(mode="json"), "jd": jd.model_dump(mode="json"),
+            "tailored": tailored, "analysis": analysis, "use_llm": False}
+
+    pending = client.post("/api/ats/score", json={**body, "approved_only": True}).json()
+    assert pending["delta"] == 0.0  # nothing approved yet
+    preview = client.post("/api/ats/score", json=body).json()
+    assert preview["delta"] > 0
+    for bl in tailored["bullets"]:
+        if "Airflow" in bl["text"]:
+            bl["review"] = "approved"
+    approved = client.post("/api/ats/score", json={**body, "approved_only": True}).json()
+    assert approved["delta"] == preview["delta"]

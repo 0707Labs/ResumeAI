@@ -8,6 +8,9 @@ function tokenize(s: string): string[] {
   return s.match(/\S+\s*/g) ?? [];
 }
 
+// "extracts" at the end of a line equals "extracts " mid-line.
+const same = (x: string, y: string) => x.trimEnd() === y.trimEnd();
+
 export function wordDiff(before: string, after: string): DiffPart[] {
   const a = tokenize(before);
   const b = tokenize(after);
@@ -17,7 +20,7 @@ export function wordDiff(before: string, after: string): DiffPart[] {
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[i][j] = same(a[i], b[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
   const out: DiffPart[] = [];
@@ -29,8 +32,8 @@ export function wordDiff(before: string, after: string): DiffPart[] {
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      push("same", a[i]);
+    if (same(a[i], b[j])) {
+      push("same", b[j]);
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {

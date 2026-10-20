@@ -70,7 +70,9 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, init);
-  } catch {
+  } catch (e) {
+    // A cancelled request (newer one superseded it) isn't a backend problem.
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ApiError("backend_down", 0);
   }
   if (!res.ok) {
@@ -128,8 +130,13 @@ export const api = {
   verify: (resume: S.Resume, bullets: S.TailoredBullet[], analysis: S.GapAnalysis | null, jdText: string, summary: string | null) =>
     request(S.VerifyResponse, "/api/verify", json({ resume, bullets, analysis, jd_text: jdText, summary })),
 
-  score: (resume: S.Resume, jd: S.JobDescription, tailored: S.TailoredResume | null, analysis: S.GapAnalysis | null, useLLM = false) =>
-    request(S.ScoreResponse, "/api/ats/score", json({ resume, jd, tailored, analysis, use_llm: useLLM })),
+  /** approvedOnly: "after" counts only approved bullets (what export will use). */
+  score: (resume: S.Resume, jd: S.JobDescription, tailored: S.TailoredResume | null, analysis: S.GapAnalysis | null,
+    { useLLM = false, approvedOnly = false, signal }: { useLLM?: boolean; approvedOnly?: boolean; signal?: AbortSignal } = {}) =>
+    request(S.ScoreResponse, "/api/ats/score", {
+      ...json({ resume, jd, tailored, analysis, use_llm: useLLM, approved_only: approvedOnly }),
+      signal,
+    }),
 
   mentor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, ats: S.ATSReport, useLLM = true) =>
     request(S.MentorAdvice, "/api/mentor", json({ resume, jd, analysis, ats, use_llm: useLLM })),

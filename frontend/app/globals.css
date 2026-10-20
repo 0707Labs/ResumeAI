@@ -115,3 +115,20 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Word diff: removed is struck through, added is underlined, so it reads without color. */
+del {
+  background: var(--bad-bg);
+  color: var(--bad);
+  text-decoration: line-through;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+ins {
+  background: var(--ok-bg);
+  color: var(--ok);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: 3px;
+  padding: 0 1px;
+}

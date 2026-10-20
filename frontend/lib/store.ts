@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { type Decisions, approveAllVerified, decide } from "./review";
 import type {
   GapAnalysis,
   JobDescription,
@@ -12,6 +13,7 @@ import type {
   Resume,
   ReviewStatus,
   ScoreResponse,
+  TailoredBullet,
   TailoredResume,
 } from "./schemas";
 
@@ -34,7 +36,8 @@ type Data = {
   analysis: GapAnalysis | null;
   answers: Record<string, Answer>; // keyed by question id
   tailored: TailoredResume | null;
-  decisions: Record<string, ReviewStatus>; // keyed by tailored bullet id
+  decisions: Decisions; // keyed by tailored bullet id
+  edited: Record<string, true>; // tailored bullet ids the user rewrote by hand
   score: ScoreResponse | null;
   mentor: MentorAdvice | null;
 };
@@ -47,6 +50,13 @@ type Actions = {
   setAnswer: (questionId: string, answer: Answer) => void;
   /** Answers were saved on the server; anything tailored before is now stale. */
   setAnswered: (analysis: GapAnalysis) => void;
+  setTailored: (tailored: TailoredResume) => void;
+  decide: (bulletId: string, status: ReviewStatus) => void;
+  approveAllVerified: () => void;
+  /** Replace one bullet after a manual edit (re-verified); its decision resets. */
+  replaceBullet: (bullet: TailoredBullet) => void;
+  setSummaryReview: (status: ReviewStatus) => void;
+  setScore: (score: ScoreResponse | null) => void;
   clearAll: () => void;
 };
 
@@ -61,6 +71,7 @@ const EMPTY: Data = {
   answers: {},
   tailored: null,
   decisions: {},
+  edited: {},
   score: null,
   mentor: null,
 };
@@ -72,6 +83,7 @@ const DOWNSTREAM: Partial<Data> = {
   answers: {},
   tailored: null,
   decisions: {},
+  edited: {},
   score: null,
   mentor: null,
 };
@@ -84,9 +96,30 @@ export const useSession = create<Data & Actions>()(
       clearResume: () => set({ resume: null, resumeInput: null, ...DOWNSTREAM }),
       setJobInputs: (patch) => set((s) => ({ ...patch, ...(s.analysis ? DOWNSTREAM : {}) })),
       setAnalyzed: (jd, analysis) =>
-        set({ jd, analysis, answers: {}, tailored: null, decisions: {}, score: null, mentor: null }),
+        set({ jd, analysis, answers: {}, tailored: null, decisions: {}, edited: {}, score: null, mentor: null }),
       setAnswer: (id, answer) => set((s) => ({ answers: { ...s.answers, [id]: answer } })),
-      setAnswered: (analysis) => set({ analysis, tailored: null, decisions: {}, score: null, mentor: null }),
+      setAnswered: (analysis) => set({ analysis, tailored: null, decisions: {}, edited: {}, score: null, mentor: null }),
+      setTailored: (tailored) => set({ tailored, decisions: {}, edited: {}, score: null }),
+      decide: (id, status) => set((s) => {
+        const b = s.tailored?.bullets.find((x) => x.id === id);
+        return b ? { decisions: decide(s.decisions, b, status) } : {};
+      }),
+      approveAllVerified: () => set((s) => (s.tailored ? { decisions: approveAllVerified(s.tailored, s.decisions) } : {})),
+      replaceBullet: (bullet) => set((s) => {
+        if (!s.tailored) return {};
+        const { [bullet.id]: _dropped, ...rest } = s.decisions;
+        return {
+          tailored: { ...s.tailored, bullets: s.tailored.bullets.map((b) => (b.id === bullet.id ? bullet : b)) },
+          decisions: rest,
+          edited: { ...s.edited, [bullet.id]: true },
+        };
+      }),
+      setSummaryReview: (status) => set((s) => {
+        if (!s.tailored) return {};
+        if (status === "approved" && !s.tailored.summary_verification?.passed) return {};
+        return { tailored: { ...s.tailored, summary_review: status } };
+      }),
+      setScore: (score) => set({ score }),
       clearAll: () => {
         set({ ...EMPTY });
         try {

@@ -165,6 +165,9 @@ class ScoreRequest(BaseModel):
     tailored: TailoredResume | None = None
     analysis: GapAnalysis | None = None  # needed for bullets backed by confirmed answers
     use_llm: bool = True
+    # True: "after" counts only bullets the user approved (what export will use).
+    # False: every verified bullet not rejected (a preview of the full tailoring).
+    approved_only: bool = False
 
 
 class ScoreResponse(BaseModel):
@@ -180,7 +183,8 @@ def ats_score(body: ScoreRequest) -> ScoreResponse:
     if body.tailored is None:
         return ScoreResponse(before=before)
     checked = reverify(body.tailored, body.resume, body.analysis, body.jd.raw_text)
-    after = score(apply_tailoring(body.resume, checked), body.jd, llm=llm)
+    after = score(apply_tailoring(body.resume, checked, approved_only=body.approved_only),
+                  body.jd, llm=llm)
     return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))
 
 

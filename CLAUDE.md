@@ -43,7 +43,7 @@ backend/
     models/        pydantic schemas: resume, jd, gap, tailor, ats
     parsing/       resume (PDF/DOCX) + JD parsers            (phase 2)
     analysis/      gap analysis, clarifying questions, optional Claude review
-    tailoring/     tailor + anti-fabrication verifier         (phase 4)
+    tailoring/     tailor (rules + Claude w/ repair) + deterministic verifier
     scoring/       hybrid ATS scorer + synonym map            (phase 5)
     mentor/        advice, verdict, upskilling plan           (phase 6)
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
@@ -55,3 +55,11 @@ frontend/          Next.js + TS + Tailwind                    (phase 7)
 - Setup: `cd backend && python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"`
 - Tests: `cd backend && .venv/bin/pytest`
 - Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload`
+
+## Verifier policy
+- BLOCK: missing/unknown source, cross-role merge, new tool, new number (incl. rounding,
+  "doubled"), new/self-claimed title, other employer, stronger verb or scope.
+- WARN: content words not traceable to source, synonyms, or JD (shown, not rejected).
+- Bullets diff only against their cited sources; the Skills list doesn't license a tool
+  in a bullet. Confirmed candidate answers do, when cited via source_answer_ids.
+- Never weaken a verifier test to make tailoring pass; fix the tailor or the prompt.

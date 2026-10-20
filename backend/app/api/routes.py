@@ -4,7 +4,16 @@ from pydantic import BaseModel, Field
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
 from app.config import get_settings
 from app.llm.client import get_llm
-from app.models import WEIGHTS, GapAnalysis, JobDescription, Resume
+from app.models import (
+    WEIGHTS,
+    GapAnalysis,
+    JobDescription,
+    Resume,
+    TailoredBullet,
+    TailoredResume,
+    VerificationResult,
+)
+from app.tailoring import tailor, verify_bullet, verify_summary
 from app.parsing import (
     MAX_BYTES,
     ExtractionError,
@@ -78,3 +87,43 @@ def gap_answers(body: AnswersRequest) -> GapAnalysis:
         return apply_answers(body.analysis, body.answers)
     except AnswerError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class TailorRequest(BaseModel):
+    resume: Resume
+    jd: JobDescription
+    analysis: GapAnalysis | None = None  # include it so confirmed answers can be used
+    use_llm: bool = True
+
+
+@router.post("/api/tailor")
+def tailor_resume(body: TailorRequest) -> TailoredResume:
+    llm = get_llm() if body.use_llm else None
+    result = tailor(body.resume, body.jd, body.analysis, llm)
+    if body.use_llm and llm is None:
+        result.notes.insert(0, "No ANTHROPIC_API_KEY set.")
+    return result
+
+
+class VerifyRequest(BaseModel):
+    resume: Resume
+    bullets: list[TailoredBullet]
+    analysis: GapAnalysis | None = None
+    jd_text: str = ""
+    summary: str | None = None
+
+
+class VerifyResponse(BaseModel):
+    bullets: list[TailoredBullet]
+    summary_verification: VerificationResult | None = None
+
+
+@router.post("/api/verify")
+def verify(body: VerifyRequest) -> VerifyResponse:
+    """Re-check bullets after the user edits them in the UI. Any verification
+    sent by the client is discarded and recomputed."""
+    bullets = [b.model_copy(update={"verification": verify_bullet(
+        b, body.resume, body.analysis, body.jd_text)}) for b in body.bullets]
+    summary = (verify_summary(body.summary, body.resume, body.analysis, body.jd_text)
+               if body.summary else None)
+    return VerifyResponse(bullets=bullets, summary_verification=summary)

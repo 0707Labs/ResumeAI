@@ -227,3 +227,12 @@ IMPLIES: dict[str, list[str]] = {
     "jenkins": ["ci/cd"],
     "scrum": ["agile"],
 }
+
+
+def skill_spans(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, canonical) for every skill mention, all occurrences."""
+    return sorted(
+        (m.start(), m.end(), canonical)
+        for canonical, pattern in _compiled()
+        for m in pattern.finditer(text)
+    )

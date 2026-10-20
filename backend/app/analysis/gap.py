@@ -23,6 +23,7 @@ from app.models import (
     SectionKind,
 )
 from app.parsing.lexicon import DEGREE_WORDS, IMPLIES, find_skills
+from app.parsing.text import content_words
 
 from .experience import years_of_experience
 from .questions import assign_questions
@@ -52,13 +53,6 @@ _DEGREE_LEVELS: list[tuple[re.Pattern[str], int, str]] = [
     (re.compile(r"\bassociate'?s? degree\b", re.I), 1, "associate"),
     (re.compile(r"\bdiploma\b", re.I), 0, "diploma"),
 ]
-
-_STOPWORDS = set("""a an and or the of in on for to with at by from as is are be been being
-this that these those you your our we will can able ability strong solid good great
-excellent proven experience experienced working work knowledge understanding familiarity
-familiar skills skill years year plus etc using use including such other across within
-must should would required preferred ideally have has had who what how team teams""".split())
-
 
 @dataclass
 class _Evidence:
@@ -252,28 +246,15 @@ def _classify_degree(req: Requirement, resume: Resume, base: dict) -> GapItem:
                    question=_placeholder(req.id))
 
 
-def _content_words(text: str) -> set[str]:
-    words = re.findall(r"[a-z][a-z\-]+", text.lower())
-    return {_stem(w) for w in words if w not in _STOPWORDS and len(w) > 2}
-
-
-def _stem(w: str) -> str:
-    for suffix in ("ations", "ation", "ments", "ment", "ings", "ing", "ers", "er", "ed", "es",
-                   "s"):
-        if w.endswith(suffix) and len(w) - len(suffix) >= 4:
-            return w[: -len(suffix)]
-    return w
-
-
 def _classify_certification(req: Requirement, resume: Resume, base: dict) -> GapItem:
-    want = _content_words(req.text) - {"certif", "certificate", "certification", "certified"}
+    want = content_words(req.text) - {"certif", "certificate", "certification", "certified"}
     best_id, best = None, 0.0
     for section in resume.sections:
         if section.kind != SectionKind.CERTIFICATIONS:
             continue
         for entry in section.entries:
             for b in entry.bullets:
-                score = len(want & _content_words(b.text)) / max(len(want), 1)
+                score = len(want & content_words(b.text)) / max(len(want), 1)
                 if score > best:
                     best_id, best = b.id, score
     if best_id and best >= 0.6:
@@ -286,10 +267,10 @@ def _classify_certification(req: Requirement, resume: Resume, base: dict) -> Gap
 def _classify_overlap(req: Requirement, resume: Resume, base: dict) -> GapItem:
     """Requirements with no known skill keywords ("mentor junior analysts"):
     word overlap can suggest IMPLIED; it can never prove EVIDENCED."""
-    want = _content_words(req.text)
+    want = content_words(req.text)
     scored = []
     for b in resume.bullets():
-        shared = want & _content_words(b.text)
+        shared = want & content_words(b.text)
         if len(shared) >= 2 and len(shared) / max(len(want), 1) >= 0.4:
             scored.append((len(shared), b.id, shared))
     if scored:

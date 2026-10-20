@@ -14,7 +14,9 @@ from .resume import (
 from .tailor import (
     ChangeType,
     FlagKind,
+    RejectedAttempt,
     ReviewStatus,
+    Severity,
     TailoredBullet,
     TailoredResume,
     VerificationFlag,
@@ -25,7 +27,7 @@ __all__ = [
     "ATSReport", "AnswerKind", "Bullet", "ChangeType", "ClarifyingQuestion", "Component",
     "ContactInfo", "DISCLAIMER", "Entry", "FlagKind", "GapAnalysis", "GapItem",
     "GapStatus", "JobDescription", "ParseWarning", "ParseWarningCode", "Priority", "Requirement", "RequirementCategory",
-    "Resume", "ReviewStatus", "ScoreComponent", "Section", "SectionKind", "Seniority",
+    "RejectedAttempt", "Resume", "ReviewStatus", "Severity", "ScoreComponent", "Section", "SectionKind", "Seniority",
     "TailoredBullet", "TailoredResume", "VerificationFlag", "VerificationResult",
     "WEIGHTS",
 ]

@@ -70,3 +70,33 @@ def is_contact_line(text: str) -> bool:
     rest = PHONE_RE.sub("", URL_RE.sub("", EMAIL_RE.sub("", text)))
     # Mostly contact tokens and separators, e.g. "a@b.com | +91 98xx | linkedin.com/in/a"
     return len(re.findall(r"[A-Za-z]{3,}", rest)) <= 4
+
+
+STOPWORDS = set("""a an and or the of in on for to with at by from as is are be been being
+this that these those you your our we will can able ability strong solid good great
+excellent proven experience experienced working work knowledge understanding familiarity
+familiar skills skill years year plus etc using use including such other across within
+must should would required preferred ideally have has had who what how team teams into
+via per over under their its it them they which while also both each""".split())
+
+
+def stem(word: str) -> str:
+    """Crude suffix stripper; good enough to match "reporting" with "reports"."""
+    for suffix in ("ational", "ations", "ation", "ional", "ments", "ment", "ings", "ing",
+                   "ers", "er", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[: -len(suffix)]
+            # "cutting" -> "cutt" -> "cut"; "planned" -> "plann" -> "plan"
+            if len(word) >= 3 and word[-1] == word[-2] and word[-1] not in "lsz":
+                word = word[:-1]
+            if suffix in ("ing", "ed", "es", "er", "ers", "ings") and word.endswith("e"):
+                word = word[:-1]
+            return word
+    if word.endswith("e") and len(word) >= 4:
+        return word[:-1]  # "save" ~ "saved", "create" ~ "created"
+    return word
+
+
+def content_words(text: str) -> set[str]:
+    words = re.findall(r"[a-z][a-z\-]+", text.lower())
+    return {stem(w) for w in words if w not in STOPWORDS and len(w) > 2}

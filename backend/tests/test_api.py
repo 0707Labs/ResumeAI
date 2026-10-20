@@ -103,3 +103,27 @@ def test_gap_answers_unknown_question():
     analysis = client.post("/api/gap/analyze", json=_gap_body()).json()
     res = client.post("/api/gap/answers", json={"analysis": analysis, "answers": {"q99": "x"}})
     assert res.status_code == 422
+
+
+def test_tailor_rules_only():
+    body = _gap_body()
+    body["analysis"] = client.post("/api/gap/analyze", json=_gap_body()).json()
+    res = client.post("/api/tailor", json=body)
+    assert res.status_code == 200
+    out = res.json()
+    assert out["bullets"][0]["id"] == "t1"
+    assert all(b["verification"]["passed"] for b in out["bullets"])
+
+
+def test_verify_recomputes_and_ignores_client_verdict():
+    body = _gap_body()
+    forged = {"id": "t1", "text": "Led a churn dashboard in Tableau with Python",
+              "source_bullet_ids": ["exp1.b1"], "change_type": "reword",
+              "verification": {"flags": [], "passed": True}}
+    res = client.post("/api/verify", json={"resume": body["resume"], "bullets": [forged],
+                                           "summary": "Senior analyst."})
+    out = res.json()
+    v = out["bullets"][0]["verification"]
+    assert v["passed"] is False
+    assert {"inflated_verb", "new_tool"} <= {f["kind"] for f in v["flags"]}
+    assert out["summary_verification"]["passed"] is False

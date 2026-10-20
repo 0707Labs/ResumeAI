@@ -178,7 +178,10 @@ def _prompt(resume: Resume, jd: JobDescription, analysis: GapAnalysis | None) ->
             f"<job>\n{json.dumps(job, indent=1)}\n</job>\n\n"
             f"<answers>\n{json.dumps(answers, indent=1)}\n</answers>\n\n"
             f"Also write a 2-sentence professional summary that obeys the same rules, "
-            f"drawing only on the resume and confirmed answers.")
+            f"drawing only on the resume and confirmed answers. In the summary, use no "
+            f"job title or seniority word (analyst, manager, lead, senior, ...) except "
+            f"the candidate's own titles exactly as listed, and don't name the roles of "
+            f"people they worked with (say \"product teams\", not \"product managers\").")
 
 
 def _to_bullet(b: _LLMBullet, resume: Resume) -> TailoredBullet:

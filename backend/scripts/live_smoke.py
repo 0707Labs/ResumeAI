@@ -97,6 +97,7 @@ def main() -> int:
         print("Set ANTHROPIC_API_KEY (env or backend/.env) first.")
         return 2
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("app.mentor.polish").setLevel(logging.INFO)
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     names = list(CASES) if which == "all" else [which]
     llm = ClaudeLLM()

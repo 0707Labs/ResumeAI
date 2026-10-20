@@ -5,6 +5,7 @@ and the rest of the app never touches SDK types.
 """
 
 import logging
+import os
 from typing import Protocol, TypeVar
 
 import anthropic
@@ -28,7 +29,7 @@ class LLM(Protocol):
 
 class ClaudeLLM:
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL):
-        self.client = client or anthropic.Anthropic()
+        self.client = client or anthropic.Anthropic(default_headers=_workspace_header())
         self.model = model
         # (schema name, input tokens, output tokens) per successful call, for cost checks.
         self.usage: list[tuple[str, int, int]] = []
@@ -60,6 +61,12 @@ class ClaudeLLM:
         if response.parsed_output is None:
             raise LLMError("Claude returned output that didn't match the schema.")
         return response.parsed_output
+
+
+def _workspace_header() -> dict[str, str]:
+    """Org-level (unscoped) API keys must name a workspace on every request."""
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    return {"anthropic-workspace-id": workspace} if workspace else {}
 
 
 def _describe(exc: anthropic.APIError) -> str:

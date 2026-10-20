@@ -1,65 +1,21 @@
 """Session core: cookies, rotation, expiry, CSRF, rate limits, event logs.
 
-Sign-in flows arrive in later steps, so these tests sign in through a test-only
-route that calls start_session directly."""
+These tests sign in through the test-only /test/login route (tests/conftest.py)."""
 
 import json
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi import Depends, Request, Response
-from fastapi.testclient import TestClient
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
-from app.auth.ratelimit import SlidingWindow, limiter
-from app.auth.sessions import ABSOLUTE, start_session
+from app.auth.ratelimit import SlidingWindow
+from app.auth.sessions import ABSOLUTE
 from app.auth.tokens import hash_token
-from app.db.models import AuthSession, User
-from app.db.session import get_db
-from app.main import create_app
+from app.db.models import AuthSession
+from tests.conftest import ORIGIN
 
-ORIGIN = "http://localhost:3000"
 NOW = datetime.now(UTC)
-TABLES = "users, accounts, auth_sessions, pending_auth, email_tokens, invites, invite_redemptions"
-
-
-@pytest.fixture
-def client(pg_url, pg_engine):
-    engine = create_async_engine(pg_url, poolclass=NullPool)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def test_db():
-        async with sessions() as s:
-            yield s
-
-    app = create_app()
-    app.dependency_overrides[get_db] = test_db
-
-    @app.post("/test/login/{user_id}")
-    async def test_login(user_id: uuid.UUID, request: Request, response: Response,
-                         db: AsyncSession = Depends(get_db)) -> None:
-        await start_session(db, request, response, await db.get(User, user_id), provider="google")
-
-    limiter.reset()
-    with TestClient(app, headers={"Origin": ORIGIN}) as c:
-        yield c
-    limiter.reset()
-    with pg_engine.begin() as conn:
-        conn.execute(text(f"TRUNCATE {TABLES} CASCADE"))
-
-
-@pytest.fixture
-def user_id(pg_engine) -> uuid.UUID:
-    with pg_engine.begin() as conn:
-        return conn.execute(text(
-            "INSERT INTO users (email, email_verified_at, activated_at, age_confirmed_at,"
-            " terms_version, terms_accepted_at) VALUES ('ada@example.com', now(), now(), now(),"
-            " 'v1', now()) RETURNING id"
-        )).scalar_one()
 
 
 def sign_in(client, user_id) -> None:

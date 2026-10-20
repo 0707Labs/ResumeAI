@@ -28,6 +28,8 @@ class Settings:
     public_url: str = field(
         default_factory=lambda: os.environ.get("RT_PUBLIC_URL", "http://localhost:3000").rstrip("/")
     )
+    # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only).
+    mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox"))
 
 
 def get_settings() -> Settings:

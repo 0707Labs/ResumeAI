@@ -16,6 +16,15 @@ AuthEvent = Literal[
     "session_expired",
     "csrf_rejected",
     "rate_limited",
+    "magic_link_sent",
+    "magic_link_used",
+    "pending_created",
+    "account_linked_auto",
+    "account_unavailable",
+    "invite_checked",
+    "signup_completed",
+    "signup_failed",
+    "waitlist_joined",
 ]
 
 

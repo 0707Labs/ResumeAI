@@ -69,6 +69,9 @@ frontend/
   The app connects lazily, so the rules-only pipeline and e2e run without a DB.
   DB tests create and drop a throwaway `rt_test_*` database (`RT_TEST_ADMIN_DATABASE_URL`);
   they skip if Postgres is unreachable, except under `CI`.
+- Invites and consent notices (until the admin UI exists): `cd backend && .venv/bin/python -m app.auth.cli
+  create-invite [--email ...]` (prints the code once) and `... publish-notice PURPOSE VERSION URL --body-file F`.
+  Dev magic-link emails land in `backend/.dev-outbox/` (gitignored), never in logs.
 - Frontend: `cd frontend && npm install && npm run dev` (port 3000)
 - Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
   `npm run test:contract` with the backend running validates every endpoint against the zod schemas

@@ -13,16 +13,16 @@ def _secure() -> bool:
     return get_settings().public_url.startswith("https://")
 
 
-def _name(base: str) -> str:
+def cookie_name(base: str) -> str:
     return f"__Host-{base}" if _secure() else base
 
 
 def session_cookie() -> str:
-    return _name("rt_session")
+    return cookie_name("rt_session")
 
 
 def csrf_cookie() -> str:
-    return _name("rt_csrf")
+    return cookie_name("rt_csrf")
 
 
 def set_cookie(response: Response, name: str, value: str, *, max_age: int, http_only: bool = True) -> None:

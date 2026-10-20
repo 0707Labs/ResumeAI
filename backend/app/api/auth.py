@@ -1,7 +1,7 @@
 """Session endpoints: who am I, CSRF token, sign out.
 
-Sign-in endpoints (magic link, Google, GitHub, the invite gate) join this router
-in later steps; they all end in app.auth.sessions.start_session."""
+Sign-in endpoints live in app/api/signin.py; they all end in
+app.auth.sessions.start_session."""
 
 import uuid
 from typing import Literal

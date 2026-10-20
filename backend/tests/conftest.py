@@ -14,13 +14,29 @@ from alembic.config import Config
 from docx import Document
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
+from fastapi import Depends, Request, Response
+from fastapi.testclient import TestClient
+from pydantic import BaseModel
 from sqlalchemy import create_engine, make_url, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
+
+from app.api.signin import AuthStep, _sign_in_or_gate
+from app.auth.mailer import Mail, set_mailer
+from app.auth.ratelimit import limiter
+from app.auth.sessions import start_session
+from app.db.models import User
+from app.db.session import get_db
+from app.main import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BACKEND = Path(__file__).parent.parent
 # A server we may create and drop databases on; the local socket by default.
 ADMIN_URL = os.environ.get("RT_TEST_ADMIN_DATABASE_URL", "postgresql+psycopg:///postgres")
+ORIGIN = "http://localhost:3000"  # the default RT_PUBLIC_URL
+TABLES = ("users, accounts, auth_sessions, pending_auth, email_tokens, invites, invite_redemptions,"
+          " waitlist, consent_records, consent_notices")
 
 
 def fixture_text(name: str) -> str:
@@ -155,3 +171,93 @@ def db(pg_engine):
         finally:
             session.close()
             outer.rollback()
+
+
+class Outbox(list):
+    """Records magic-link mail instead of sending it."""
+
+    def send(self, mail: Mail) -> None:
+        self.append(mail)
+
+    def last_token(self) -> str:
+        return self[-1].link.split("#token=", 1)[1]
+
+
+class IdentityIn(BaseModel):
+    provider: str
+    provider_account_id: str
+    verified_email: str | None = None
+
+
+@pytest.fixture
+def outbox():
+    box = Outbox()
+    set_mailer(box)
+    yield box
+    set_mailer(None)
+
+
+@pytest.fixture
+def api_app(pg_url, pg_engine, outbox):
+    """The real app on the test database, plus test-only sign-in shortcuts:
+    /test/login/{user_id} and /test/identity (what an OAuth callback will do).
+    Tables are truncated afterwards."""
+    engine = create_async_engine(pg_url, poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def test_db():
+        async with sessions() as s:
+            yield s
+
+    app = create_app()
+    app.dependency_overrides[get_db] = test_db
+
+    @app.post("/test/login/{user_id}")
+    async def test_login(user_id: uuid.UUID, request: Request, response: Response,
+                         db: AsyncSession = Depends(get_db)) -> None:
+        await start_session(db, request, response, await db.get(User, user_id), provider="google")
+
+    @app.post("/test/identity")
+    async def test_identity(body: IdentityIn, request: Request, response: Response,
+                            db: AsyncSession = Depends(get_db)) -> AuthStep:
+        return await _sign_in_or_gate(db, request, response, provider=body.provider,
+                                      provider_account_id=body.provider_account_id,
+                                      verified_email=body.verified_email)
+
+    limiter.reset()
+    yield app
+    limiter.reset()
+    with pg_engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE {TABLES} CASCADE"))
+
+
+@pytest.fixture
+def new_browser(api_app):
+    """Factory for independent cookie jars against the same app."""
+    clients = []
+
+    def make() -> TestClient:
+        c = TestClient(api_app, headers={"Origin": ORIGIN})
+        c.__enter__()
+        clients.append(c)
+        return c
+
+    yield make
+    for c in clients:
+        c.__exit__(None, None, None)
+
+
+@pytest.fixture
+def client(new_browser) -> TestClient:
+    return new_browser()
+
+
+@pytest.fixture
+def user_id(pg_engine) -> uuid.UUID:
+    """An active user, ada@example.com, with no login methods yet."""
+    with pg_engine.begin() as conn:
+        return conn.execute(text(
+            "INSERT INTO users (email, email_verified_at, activated_at, age_confirmed_at,"
+            " terms_version, terms_accepted_at) VALUES ('ada@example.com', now(), now(), now(),"
+            " 'v1', now()) RETURNING id"
+        )).scalar_one()

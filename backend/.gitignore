@@ -1,0 +1,3 @@
+
+# Dev magic-link emails (contain sign-in tokens)
+.dev-outbox/

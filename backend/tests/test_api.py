@@ -156,3 +156,13 @@ def test_ats_score_ignores_forged_verification():
 def test_ats_synonyms_endpoint():
     syn = client.get("/api/ats/synonyms").json()
     assert "k8s" in syn["kubernetes"]
+
+
+def test_mentor_endpoint():
+    body = _gap_body()
+    res = client.post("/api/mentor", json=body)
+    assert res.status_code == 200
+    out = res.json()
+    assert out["verdict"]["decision"] == "apply"
+    assert len(out["plan"]["weeks"]) == 2
+    assert out["actions"][0]["id"] == "a1"

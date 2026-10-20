@@ -31,3 +31,22 @@ __all__ = [
     "TailoredBullet", "TailoredResume", "VerificationFlag", "VerificationResult",
     "WEIGHTS",
 ]
+
+from .mentor import (  # noqa: E402
+    Action,
+    ActionKind,
+    Decision,
+    GapSeverity,
+    MentorAdvice,
+    MentorGap,
+    PlanTask,
+    PlanWeek,
+    Strength,
+    UpskillingPlan,
+    Verdict,
+)
+
+__all__ += [
+    "Action", "ActionKind", "Decision", "GapSeverity", "MentorAdvice", "MentorGap", "PlanTask", "PlanWeek",
+    "Strength", "UpskillingPlan", "Verdict",
+]

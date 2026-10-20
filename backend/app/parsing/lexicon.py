@@ -236,3 +236,38 @@ def skill_spans(text: str) -> list[tuple[int, int, str]]:
         for canonical, pattern in _compiled()
         for m in pattern.finditer(text)
     )
+
+
+# How to write a canonical skill for people. Anything not listed is capitalized.
+_DISPLAY = {
+    "sql": "SQL", "javascript": "JavaScript", "typescript": "TypeScript", "c++": "C++",
+    "c#": "C#", "php": "PHP", "html": "HTML", "css": "CSS", "next.js": "Next.js",
+    "node.js": "Node.js", ".net": ".NET", "fastapi": "FastAPI", "graphql": "GraphQL",
+    "rest api": "REST APIs", "grpc": "gRPC", "pandas": "pandas", "numpy": "NumPy",
+    "scikit-learn": "scikit-learn", "tensorflow": "TensorFlow", "pytorch": "PyTorch",
+    "dbt": "dbt", "nlp": "NLP", "llm": "LLMs", "a/b testing": "A/B testing",
+    "etl": "ETL", "power bi": "Power BI", "postgresql": "PostgreSQL", "mysql": "MySQL",
+    "mongodb": "MongoDB", "dynamodb": "DynamoDB", "bigquery": "BigQuery", "aws": "AWS",
+    "gcp": "GCP", "ci/cd": "CI/CD", "github actions": "GitHub Actions", "s3": "S3",
+    "seo": "SEO", "object-oriented programming": "object-oriented programming",
+    "machine learning": "machine learning", "deep learning": "deep learning",
+    "computer vision": "computer vision", "statistics": "statistics",
+    "data analysis": "data analysis", "data visualization": "data visualization",
+    "unit testing": "unit testing", "system design": "system design",
+    "distributed systems": "distributed systems", "data structures": "data structures",
+    "algorithms": "algorithms", "microservices": "microservices", "serverless": "serverless",
+    "security": "security", "product management": "product management",
+    "project management": "project management",
+    "stakeholder management": "stakeholder management", "spring boot": "Spring Boot",
+}
+
+
+def display_name(canonical: str) -> str:
+    return _DISPLAY.get(canonical, canonical[:1].upper() + canonical[1:])
+
+
+def display_list(skills: list[str], joiner: str = "and") -> str:
+    names = [display_name(s) for s in skills]
+    if len(names) <= 2:
+        return f" {joiner} ".join(names)
+    return ", ".join(names[:-1]) + f", {joiner} {names[-1]}"

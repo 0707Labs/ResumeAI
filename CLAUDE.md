@@ -45,7 +45,7 @@ backend/
     analysis/      gap analysis, clarifying questions, optional Claude review
     tailoring/     tailor (rules + Claude w/ repair) + deterministic verifier
     scoring/       hybrid ATS scorer (synonyms in parsing/synonyms.py)
-    mentor/        advice, verdict, upskilling plan           (phase 6)
+    mentor/        strengths/gaps/actions, verdict, 2-week plan, optional Claude polish
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/          Next.js + TS + Tailwind                    (phase 7)

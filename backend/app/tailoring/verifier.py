@@ -88,7 +88,7 @@ def quantities(text: str) -> list[Quantity]:
     return out
 
 
-def _same(a: Quantity, b: Quantity) -> bool:
+def same_quantity(a: Quantity, b: Quantity) -> bool:
     kinds_ok = a.kind == b.kind or {a.kind, b.kind} == {"plain", "money"}
     return kinds_ok and abs(a.value - b.value) < 1e-9
 
@@ -243,7 +243,7 @@ def check_text(text: str, sources: Sources, jd_text: str = "") -> list[Verificat
     # 3. Numbers: every quantity must match one in the source, same kind.
     src_q = quantities(src)
     for q in quantities(text):
-        if not any(_same(q, s) for s in src_q):
+        if not any(same_quantity(q, s) for s in src_q):
             flags.append(_block(FlagKind.NEW_NUMBER, q.raw,
                                 f'"{q.raw}" doesn\'t appear in the cited source.'))
 

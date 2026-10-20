@@ -4,11 +4,13 @@ from pydantic import BaseModel, Field
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
 from app.config import get_settings
 from app.llm.client import get_llm
+from app.mentor import build_advice, polish
 from app.models import (
     WEIGHTS,
     ATSReport,
     GapAnalysis,
     JobDescription,
+    MentorAdvice,
     Resume,
     TailoredBullet,
     TailoredResume,
@@ -168,3 +170,20 @@ def ats_score(body: ScoreRequest) -> ScoreResponse:
             checked.summary, body.resume, body.analysis, body.jd.raw_text)})
     after = score(apply_tailoring(body.resume, checked), body.jd, llm=llm)
     return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))
+
+
+class MentorRequest(BaseModel):
+    resume: Resume
+    jd: JobDescription
+    analysis: GapAnalysis | None = None  # computed (rules only) if omitted
+    ats: ATSReport | None = None  # computed (rules only) if omitted
+    use_llm: bool = True
+
+
+@router.post("/api/mentor")
+def mentor(body: MentorRequest) -> MentorAdvice:
+    analysis = body.analysis or analyze(body.resume, body.jd)
+    ats = body.ats or score(body.resume, body.jd)
+    advice = build_advice(body.resume, body.jd, analysis, ats)
+    llm = get_llm() if body.use_llm else None
+    return polish(advice, llm) if llm is not None else advice

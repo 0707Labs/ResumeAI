@@ -40,6 +40,7 @@ type Data = {
   edited: Record<string, true>; // tailored bullet ids the user rewrote by hand
   score: ScoreResponse | null;
   mentor: MentorAdvice | null;
+  checked: Record<string, boolean>; // mentor checklist: "action:a1", "plan:w1t2"
 };
 
 type Actions = {
@@ -57,6 +58,8 @@ type Actions = {
   replaceBullet: (bullet: TailoredBullet) => void;
   setSummaryReview: (status: ReviewStatus) => void;
   setScore: (score: ScoreResponse | null) => void;
+  setMentor: (mentor: MentorAdvice) => void;
+  toggleChecked: (key: string, value: boolean) => void;
   clearAll: () => void;
 };
 
@@ -74,6 +77,7 @@ const EMPTY: Data = {
   edited: {},
   score: null,
   mentor: null,
+  checked: {},
 };
 
 // Anything computed from the resume or JD is stale once either changes.
@@ -86,6 +90,7 @@ const DOWNSTREAM: Partial<Data> = {
   edited: {},
   score: null,
   mentor: null,
+  checked: {},
 };
 
 export const useSession = create<Data & Actions>()(
@@ -96,9 +101,9 @@ export const useSession = create<Data & Actions>()(
       clearResume: () => set({ resume: null, resumeInput: null, ...DOWNSTREAM }),
       setJobInputs: (patch) => set((s) => ({ ...patch, ...(s.analysis ? DOWNSTREAM : {}) })),
       setAnalyzed: (jd, analysis) =>
-        set({ jd, analysis, answers: {}, tailored: null, decisions: {}, edited: {}, score: null, mentor: null }),
+        set({ jd, analysis, answers: {}, tailored: null, decisions: {}, edited: {}, score: null, mentor: null, checked: {} }),
       setAnswer: (id, answer) => set((s) => ({ answers: { ...s.answers, [id]: answer } })),
-      setAnswered: (analysis) => set({ analysis, tailored: null, decisions: {}, edited: {}, score: null, mentor: null }),
+      setAnswered: (analysis) => set({ analysis, tailored: null, decisions: {}, edited: {}, score: null, mentor: null, checked: {} }),
       setTailored: (tailored) => set({ tailored, decisions: {}, edited: {}, score: null }),
       decide: (id, status) => set((s) => {
         const b = s.tailored?.bullets.find((x) => x.id === id);
@@ -120,6 +125,8 @@ export const useSession = create<Data & Actions>()(
         return { tailored: { ...s.tailored, summary_review: status } };
       }),
       setScore: (score) => set({ score }),
+      setMentor: (mentor) => set({ mentor }), // ticks survive a refresh: ids are stable
+      toggleChecked: (key, value) => set((s) => ({ checked: { ...s.checked, [key]: value } })),
       clearAll: () => {
         set({ ...EMPTY });
         try {

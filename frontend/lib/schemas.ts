@@ -258,6 +258,14 @@ export const MentorAdvice = z.object({
     })),
     not_addressable: z.array(z.string()),
   }),
+  talking_points: z.array(z.object({
+    id: z.string(),
+    kind: z.enum(["strength", "answer", "gap"]),
+    prompt: z.string(),
+    detail: z.string(),
+    bullet_ids: z.array(z.string()),
+    requirement_ids: z.array(z.string()),
+  })),
   notes: z.array(z.string()),
 });
 

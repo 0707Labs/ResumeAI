@@ -42,11 +42,12 @@ from .mentor import (  # noqa: E402
     PlanTask,
     PlanWeek,
     Strength,
+    TalkingPoint,
     UpskillingPlan,
     Verdict,
 )
 
 __all__ += [
     "Action", "ActionKind", "Decision", "GapSeverity", "MentorAdvice", "MentorGap", "PlanTask", "PlanWeek",
-    "Strength", "UpskillingPlan", "Verdict",
+    "Strength", "TalkingPoint", "UpskillingPlan", "Verdict",
 ]

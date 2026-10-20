@@ -33,6 +33,7 @@ from app.parsing.jd_parser import SENIORITY_ORDER, infer_seniority
 from app.parsing.lexicon import display_list
 
 from .plan import build_plan
+from .talking_points import build_talking_points
 
 MAX_STRENGTHS = 5
 MAX_METRIC_EDITS = 3
@@ -47,7 +48,8 @@ def build_advice(resume: Resume, jd: JobDescription, analysis: GapAnalysis, ats:
     plan = build_plan(analysis)
     actions = _actions(resume, analysis, ats, verdict, plan.focus_skills)
     return MentorAdvice(strengths=strengths, gaps=gaps, actions=actions, verdict=verdict,
-                        plan=plan, notes=["Rules-based advice."])
+                        plan=plan, talking_points=build_talking_points(resume, analysis, plan),
+                        notes=["Rules-based advice."])
 
 
 # --- strengths ---------------------------------------------------------------------------

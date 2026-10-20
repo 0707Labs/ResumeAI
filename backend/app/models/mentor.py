@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field
 
@@ -82,10 +83,22 @@ class UpskillingPlan(StrictModel):
     not_addressable: list[str] = Field(default_factory=list)  # e.g. years, degree
 
 
+class TalkingPoint(StrictModel):
+    """Something to prepare for the interview, grounded in the resume or an answer."""
+
+    id: str = Field(pattern=r"^tp[0-9]+$")
+    kind: Literal["strength", "answer", "gap"]
+    prompt: str
+    detail: str
+    bullet_ids: list[str] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+
+
 class MentorAdvice(StrictModel):
     strengths: list[Strength]
     gaps: list[MentorGap]
     actions: list[Action]
     verdict: Verdict
     plan: UpskillingPlan
+    talking_points: list[TalkingPoint] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)

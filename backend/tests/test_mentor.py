@@ -263,3 +263,38 @@ def test_polish_failure_keeps_rules_text():
     out = polish(adv, PolishLLM(error=LLMError("Claude declined this request.")))
     assert out.actions == adv.actions
     assert out.notes[-1] == "Kept rules wording: Claude declined this request."
+
+
+# --- interview talking points ---------------------------------------------------------------
+
+
+def test_talking_points_cover_strengths_answers_and_gaps():
+    def ans(g):
+        q = next(i.question for i in g.items if "tableau" in i.missing_keywords)
+        return {q.id: "Yes, I built two Tableau dashboards for the survey team."}
+    r, _, adv = advise(JUNIOR, JD, ans)
+    kinds = [p.kind for p in adv.talking_points]
+    assert "answer" in kinds and "gap" in kinds
+    answer = next(p for p in adv.talking_points if p.kind == "answer")
+    assert "two Tableau dashboards" in answer.detail
+    gap = next(p for p in adv.talking_points if p.kind == "gap")
+    assert "haven't used it in a job yet" in gap.detail
+    assert [p.id for p in adv.talking_points] == [f"tp{i}" for i in range(1, len(kinds) + 1)]
+
+
+def test_strength_stories_quote_real_work_bullets_only():
+    r, _, adv = advise(fixture_text("resume_analyst.txt"), fixture_text("jd_senior_analyst.txt"))
+    stories = [p for p in adv.talking_points if p.kind == "strength"]
+    assert stories and len(stories) <= 3
+    for p in stories:
+        assert p.bullet_ids[0].startswith(("exp", "proj"))  # never a certificate line
+        assert r.bullet_by_id(p.bullet_ids[0]).text in p.prompt
+    numbered = next(p for p in stories if "30%" in p.prompt)
+    assert "how you measured it" in numbered.detail
+
+
+def test_polish_keeps_talking_point_quotes():
+    _, _, adv = advise(fixture_text("resume_analyst.txt"), fixture_text("jd_senior_analyst.txt"))
+    out = polish(adv, PolishLLM(lambda k, t: ("Interview tip: " + t) if k.startswith("talking.") else t))
+    assert all(p.detail.startswith("Interview tip: ") for p in out.talking_points)
+    assert [p.prompt for p in out.talking_points] == [p.prompt for p in adv.talking_points]

@@ -48,6 +48,7 @@ def _fields(advice: MentorAdvice) -> dict[str, str]:
     f.update({f"actions.{a.id}": a.text for a in advice.actions})
     for w in advice.plan.weeks:
         f.update({f"plan.{t.id}": t.detail for t in w.tasks})
+    f.update({f"talking.{p.id}": p.detail for p in advice.talking_points})
     return f
 
 
@@ -98,6 +99,8 @@ def polish(advice: MentorAdvice, llm: LLM) -> MentorAdvice:
             for i, g in enumerate(advice.gaps)]
     actions = [a.model_copy(update={"text": get(f"actions.{a.id}", a.text)})
                for a in advice.actions]
+    talking = [p.model_copy(update={"detail": get(f"talking.{p.id}", p.detail)})
+               for p in advice.talking_points]
     weeks = [w.model_copy(update={"tasks": [
         t.model_copy(update={"detail": get(f"plan.{t.id}", t.detail)}) for t in w.tasks]})
         for w in advice.plan.weeks]
@@ -107,4 +110,5 @@ def polish(advice: MentorAdvice, llm: LLM) -> MentorAdvice:
     return advice.model_copy(update={
         "verdict": verdict, "strengths": strengths, "gaps": gaps, "actions": actions,
         "plan": advice.plan.model_copy(update={"weeks": weeks}),
+        "talking_points": talking,
         "notes": [n for n in advice.notes if n != "Rules-based advice."] + [note]})

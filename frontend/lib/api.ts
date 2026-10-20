@@ -138,7 +138,8 @@ export const api = {
       signal,
     }),
 
-  mentor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, ats: S.ATSReport, useLLM = true) =>
+  /** ats: the "before" report; omit and the backend computes it. */
+  mentor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, ats: S.ATSReport | null = null, useLLM = true) =>
     request(S.MentorAdvice, "/api/mentor", json({ resume, jd, analysis, ats, use_llm: useLLM })),
 
   async exportFile(fmt: "docx" | "pdf", resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string) {

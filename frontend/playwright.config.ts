@@ -31,7 +31,8 @@ export default defineConfig({
     {
       command: "npm run dev",
       url: "http://localhost:3000",
-      env: { NEXT_PUBLIC_API_URL: "http://localhost:8000" },
+      // The browser calls this origin; Next proxies /api/* and /health to the backend.
+      env: { RT_BACKEND_URL: "http://localhost:8000" },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

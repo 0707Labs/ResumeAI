@@ -3,13 +3,17 @@
  * so a backend/UI mismatch shows up as a clear error instead of a broken screen.
  *
  * Privacy: these are the only network calls the app makes, and they go only to
- * NEXT_PUBLIC_API_URL (our backend). No analytics, no third parties.
+ * our own origin, which Next.js proxies to the backend (or NEXT_PUBLIC_API_URL if set).
+ * No analytics, no third parties.
  */
 import type { z } from "zod";
 
 import * as S from "./schemas";
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+/** Same origin in the browser (see next.config.ts rewrites); the backend itself under Node (contract tests). */
+export const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? (typeof window === "undefined" ? "http://localhost:8000" : "")
+).replace(/\/$/, "");
 
 export type ApiErrorKind =
   | "backend_down"
@@ -98,10 +102,47 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+/** The double-submit CSRF token: the backend's rt_csrf cookie, fetched if not set yet. */
+async function csrfToken(): Promise<string> {
+  const fromCookie = /(?:^|;\s*)(?:__Host-)?rt_csrf=([^;]+)/.exec(typeof document === "undefined" ? "" : document.cookie)?.[1];
+  return fromCookie ? decodeURIComponent(fromCookie) : (await request(S.CsrfToken, "/api/auth/csrf")).csrf_token;
+}
+
+/** A state-changing auth/account call: same origin, with the CSRF header. */
+async function authPost(path: string, body?: unknown): Promise<Response> {
+  const headers: Record<string, string> = { "X-CSRF-Token": await csrfToken() };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  try {
+    return await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "same-origin",
+    });
+  } catch {
+    throw new ApiError("backend_down", 0);
+  }
+}
+
 export const ACCEPTED_TYPES = [".pdf", ".docx"] as const;
 
 export const api = {
   health: () => request(S.Health, "/health"),
+
+  /** The signed-in user, or null when there's no session. */
+  async me(): Promise<S.Me | null> {
+    try {
+      return await request(S.Me, "/api/me", { credentials: "same-origin" });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return null;
+      throw e;
+    }
+  },
+
+  async logout(): Promise<void> {
+    const res = await authPost("/api/auth/logout");
+    if (!res.ok) throw new ApiError(classify(res.status, await readDetail(res)), res.status);
+  },
   sample: () => request(S.Sample, "/api/sample"),
 
   parseResumeFile(file: File) {

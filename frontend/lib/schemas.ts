@@ -277,6 +277,17 @@ export const ExportPreview = z.object({
 export const Health = z.object({ status: z.string(), llm_configured: z.boolean() });
 export const Sample = z.object({ resume_text: z.string(), jd_text: z.string() });
 
+// --- auth ------------------------------------------------------------------------------------------------
+
+export const Me = z.object({
+  id: z.uuid(),
+  email: z.string(),
+  name: z.string().nullable(),
+  role: z.enum(["user", "admin"]),
+  status: z.enum(["active", "suspended"]),
+});
+export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
+
 // --- inferred types ------------------------------------------------------------------------------------
 
 export type Resume = z.infer<typeof Resume>;
@@ -298,3 +309,4 @@ export type ATSReport = z.infer<typeof ATSReport>;
 export type ScoreResponse = z.infer<typeof ScoreResponse>;
 export type MentorAdvice = z.infer<typeof MentorAdvice>;
 export type ExportPreview = z.infer<typeof ExportPreview>;
+export type Me = z.infer<typeof Me>;

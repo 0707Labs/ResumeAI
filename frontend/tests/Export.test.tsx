@@ -107,12 +107,13 @@ describe("Step 6: export", () => {
     expect(saveBlob).not.toHaveBeenCalled();
   });
 
-  it("sends nothing anywhere but our backend", async () => {
+  it("sends nothing anywhere but our own origin (proxied to the backend)", async () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify(preview)));
     vi.stubGlobal("fetch", fetchMock);
     render(<ExportPage />);
     await screen.findByTestId("resume-document");
-    expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith("http://localhost:8000/"))).toBe(true);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith("/api/"))).toBe(true);
     vi.unstubAllGlobals();
   });
 });

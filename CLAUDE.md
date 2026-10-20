@@ -48,6 +48,7 @@ backend/
     mentor/        strengths/gaps/actions, verdict, 2-week plan, optional Claude polish
     llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
     db/            SQLAlchemy models (auth, invites, waitlist, consent) + async session
+    auth/          DB sessions (hashed tokens, rotation), cookies, CSRF, rate limits, auth event log
   alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
@@ -82,7 +83,8 @@ frontend/
 - Validate every API response with the zod schema in lib/schemas.ts; add the schema first.
 - Semantic color tokens only (bg-surface, text-muted, text-ok...); light/dark via CSS variables.
 - Status is never color-only: pair it with an icon and a word.
-- No network calls except NEXT_PUBLIC_API_URL. No analytics.
+- No network calls except our own origin: next.config.ts proxies /api/* and /health to FastAPI
+  (RT_BACKEND_URL). Same origin keeps auth cookies first-party. No analytics.
 - UI copy: warm, honest, mentor-like; never salesy.
 
 ## Verifier policy
@@ -92,3 +94,11 @@ frontend/
 - Bullets diff only against their cited sources; the Skills list doesn't license a tool
   in a bullet. Confirmed candidate answers do, when cited via source_answer_ids.
 - Never weaken a verifier test to make tailoring pass; fix the tailor or the prompt.
+
+## Auth conventions
+- FastAPI owns sign-in (Authlib for OAuth). Sessions are opaque random tokens; the DB stores
+  only sha256 hashes (sessions, pending sign-ups, magic links, invite codes). Never store provider tokens.
+- Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
+- State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.
+- Log auth events only via `log_auth_event`: user_id at most, never email, IP, code or token.
+- No user row exists before invite redemption + required consent (one transaction).

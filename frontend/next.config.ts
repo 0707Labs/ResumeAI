@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
 
+// The browser talks only to this origin; /api/* and /health are proxied to FastAPI.
+// Same origin keeps the auth cookies first-party (SameSite=Lax, no CORS credentials).
+const BACKEND_URL = (process.env.RT_BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    return [
+      { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },
+      { source: "/health", destination: `${BACKEND_URL}/health` },
+    ];
+  },
 };
 
 export default nextConfig;

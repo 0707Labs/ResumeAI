@@ -54,6 +54,7 @@ frontend/
   lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
                    store.ts (zustand, sessionStorage), theme.ts, diff.ts
   tests/           vitest + Testing Library; contract.test.ts hits the real backend
+  e2e/             Playwright happy path against the real backend (rules-only)
 ```
 
 ## Commands
@@ -63,6 +64,10 @@ frontend/
 - Frontend: `cd frontend && npm install && npm run dev` (port 3000)
 - Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
   `npm run test:contract` with the backend running validates every endpoint against the zod schemas
+- E2E: `npm run test:e2e` (Playwright, Chromium; one-time `npx playwright install chromium`).
+  Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
+  reusing servers already running there; a backend with a real key fails the spec's rules-only check.
+  Specs live in e2e/; Vitest only picks up tests/.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
   `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.
 

@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "@/lib/api";
+import { authApi } from "@/lib/auth";
 
 describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
   it("every endpoint matches the zod schemas", async () => {
@@ -36,4 +37,14 @@ describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
     expect(mentor.plan.weeks).toHaveLength(2);
     expect(out.filename).toMatch(/\.pdf$/);
   }, 30_000);
+
+  it("signed-out auth endpoints match the zod schemas", async () => {
+    // Node has no cookie jar, so this is the view of a first-time visitor.
+    expect(await api.me()).toBeNull();
+    const providers = await authApi.providers();
+    expect(providers.email).toBe(true);
+    const notices = await authApi.notices(); // needs the database; empty until notices are published
+    expect(Array.isArray(notices)).toBe(true);
+    expect(await authApi.pending()).toBeNull();
+  });
 });

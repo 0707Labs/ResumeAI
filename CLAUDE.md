@@ -79,6 +79,9 @@ frontend/
   Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
   reusing servers already running there; a backend with a real key fails the spec's rules-only check.
   Specs live in e2e/; Vitest only picks up tests/.
+  e2e/auth.spec.ts also needs Postgres (the backend's RT_DATABASE_URL, migrated): it seeds an
+  invite and any missing notices with the admin CLI and reads magic links from backend/.dev-outbox.
+  Each run sends 2 magic links; a reused backend keeps the 5-per-15-min per-IP limit in memory.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
   `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.
 
@@ -108,3 +111,5 @@ frontend/
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.
 - Log auth events only via `log_auth_event`: user_id at most, never email, IP, code or token.
 - No user row exists before invite redemption + required consent (one transaction).
+- Frontend auth calls live in lib/auth.ts (AuthError codes -> copy via authMessage). Provider
+  buttons follow Google/GitHub branding (official marks, brand colour tokens in globals.css).

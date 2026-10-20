@@ -191,3 +191,10 @@ def test_auth_events_carry_no_pii(client, user_id, caplog):
     blob = "\n".join(lines)
     for secret in ("ada@example.com", token, hash_token(token), "testclient"):
         assert secret not in blob
+
+
+def test_provider_availability_follows_configuration(client, monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+    monkeypatch.delenv("GITHUB_CLIENT_ID", raising=False)
+    assert client.get("/api/auth/providers").json() == {"google": True, "github": False, "email": True}

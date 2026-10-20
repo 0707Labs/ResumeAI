@@ -24,6 +24,12 @@
   --bad: #a3262d;
   --bad-bg: #fbe9ea;
   --focus: #2563eb;
+  /* Provider buttons: colors fixed by Google's and GitHub's brand guidelines, not our palette. */
+  --google-bg: #ffffff;
+  --google-border: #747775;
+  --google-fg: #1f1f1f;
+  --github-bg: #24292f;
+  --github-fg: #ffffff;
   color-scheme: light;
 }
 
@@ -47,6 +53,11 @@
     --bad: #f2959a;
     --bad-bg: #321a1c;
     --focus: #8ab4ff;
+    --google-bg: #131314;
+    --google-border: #8e918f;
+    --google-fg: #e3e3e3;
+    --github-bg: #ffffff;
+    --github-fg: #1f2328;
     color-scheme: dark;
   }
 }
@@ -70,6 +81,11 @@
   --bad: #f2959a;
   --bad-bg: #321a1c;
   --focus: #8ab4ff;
+  --google-bg: #131314;
+  --google-border: #8e918f;
+  --google-fg: #e3e3e3;
+  --github-bg: #ffffff;
+  --github-fg: #1f2328;
   color-scheme: dark;
 }
 
@@ -92,6 +108,11 @@
   --color-bad: var(--bad);
   --color-bad-bg: var(--bad-bg);
   --color-focus: var(--focus);
+  --color-google-bg: var(--google-bg);
+  --color-google-border: var(--google-border);
+  --color-google-fg: var(--google-fg);
+  --color-github-bg: var(--github-bg);
+  --color-github-fg: var(--github-fg);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 

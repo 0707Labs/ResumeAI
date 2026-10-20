@@ -4,12 +4,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { api } from "@/lib/api";
+import type { Me } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
-import { MonitorIcon, MoonIcon, SunIcon, TrashIcon } from "./icons";
+import { MonitorIcon, MoonIcon, SunIcon, TrashIcon, UserIcon } from "./icons";
 import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
+
+/** Sign-in and account pages: no tailoring progress bar there. */
+const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account"];
+const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 
 const STEPS = [
   { href: "/", label: "Your details" },
@@ -39,6 +45,7 @@ export function useHydrated() {
 
 export function AppShell({ children, initialTheme }: { children: React.ReactNode; initialTheme: Theme }) {
   useHydrated();
+  const pathname = usePathname();
   return (
     <>
       <a href="#main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
@@ -50,15 +57,33 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
           <div className="flex items-center gap-2">
             <ThemeToggle initial={initialTheme} />
             <ClearAll />
+            <AccountLink pathname={pathname} />
           </div>
         </div>
-        <StepNav />
+        {!isAuthPath(pathname) && <StepNav />}
       </header>
       <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-muted sm:px-6">
         Your resume stays in this browser tab and is only sent to the Resume Tailor service. No analytics, no tracking.
       </footer>
     </>
+  );
+}
+
+/** "Sign in" or "Account". Re-checked on each navigation, so it follows sign-in and sign-out. */
+function AccountLink({ pathname }: { pathname: string }) {
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    api.me().then((m) => { if (live) setMe(m); }).catch(() => { if (live) setMe(null); });
+    return () => { live = false; };
+  }, [pathname]);
+  if (me === undefined) return null;
+  const cls = "flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg";
+  return me ? (
+    <Link href="/account" className={cls}><UserIcon />Account</Link>
+  ) : (
+    <Link href="/login" className={cls}>Sign in</Link>
   );
 }
 

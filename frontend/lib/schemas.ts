@@ -288,6 +288,32 @@ export const Me = z.object({
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
+const Provider = z.enum(["google", "github", "email"]);
+export const ProviderAvailability = z.object({ google: z.boolean(), github: z.boolean(), email: z.boolean() });
+/** Where the auth flow goes next (backend AuthStep). */
+export const AuthStep = z.object({ next: z.enum(["signed_in", "invite", "consent", "verify_email", "linked"]) });
+export const Accepted = z.object({ status: z.literal("ok") });
+export const PendingSignIn = z.object({
+  kind: z.enum(["signup", "needs_email"]),
+  provider: Provider,
+  email: z.string().nullable(),
+  invite_accepted: z.boolean(),
+  has_bound_invite: z.boolean(),
+});
+export const Notice = z.object({
+  id: z.uuid(),
+  purpose: z.enum(["service", "research", "age_18_plus", "waitlist"]),
+  version: z.string(),
+  body_url: z.string(),
+});
+export const Notices = z.array(Notice);
+export const LinkedAccount = z.object({ id: z.uuid(), provider: Provider, email: z.string(), linked_at: z.string() });
+export const AccountProviders = z.object({
+  accounts: z.array(LinkedAccount),
+  can_unlink: z.boolean(),
+  available: z.object({ google: z.boolean(), github: z.boolean(), email: z.boolean() }),
+});
+
 // --- inferred types ------------------------------------------------------------------------------------
 
 export type Resume = z.infer<typeof Resume>;
@@ -310,3 +336,9 @@ export type ScoreResponse = z.infer<typeof ScoreResponse>;
 export type MentorAdvice = z.infer<typeof MentorAdvice>;
 export type ExportPreview = z.infer<typeof ExportPreview>;
 export type Me = z.infer<typeof Me>;
+export type ProviderAvailability = z.infer<typeof ProviderAvailability>;
+export type AuthStep = z.infer<typeof AuthStep>;
+export type PendingSignIn = z.infer<typeof PendingSignIn>;
+export type Notice = z.infer<typeof Notice>;
+export type LinkedAccount = z.infer<typeof LinkedAccount>;
+export type AccountProviders = z.infer<typeof AccountProviders>;

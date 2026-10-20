@@ -55,3 +55,9 @@ export const TrashIcon = (p: IconProps) => (
   <Icon {...p}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></Icon>
 );
 export const ArrowRightIcon = (p: IconProps) => <Icon {...p}><path d="M5 12h14M13 5l7 7-7 7" /></Icon>;
+export const MailIcon = (p: IconProps) => (
+  <Icon className="h-5 w-5" {...p}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></Icon>
+);
+export const UserIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></Icon>
+);

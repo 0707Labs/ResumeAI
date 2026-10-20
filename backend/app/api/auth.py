@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import oauth
 from app.auth.cookies import csrf_cookie, read_cookie
 from app.auth.csrf import issue_csrf, require_csrf
 from app.auth.deps import current_user
@@ -34,9 +35,22 @@ class CsrfToken(BaseModel):
     csrf_token: str
 
 
+class ProviderAvailability(BaseModel):
+    google: bool
+    github: bool
+    email: bool = True
+
+
 @router.get("/api/me")
 async def me(user: User = Depends(current_user)) -> Me:
     return Me(id=user.id, email=user.email, name=user.name, role=user.role, status=user.status)
+
+
+@router.get("/api/auth/providers")
+async def providers() -> ProviderAvailability:
+    """Which sign-in buttons work right now (OAuth apps configured)."""
+    return ProviderAvailability(google=oauth.credentials("google") is not None,
+                                github=oauth.credentials("github") is not None)
 
 
 @router.get("/api/auth/csrf", dependencies=[Depends(rate_limit("csrf", 60, 60))])

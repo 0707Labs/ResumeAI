@@ -103,7 +103,7 @@ const json = (body: unknown): RequestInit => ({
 });
 
 /** The double-submit CSRF token: the backend's rt_csrf cookie, fetched if not set yet. */
-async function csrfToken(): Promise<string> {
+export async function csrfToken(): Promise<string> {
   const fromCookie = /(?:^|;\s*)(?:__Host-)?rt_csrf=([^;]+)/.exec(typeof document === "undefined" ? "" : document.cookie)?.[1];
   return fromCookie ? decodeURIComponent(fromCookie) : (await request(S.CsrfToken, "/api/auth/csrf")).csrf_token;
 }

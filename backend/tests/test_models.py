@@ -133,7 +133,7 @@ def test_missing_gap_requires_question_and_no_evidence():
 
 @pytest.mark.parametrize("status", [GapStatus.EVIDENCED, GapStatus.IMPLIED])
 def test_evidenced_and_implied_require_evidence(status):
-    with pytest.raises(ValidationError, match="evidence bullet"):
+    with pytest.raises(ValidationError, match="at least one piece of evidence"):
         GapItem(requirement_id="req1", requirement_text="SQL", status=status)
     GapItem(requirement_id="req1", requirement_text="SQL", status=status,
             evidence_bullet_ids=["exp1.b1"])

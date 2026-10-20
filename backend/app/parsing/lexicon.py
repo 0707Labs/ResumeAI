@@ -61,7 +61,7 @@ SKILLS: dict[str, list[str]] = {
     "computer vision": [],
     "llm": ["llms", "large language models", "large language model"],
     "statistics": ["statistical analysis"],
-    "a/b testing": ["ab testing", "a/b tests"],
+    "a/b testing": ["ab testing", "a/b tests", "a/b test", "ab tests", "split testing"],
     "data analysis": ["data analytics"],
     "data visualization": ["data viz"],
     "etl": ["elt", "data pipelines", "data pipeline"],
@@ -181,3 +181,49 @@ def canonicalize(term: str) -> str | None:
     """Map a single term ("JS", "Postgres") to its canonical skill, if known."""
     found = find_skills(term.strip())
     return found[0] if len(found) == 1 else None
+
+
+# Using the key skill is evidence of the listed skills, but only indirectly: a
+# bullet naming "pandas" implies Python without naming it. Gap analysis treats
+# these as IMPLIED, never EVIDENCED, and the tailor still can't write the
+# implied skill into a bullet unless the candidate confirms it.
+IMPLIES: dict[str, list[str]] = {
+    "pandas": ["python", "data analysis"],
+    "numpy": ["python"],
+    "scikit-learn": ["python", "machine learning"],
+    "pytorch": ["python", "deep learning", "machine learning"],
+    "tensorflow": ["python", "deep learning", "machine learning"],
+    "keras": ["python", "deep learning", "machine learning"],
+    "django": ["python", "rest api"],
+    "flask": ["python", "rest api"],
+    "fastapi": ["python", "rest api"],
+    "spring boot": ["java", "rest api"],
+    "express": ["node.js", "javascript", "rest api"],
+    "react": ["javascript", "html", "css"],
+    "next.js": ["react", "javascript"],
+    "angular": ["typescript", "javascript"],
+    "vue": ["javascript"],
+    "node.js": ["javascript"],
+    "typescript": ["javascript"],
+    "postgresql": ["sql"],
+    "mysql": ["sql"],
+    "sqlite": ["sql"],
+    "snowflake": ["sql"],
+    "bigquery": ["sql", "gcp"],
+    "redshift": ["sql", "aws"],
+    "dbt": ["sql", "etl"],
+    "airflow": ["etl", "python"],
+    "spark": ["etl", "distributed systems"],
+    "kafka": ["distributed systems"],
+    "tableau": ["data visualization"],
+    "power bi": ["data visualization"],
+    "looker": ["data visualization"],
+    "a/b testing": ["statistics"],
+    "lambda": ["aws", "serverless"],
+    "s3": ["aws"],
+    "dynamodb": ["aws"],
+    "kubernetes": ["docker"],
+    "github actions": ["ci/cd", "git"],
+    "jenkins": ["ci/cd"],
+    "scrum": ["agile"],
+}

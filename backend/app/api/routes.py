@@ -1,8 +1,10 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
 from app.config import get_settings
-from app.models import WEIGHTS, JobDescription, Resume
+from app.llm.client import get_llm
+from app.models import WEIGHTS, GapAnalysis, JobDescription, Resume
 from app.parsing import (
     MAX_BYTES,
     ExtractionError,
@@ -46,3 +48,33 @@ class JDInput(BaseModel):
 @router.post("/api/jd/parse")
 def parse_job_description(body: JDInput) -> JobDescription:
     return parse_jd(body.text)
+
+
+class GapRequest(BaseModel):
+    resume: Resume
+    jd: JobDescription
+    use_llm: bool = True
+
+
+@router.post("/api/gap/analyze")
+def gap_analyze(body: GapRequest) -> GapAnalysis:
+    analysis = analyze(body.resume, body.jd)
+    llm = get_llm() if body.use_llm else None
+    if llm is None:
+        note = "Rules only." if not body.use_llm else "Rules only (no ANTHROPIC_API_KEY set)."
+        return analysis.model_copy(update={"notes": [note]})
+    analysis, note = refine_with_llm(analysis, body.resume, llm)
+    return analysis.model_copy(update={"notes": [note]})
+
+
+class AnswersRequest(BaseModel):
+    analysis: GapAnalysis
+    answers: dict[str, str]
+
+
+@router.post("/api/gap/answers")
+def gap_answers(body: AnswersRequest) -> GapAnalysis:
+    try:
+        return apply_answers(body.analysis, body.answers)
+    except AnswerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

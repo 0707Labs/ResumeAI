@@ -61,3 +61,45 @@ def test_parse_jd():
 
 def test_parse_jd_rejects_tiny_input():
     assert client.post("/api/jd/parse", json={"text": "hi"}).status_code == 422
+
+
+def _gap_body(use_llm=False):
+    resume = client.post("/api/resume/parse", files={
+        "file": ("r.txt", fixture_text("resume_analyst.txt").encode(), "text/plain")}).json()
+    jd = client.post("/api/jd/parse", json={"text": fixture_text("jd_senior_analyst.txt")}).json()
+    return {"resume": resume, "jd": jd, "use_llm": use_llm}
+
+
+def test_gap_analyze_rules_only():
+    res = client.post("/api/gap/analyze", json=_gap_body())
+    assert res.status_code == 200
+    body = res.json()
+    assert body["notes"] == ["Rules only."]
+    assert body["counts"]["missing"] == 3
+    assert body["items"][0]["status"] == "evidenced"
+
+
+def test_gap_analyze_without_api_key_degrades(monkeypatch):
+    import app.api.routes as routes
+
+    monkeypatch.setattr(routes, "get_llm", lambda: None)
+    body = client.post("/api/gap/analyze", json=_gap_body(use_llm=True)).json()
+    assert body["notes"] == ["Rules only (no ANTHROPIC_API_KEY set)."]
+
+
+def test_gap_answers_roundtrip():
+    analysis = client.post("/api/gap/analyze", json=_gap_body()).json()
+    qid = next(i["question"]["id"] for i in analysis["items"]
+               if i["status"] == "missing")
+    res = client.post("/api/gap/answers",
+                      json={"analysis": analysis, "answers": {qid: "No, not yet."}})
+    assert res.status_code == 200
+    answered = next(i for i in res.json()["items"]
+                    if i["question"] and i["question"]["id"] == qid)
+    assert answered["question"]["answer_kind"] == "declined"
+
+
+def test_gap_answers_unknown_question():
+    analysis = client.post("/api/gap/analyze", json=_gap_body()).json()
+    res = client.post("/api/gap/answers", json={"analysis": analysis, "answers": {"q99": "x"}})
+    assert res.status_code == 422

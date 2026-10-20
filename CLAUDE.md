@@ -42,11 +42,11 @@ backend/
     api/           HTTP routes
     models/        pydantic schemas: resume, jd, gap, tailor, ats
     parsing/       resume (PDF/DOCX) + JD parsers            (phase 2)
-    analysis/      gap analysis + clarifying questions        (phase 3)
+    analysis/      gap analysis, clarifying questions, optional Claude review
     tailoring/     tailor + anti-fabrication verifier         (phase 4)
     scoring/       hybrid ATS scorer + synonym map            (phase 5)
     mentor/        advice, verdict, upskilling plan           (phase 6)
-    llm/           anthropic client wrapper                   (phase 4)
+    llm/           anthropic client wrapper (claude-opus-5-5, fallbacks on)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/          Next.js + TS + Tailwind                    (phase 7)
 ```

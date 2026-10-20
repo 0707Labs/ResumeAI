@@ -125,7 +125,7 @@ async def _send_link(db: AsyncSession, email: str, purpose: Literal["login", "ve
     log_auth_event("magic_link_sent", provider="email", reason=purpose)
 
 
-async def _sign_in_or_gate(
+async def sign_in_or_gate(
     db: AsyncSession, request: Request, response: Response, *,
     provider: Literal["google", "github", "email"], provider_account_id: str, verified_email: str | None,
 ) -> AuthStep:
@@ -191,7 +191,7 @@ async def email_verify(body: TokenIn, request: Request, response: Response,
     if purpose == "login":
         await db.commit()
         log_auth_event("magic_link_used", provider="email", reason="login")
-        return await _sign_in_or_gate(db, request, response, provider="email",
+        return await sign_in_or_gate(db, request, response, provider="email",
                                       provider_account_id=email, verified_email=email)
 
     # verify_pending: must be the same browser that started the sign-in.

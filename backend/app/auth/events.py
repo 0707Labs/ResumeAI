@@ -25,6 +25,8 @@ AuthEvent = Literal[
     "signup_completed",
     "signup_failed",
     "waitlist_joined",
+    "oauth_started",
+    "oauth_failed",
 ]
 
 

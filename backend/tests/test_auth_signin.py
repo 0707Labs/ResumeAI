@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.auth.invites import generate_code, hash_code
+from app.auth.invites import hash_code
 from app.auth.signup import SignupError, complete_signup
 from app.db.models import PendingAuth
 
@@ -39,32 +39,6 @@ def count(pg_engine, table: str, where: str = "true") -> int:
 def scalar(pg_engine, sql: str, **params):
     with pg_engine.connect() as conn:
         return conn.execute(text(sql), params).scalar_one()
-
-
-@pytest.fixture
-def notices(pg_engine) -> dict[str, str]:
-    ids = {}
-    with pg_engine.begin() as conn:
-        for purpose in ("service", "age_18_plus", "research", "waitlist"):
-            ids[purpose] = str(conn.execute(text(
-                "INSERT INTO consent_notices (purpose, version, body_sha256, body_url, published_at)"
-                " VALUES (:p, '2026-11-v1', :h, :u, now() - interval '1 minute') RETURNING id"
-            ), {"p": purpose, "h": "0" * 64, "u": f"/legal/{purpose}"}).scalar_one())
-    return ids
-
-
-@pytest.fixture
-def make_invite(pg_engine):
-    def make(email: str | None = None, max_uses: int = 1, extra: str = "") -> str:
-        code = generate_code()
-        with pg_engine.begin() as conn:
-            conn.execute(text(
-                "INSERT INTO invites (code_hash, code_hint, email, max_uses"
-                + (", " + extra.split("=")[0] if extra else "") + ") VALUES (:h, :hint, :e, :m"
-                + (", " + extra.split("=", 1)[1] if extra else "") + ")"
-            ), {"h": hash_code(code), "hint": code[-4:], "e": email, "m": max_uses})
-        return code
-    return make
 
 
 def magic_link(client, outbox, email=NEW):

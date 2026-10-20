@@ -99,7 +99,10 @@ frontend/
 - Never weaken a verifier test to make tailoring pass; fix the tailor or the prompt.
 
 ## Auth conventions
-- FastAPI owns sign-in (Authlib for OAuth). Sessions are opaque random tokens; the DB stores
+- FastAPI owns sign-in (Authlib for OAuth, joserfc for Google id_tokens). Authlib and the
+  anthropic SDK use `httpx2`, not `httpx`; OAuth tests mock providers via `oauth.set_transport`
+  (httpx2 MockTransport), so no test ever reaches Google or GitHub.
+- Sessions are opaque random tokens; the DB stores
   only sha256 hashes (sessions, pending sign-ups, magic links, invite codes). Never store provider tokens.
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.

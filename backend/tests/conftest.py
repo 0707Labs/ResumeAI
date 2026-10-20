@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
-from app.api.signin import AuthStep, _sign_in_or_gate
+from app.api.signin import AuthStep, sign_in_or_gate
+from app.auth.invites import generate_code, hash_code
 from app.auth.mailer import Mail, set_mailer
 from app.auth.ratelimit import limiter
 from app.auth.sessions import start_session
@@ -220,7 +221,7 @@ def api_app(pg_url, pg_engine, outbox):
     @app.post("/test/identity")
     async def test_identity(body: IdentityIn, request: Request, response: Response,
                             db: AsyncSession = Depends(get_db)) -> AuthStep:
-        return await _sign_in_or_gate(db, request, response, provider=body.provider,
+        return await sign_in_or_gate(db, request, response, provider=body.provider,
                                       provider_account_id=body.provider_account_id,
                                       verified_email=body.verified_email)
 
@@ -228,6 +229,7 @@ def api_app(pg_url, pg_engine, outbox):
     yield app
     limiter.reset()
     with pg_engine.begin() as conn:
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))  # a leaked connection fails, not hangs
         conn.execute(text(f"TRUNCATE {TABLES} CASCADE"))
 
 
@@ -261,3 +263,29 @@ def user_id(pg_engine) -> uuid.UUID:
             " terms_version, terms_accepted_at) VALUES ('ada@example.com', now(), now(), now(),"
             " 'v1', now()) RETURNING id"
         )).scalar_one()
+
+
+@pytest.fixture
+def notices(pg_engine) -> dict[str, str]:
+    ids = {}
+    with pg_engine.begin() as conn:
+        for purpose in ("service", "age_18_plus", "research", "waitlist"):
+            ids[purpose] = str(conn.execute(text(
+                "INSERT INTO consent_notices (purpose, version, body_sha256, body_url, published_at)"
+                " VALUES (:p, '2026-11-v1', :h, :u, now() - interval '1 minute') RETURNING id"
+            ), {"p": purpose, "h": "0" * 64, "u": f"/legal/{purpose}"}).scalar_one())
+    return ids
+
+
+@pytest.fixture
+def make_invite(pg_engine):
+    def make(email: str | None = None, max_uses: int = 1, extra: str = "") -> str:
+        code = generate_code()
+        with pg_engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO invites (code_hash, code_hint, email, max_uses"
+                + (", " + extra.split("=")[0] if extra else "") + ") VALUES (:h, :hint, :e, :m"
+                + (", " + extra.split("=", 1)[1] if extra else "") + ")"
+            ), {"h": hash_code(code), "hint": code[-4:], "e": email, "m": max_uses})
+        return code
+    return make

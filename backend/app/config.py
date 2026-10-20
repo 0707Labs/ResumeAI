@@ -30,6 +30,11 @@ class Settings:
     )
     # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only).
     mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox"))
+    # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.
+    google_client_id: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_ID", ""))
+    google_client_secret: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_SECRET", ""))
+    github_client_id: str = field(default_factory=lambda: os.environ.get("GITHUB_CLIENT_ID", ""))
+    github_client_secret: str = field(default_factory=lambda: os.environ.get("GITHUB_CLIENT_SECRET", ""))
 
 
 def get_settings() -> Settings:

@@ -48,7 +48,7 @@ export default function BillingPage() {
     return (
       <div className="mx-auto max-w-md">
         <Alert tone="info" title="Please sign in">
-          <Link href="/login?next=/account/billing" className="font-medium text-accent underline">Sign in</Link> to see your billing.
+          <Link href="/signin?next=/account/billing" className="font-medium text-accent underline">Sign in</Link> to see your billing.
         </Alert>
       </div>
     );

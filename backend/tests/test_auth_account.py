@@ -138,7 +138,7 @@ def test_connect_google_with_a_different_email(client, mock, ada, pg_engine, new
 
     # Later, Google alone signs Ada in.
     fresh = new_browser()
-    assert where(google(fresh, mock, sub="g-work", email="ada.work@example.com")) == "/"
+    assert where(google(fresh, mock, sub="g-work", email="ada.work@example.com")) == "/app"
     assert fresh.get("/api/me").json()["id"] == str(ada["id"])
 
 
@@ -152,7 +152,7 @@ def test_connect_identity_owned_by_someone_else_is_refused(client, mock, ada, pg
 
 def test_connect_needs_a_signed_in_user(client):
     res = client.get("/api/auth/google/start", params={"intent": "link"}, follow_redirects=False)
-    assert where(res) == "/login?error=not_signed_in"
+    assert where(res) == "/signin?error=not_signed_in"
 
 
 def test_connect_needs_a_verified_email(client, mock, ada, pg_engine):

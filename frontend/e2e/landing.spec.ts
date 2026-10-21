@@ -29,7 +29,7 @@ test("landing: server-rendered sections, invite-only sign up, footer", async ({ 
     await expect(footer.getByRole("link", { name })).toBeVisible();
   }
 
-  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
   await page.getByRole("banner").getByRole("button", { name: "Sign up" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Resume Tailor is invite-only for now" })).toBeVisible();

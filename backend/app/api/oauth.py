@@ -2,11 +2,11 @@
 
 GET /api/auth/{provider}/start[?intent=link]  -> 302 to the provider (state + PKCE + nonce in a signed cookie)
 GET /api/auth/{provider}/callback             -> 302 to where the user goes next:
-    signed in                    -> the `next` page (allowlisted), default /
-    new, verified email          -> /signup/invite   (no user row; pending identity)
+    signed in                    -> the `next` page (allowlisted), default /app
+    new, verified email          -> /signup/invite, or /signup/consent when signup is open (no user row yet)
     new, no verified email       -> /signup/verify-email
     linked (intent=link)         -> /account?linked=<provider>
-    failure                      -> /login?error=<code>  (link flows: /account?error=<code>)
+    failure                      -> /signin?error=<code>  (link flows: /account?error=<code>)
 
 Both are top-level browser navigations (GETs), so CSRF is covered by `state`."""
 
@@ -32,7 +32,7 @@ NEXT_STEP = {"invite": "/signup/invite", "consent": "/signup/consent", "verify_e
 
 def _failed(provider: str, code: str, intent: str = "login") -> RedirectResponse:
     log_auth_event("oauth_failed", outcome="denied", provider=provider, reason=code)  # type: ignore[arg-type]
-    page = "/account" if intent == "link" else "/login"
+    page = "/account" if intent == "link" else "/signin"
     return RedirectResponse(f"{page}?error={code}", status_code=302)
 
 
@@ -65,7 +65,7 @@ async def callback(
     error: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(oauth.DEFAULT_NEXT, status_code=302)
     flow = oauth.take_flow(request, response)  # single use: cleared on every outcome
     intent = flow.intent if flow else "login"
 

@@ -96,7 +96,7 @@ function CheckoutSuccess() {
           {(error as { status?: number } | null)?.status === 401 && (
             <p className="text-sm">
               <Link className="font-medium text-accent underline"
-                href={`/login?next=${encodeURIComponent(`/billing/success?payment=${paymentId}`)}`}>
+                href={`/signin?next=${encodeURIComponent(`/billing/success?payment=${paymentId}`)}`}>
                 Sign in to see this payment
               </Link>
             </p>

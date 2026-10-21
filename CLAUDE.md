@@ -52,7 +52,8 @@ backend/
   alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
-  app/             routes: / (input), /analysis, /review, /score, /mentor, /export
+  app/             routes: / (landing), /app (input), /analysis, /review, /score, /mentor, /export,
+                   /signin, /signup/*, /legal/*; proxy.ts + app/app/layout.tsx guard the workspace
   components/      AppShell, UploadDropzone, ResumePreview, ui, icons (+ later steps)
   lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
                    store.ts (zustand, sessionStorage), theme.ts, diff.ts
@@ -78,10 +79,12 @@ frontend/
 - E2E: `npm run test:e2e` (Playwright, Chromium; one-time `npx playwright install chromium`).
   Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
   reusing servers already running there; a backend with a real key fails the spec's rules-only check.
+  `E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://127.0.0.1:8100` runs a separate pair instead.
   Specs live in e2e/; Vitest only picks up tests/.
-  e2e/auth.spec.ts also needs Postgres (the backend's RT_DATABASE_URL, migrated): it seeds an
-  invite and any missing notices with the admin CLI and reads magic links from backend/.dev-outbox.
-  Each run sends 2 magic links; a reused backend keeps the 5-per-15-min per-IP limit in memory.
+  The workspace needs an account, so every spec except landing needs Postgres (the backend's
+  RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites and notices with the admin CLI and reads
+  magic links from backend/.dev-outbox. A run sends 5 magic links, exactly the 5-per-15-min per-IP
+  limit, which a reused backend keeps in memory: restart it (or wait) between runs.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
   `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.
 
@@ -107,6 +110,10 @@ frontend/
   (httpx2 MockTransport), so no test ever reaches Google or GitHub.
 - Sessions are opaque random tokens; the DB stores
   only sha256 hashes (sessions, pending sign-ups, magic links, invite codes). Never store provider tokens.
+- Workspace routes (lib/workspace.ts) need a session: proxy.ts redirects cookieless visitors to
+  /signin?next=<path>, app/app/layout.tsx re-checks /api/me server-side, the API enforces regardless.
+  `next` is allowlisted on both sides (oauth.safe_next, lib/auth safeNext); default after sign-in is /app.
+- RT_INVITE_ONLY (default on) gates new accounts; off skips the invite step (an entered invite is still used).
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.
 - Log auth events only via `log_auth_event`: user_id at most, never email, IP, code or token.

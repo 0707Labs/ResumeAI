@@ -6,6 +6,10 @@ const BACKEND_URL = (process.env.RT_BACKEND_URL ?? "http://localhost:8000").repl
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // /signin is the sign-in page; old /login links (bookmarks, emails) keep working.
+  async redirects() {
+    return [{ source: "/login", destination: "/signin", permanent: false }];
+  },
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },

@@ -8,7 +8,7 @@ import { AuthCard, AuthErrorAlert } from "@/components/auth/AuthCard";
 import { PendingExpired } from "@/components/auth/PendingExpired";
 import { usePending } from "@/components/auth/usePending";
 import { Alert, Button } from "@/components/ui";
-import { AuthError, authApi } from "@/lib/auth";
+import { AuthError, authApi, takeNext } from "@/lib/auth";
 import type { Notice } from "@/lib/schemas";
 
 type Current = Partial<Record<Notice["purpose"], Notice>>;
@@ -57,7 +57,7 @@ export default function ConsentPage() {
           ...(research && notices.research ? { research: notices.research.id } : {}),
         },
       });
-      router.replace("/app");
+      router.replace(takeNext());
     } catch (err) {
       setError(err);
       setBusy(false);

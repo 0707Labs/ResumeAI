@@ -148,7 +148,7 @@ def test_start_requests_minimal_scopes_with_state_and_pkce(client, provider, sco
 def test_unconfigured_provider_is_unavailable(client, monkeypatch):
     monkeypatch.delenv("GITHUB_CLIENT_SECRET")
     res = client.get("/api/auth/github/start", follow_redirects=False)
-    assert where(res) == "/login?error=provider_unavailable"
+    assert where(res) == "/signin?error=provider_unavailable"
 
 
 def test_pkce_verifier_is_sent_and_matches_the_challenge(client, mock):
@@ -164,9 +164,9 @@ def test_pkce_verifier_is_sent_and_matches_the_challenge(client, mock):
 
 
 @pytest.mark.parametrize("next_path,expected", [
-    ("/review", "/review"), ("/account/linked", "/account/linked"),
-    ("//evil.example", "/"), ("https://evil.example", "/"), ("/\\evil.example", "/"),
-    ("/login", "/"), ("/../admin", "/"),
+    ("/review", "/review"), ("/account/linked", "/account/linked"), ("/app", "/app"), ("/", "/"),
+    (None, "/app"), ("//evil.example", "/app"), ("https://evil.example", "/app"), ("/\\evil.example", "/app"),
+    ("/signin", "/app"), ("/../admin", "/app"), ("/appx", "/app"),
 ])
 def test_post_sign_in_destination_is_allowlisted(next_path, expected):
     assert oauth.safe_next(next_path) == expected
@@ -210,7 +210,7 @@ def test_existing_user_signs_in_directly_and_session_rotates(client, mock, user_
     with pg_engine.begin() as conn:
         conn.execute(text("INSERT INTO accounts (user_id, provider, provider_account_id, email_at_link)"
                           " VALUES (:u, 'google', 'g-ada', 'ada@example.com')"), {"u": user_id})
-    assert where(google(client, mock, sub="g-ada", email="ada@example.com")) == "/"
+    assert where(google(client, mock, sub="g-ada", email="ada@example.com")) == "/app"
     first = client.cookies["rt_session"]
     assert client.get("/api/me").json()["id"] == str(user_id)
     google(client, mock, sub="g-ada", email="ada@example.com")
@@ -221,7 +221,7 @@ def test_existing_user_signs_in_directly_and_session_rotates(client, mock, user_
 def test_suspended_user_is_sent_back_to_login(client, mock, user_id, pg_engine):
     with pg_engine.begin() as conn:
         conn.execute(text("UPDATE users SET status = 'suspended'"))
-    assert where(google(client, mock, email="ada@example.com")) == "/login?error=account_unavailable"
+    assert where(google(client, mock, email="ada@example.com")) == "/signin?error=account_unavailable"
     assert client.get("/api/me").status_code == 401
 
 
@@ -229,8 +229,8 @@ def test_suspended_user_is_sent_back_to_login(client, mock, user_id, pg_engine):
 
 
 def test_same_verified_email_via_second_provider_links_to_the_same_user(client, mock, user_id, pg_engine):
-    assert where(google(client, mock, sub="g-ada", email="Ada@Example.com")) == "/"
-    assert where(github(client, mock, primary("ada@example.com"))) == "/"
+    assert where(google(client, mock, sub="g-ada", email="Ada@Example.com")) == "/app"
+    assert where(github(client, mock, primary("ada@example.com"))) == "/app"
     linked = scalar(pg_engine, "SELECT array_agg(provider ORDER BY provider) FROM accounts WHERE user_id = :u",
                     u=user_id)
     assert linked == ["github", "google"] and count(pg_engine, "users") == 1
@@ -278,12 +278,12 @@ def test_github_without_verified_email_requires_email_verification(client, mock,
 def test_state_mismatch_is_rejected(client, mock):
     start(client, "google")
     res = callback(client, "google", code="auth-code", state="forged")
-    assert where(res) == "/login?error=oauth_state"
+    assert where(res) == "/signin?error=oauth_state"
 
 
 def test_callback_without_flow_cookie_is_rejected(new_browser, mock):
     q = start(new_browser(), "google")
-    assert where(callback(new_browser(), "google", code="c", state=q["state"])) == "/login?error=oauth_state"
+    assert where(callback(new_browser(), "google", code="c", state=q["state"])) == "/signin?error=oauth_state"
 
 
 def test_callback_state_cannot_be_replayed(client, mock, notices):
@@ -291,18 +291,18 @@ def test_callback_state_cannot_be_replayed(client, mock, notices):
     mock.post(oauth.PROVIDERS["google"].token_url).respond(
         json={"access_token": "x", "token_type": "Bearer", "id_token": id_token(q["nonce"])})
     assert where(callback(client, "google", code="c", state=q["state"])) == "/signup/invite"
-    assert where(callback(client, "google", code="c", state=q["state"])) == "/login?error=oauth_state"
+    assert where(callback(client, "google", code="c", state=q["state"])) == "/signin?error=oauth_state"
 
 
 def test_state_from_one_provider_is_rejected_by_the_other(client, mock):
     q = start(client, "google")
-    assert where(callback(client, "github", code="c", state=q["state"])) == "/login?error=oauth_state"
+    assert where(callback(client, "github", code="c", state=q["state"])) == "/signin?error=oauth_state"
 
 
 def test_user_cancelling_at_the_provider(client):
     q = start(client, "github")
     res = callback(client, "github", error="access_denied", state=q["state"])
-    assert where(res) == "/login?error=cancelled"
+    assert where(res) == "/signin?error=cancelled"
 
 
 @pytest.mark.parametrize("bad", [
@@ -317,7 +317,7 @@ def test_invalid_google_id_token_is_rejected(client, mock, pg_engine, bad):
     nonce = bad.pop("nonce", q["nonce"])
     mock.post(oauth.PROVIDERS["google"].token_url).respond(
         json={"access_token": "x", "token_type": "Bearer", "id_token": id_token(nonce, **bad)})
-    assert where(callback(client, "google", code="c", state=q["state"])) == "/login?error=provider_unavailable"
+    assert where(callback(client, "google", code="c", state=q["state"])) == "/signin?error=provider_unavailable"
     assert count(pg_engine, "pending_auth") == 0
 
 
@@ -331,7 +331,7 @@ def test_provider_failure_is_reported_as_unavailable(client, mock, failure):
     route.side_effect = failure if isinstance(failure, Exception) else None
     if not isinstance(failure, Exception):
         route.return_value = failure
-    assert where(callback(client, "github", code="c", state=q["state"])) == "/login?error=provider_unavailable"
+    assert where(callback(client, "github", code="c", state=q["state"])) == "/signin?error=provider_unavailable"
 
 
 def test_oauth_logs_carry_no_email_or_provider_ids(client, mock, caplog):

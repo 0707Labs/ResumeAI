@@ -57,7 +57,8 @@ GITHUB_API = "https://api.github.com"
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 
 # Where a signed-in user may be sent back to. Relative paths only.
-NEXT_PREFIXES = ("/account", "/analysis", "/review", "/score", "/mentor", "/export")
+NEXT_PREFIXES = ("/app", "/account", "/analysis", "/review", "/score", "/mentor", "/export", "/pricing", "/billing")
+DEFAULT_NEXT = "/app"  # the tailoring workspace
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9/_-]*$")
 
 
@@ -100,12 +101,12 @@ def redirect_uri(provider: OAuthProvider) -> str:
 
 
 def safe_next(path: str | None) -> str:
-    """A post-sign-in destination on our own site, or "/"."""
+    """A post-sign-in destination on our own site, or the workspace."""
     if not path or not _SAFE_PATH.match(path) or path.startswith("//"):
-        return "/"
+        return DEFAULT_NEXT
     if path == "/" or any(path == p or path.startswith(p + "/") for p in NEXT_PREFIXES):
         return path
-    return "/"
+    return DEFAULT_NEXT
 
 
 _transport: httpx2.AsyncBaseTransport | None = None  # tests inject a mock; None = real network

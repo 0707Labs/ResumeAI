@@ -109,7 +109,7 @@ describe("pricing page", () => {
       "GET /api/me": () => json({ detail: "not_signed_in" }, 401),
     });
     render(<PricingPage />);
-    expect(await screen.findByRole("link", { name: "Sign in to buy" })).toHaveAttribute("href", "/login?next=/pricing");
+    expect(await screen.findByRole("link", { name: "Sign in to buy" })).toHaveAttribute("href", "/signin?next=/pricing");
     expect(screen.getByRole("button", { name: "Not available yet" })).toBeDisabled();
   });
 
@@ -199,7 +199,7 @@ describe("billing page", () => {
   it("asks to sign in when signed out", async () => {
     routes({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
     render(<BillingPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login?next=/account/billing");
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/account/billing");
   });
 });
 

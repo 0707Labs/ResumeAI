@@ -39,7 +39,7 @@ describe("site header", () => {
   it("offers Sign in and a plain Sign up link when signup is open", async () => {
     stubFetch({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
     render(<SiteHeader inviteOnly={false} initialTheme="system" />);
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeInTheDocument();
   });

@@ -54,6 +54,39 @@ export async function call<T extends z.ZodType>(
   return parsed.data;
 }
 
+/** Post-sign-in destinations we accept, mirroring the backend's allowlist (app/auth/oauth.py). */
+const NEXT_PREFIXES = ["/app", "/account", "/analysis", "/review", "/score", "/mentor", "/export", "/pricing", "/billing"];
+export const DEFAULT_NEXT = "/app";
+
+/** A same-site path to return to after sign-in, or the workspace. Never another origin. */
+export function safeNext(path: string | null | undefined): string {
+  if (!path || !/^\/[A-Za-z0-9/_-]*$/.test(path) || path.startsWith("//")) return DEFAULT_NEXT;
+  return path === "/" || NEXT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`)) ? path : DEFAULT_NEXT;
+}
+
+// An emailed link opens in a new tab, so the destination waits in localStorage (this
+// browser only, a path and a time, nothing else) and is used once within 30 minutes.
+const NEXT_KEY = "rt:after-sign-in";
+const NEXT_TTL_MS = 30 * 60 * 1000;
+
+export function rememberNext(path: string | undefined) {
+  try {
+    if (path) localStorage.setItem(NEXT_KEY, JSON.stringify({ path: safeNext(path), at: Date.now() }));
+    else localStorage.removeItem(NEXT_KEY);
+  } catch { /* storage blocked: they land on the workspace */ }
+}
+
+/** The remembered destination (once), or the workspace. */
+export function takeNext(): string {
+  try {
+    const raw = localStorage.getItem(NEXT_KEY);
+    localStorage.removeItem(NEXT_KEY);
+    const saved = raw ? (JSON.parse(raw) as { path?: string; at?: number }) : null;
+    if (saved?.path && typeof saved.at === "number" && Date.now() - saved.at < NEXT_TTL_MS) return safeNext(saved.path);
+  } catch { /* fall through */ }
+  return DEFAULT_NEXT;
+}
+
 /** The page for each step the backend sends us to. */
 export const NEXT_PAGE: Record<S.AuthStep["next"], string> = {
   signed_in: "/app",
@@ -74,6 +107,8 @@ export function providerStartUrl(provider: "google" | "github", opts: { next?: s
 
 export const authApi = {
   providers: () => call(S.ProviderAvailability, "/api/auth/providers"),
+  /** Public flags (invite-only). Invite-only is assumed when it can't be read. */
+  config: () => call(S.PublicConfig, "/api/auth/config").catch(() => ({ invite_only: true })),
   startEmail: (email: string) => call(S.Accepted, "/api/auth/email/start", { method: "POST", body: { email } }),
   verifyEmail: (token: string) => call(S.AuthStep, "/api/auth/email/verify", { method: "POST", body: { token } }),
   pendingEmail: (email: string) => call(S.Accepted, "/api/auth/pending/email", { method: "POST", body: { email } }),

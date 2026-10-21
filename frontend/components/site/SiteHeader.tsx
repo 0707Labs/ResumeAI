@@ -37,7 +37,7 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
             </Link>
           ) : (
             <>
-              <Link href="/login" className="inline-flex min-h-9 items-center rounded-lg px-3 text-sm font-medium text-fg hover:bg-surface-2">
+              <Link href="/signin" className="inline-flex min-h-9 items-center rounded-lg px-3 text-sm font-medium text-fg hover:bg-surface-2">
                 Sign in
               </Link>
               <SignUpButton inviteOnly={inviteOnly} />

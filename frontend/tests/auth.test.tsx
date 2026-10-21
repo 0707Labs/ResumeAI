@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AccountPage from "@/app/account/page";
 import EmailLinkPage from "@/app/auth/email/page";
-import LoginPage from "@/app/login/page";
+import SignInPage from "@/app/signin/page";
 import ConsentPage from "@/app/signup/consent/page";
 import InvitePage from "@/app/signup/invite/page";
 import SignupPage from "@/app/signup/page";
@@ -17,7 +17,7 @@ const router = { push: vi.fn(), replace: vi.fn() };
 let search = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
-  usePathname: () => "/login",
+  usePathname: () => "/signin",
   useSearchParams: () => search,
 }));
 
@@ -81,7 +81,7 @@ describe("login and signup", () => {
   it("offers both providers as full-page links, then an email link", async () => {
     search = new URLSearchParams("next=/review");
     routes({ "GET /api/auth/providers": { google: true, github: true, email: true } });
-    render(<LoginPage />);
+    render(<SignInPage />);
     const google = await screen.findByRole("link", { name: "Continue with Google" });
     expect(google).toHaveAttribute("href", "/api/auth/google/start?next=%2Freview");
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toHaveAttribute("href", "/api/auth/github/start?next=%2Freview");
@@ -101,7 +101,7 @@ describe("login and signup", () => {
   it("explains an error from the provider redirect", async () => {
     search = new URLSearchParams("error=provider_unavailable");
     routes({ "GET /api/auth/providers": { google: true, github: true, email: true } });
-    render(<LoginPage />);
+    render(<SignInPage />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
   });
 
@@ -110,7 +110,7 @@ describe("login and signup", () => {
       "GET /api/auth/providers": { google: true, github: true, email: true },
       "POST /api/auth/email/start": () => json({ status: "ok" }, 202),
     });
-    render(<LoginPage />);
+    render(<SignInPage />);
     await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
     await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
     expect(await screen.findByRole("status")).toHaveTextContent("ada@example.com");
@@ -305,6 +305,6 @@ describe("account", () => {
   it("asks signed-out visitors to sign in", async () => {
     routes({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
     render(<AccountPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login?next=/account");
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/account");
   });
 });

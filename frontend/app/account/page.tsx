@@ -40,7 +40,7 @@ function Account() {
     return (
       <div className="mx-auto max-w-md">
         <Alert tone="info" title="Please sign in">
-          <Link href="/login?next=/account" className="font-medium text-accent underline">Sign in</Link> to see your account.
+          <Link href="/signin?next=/account" className="font-medium text-accent underline">Sign in</Link> to see your account.
         </Alert>
       </div>
     );
@@ -142,7 +142,7 @@ function SignOut() {
   return (
     <Button variant="secondary" busy={busy} onClick={async () => {
       setBusy(true);
-      try { await api.logout(); } finally { router.replace("/login"); }
+      try { await api.logout(); } finally { router.replace("/signin"); }
     }}>
       Sign out
     </Button>

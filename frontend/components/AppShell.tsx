@@ -15,7 +15,7 @@ import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
 /** Sign-in, account and billing pages: no tailoring progress bar there. */
-const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing", "/admin"];
+const AUTH_PATHS = ["/signin", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing", "/admin"];
 const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 /** The landing page and legal pages bring their own header and footer (components/site). */
 const isMarketingPath = (path: string) => path === "/" || path === "/legal" || path.startsWith("/legal/");
@@ -91,7 +91,7 @@ function AccountLink({ pathname }: { pathname: string }) {
   return me ? (
     <Link href="/account" className={cls}><UserIcon />Account</Link>
   ) : (
-    <Link href="/login" className={cls}>Sign in</Link>
+    <Link href="/signin" className={cls}>Sign in</Link>
   );
 }
 

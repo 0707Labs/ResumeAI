@@ -60,7 +60,8 @@ Calls use `claude-opus-5-5` with server-side refusal fallbacks enabled.
 Payments go through Dodo Payments, the merchant of record (it handles tax and issues
 receipts). Credits and passes are granted **only** from verified webhooks, never from the
 checkout redirect. Product ids, prices, credits, pass length, caps, fee estimates and LLM
-prices live in `backend/billing.toml`.
+prices live in `backend/billing.toml`. Dashboard setup, the webhook, the go-live
+checklist and the refund/dispute runbook are in [docs/billing.md](docs/billing.md).
 
 ### Run it locally in test mode
 

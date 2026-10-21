@@ -201,3 +201,39 @@ def test_resolve_review(client, admin, pg_engine):
 
 def test_snapshot_fixture_has_credits():
     assert PACK["credits"] == 5
+
+
+# --- admin CLI -------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cli_db(pg_url, monkeypatch):
+    from app.db import session
+    monkeypatch.setenv("RT_DATABASE_URL", pg_url)
+    session.get_engine.cache_clear()
+    session.get_sessionmaker.cache_clear()
+    yield
+    session.get_engine.cache_clear()
+    session.get_sessionmaker.cache_clear()
+
+
+def test_adjust_credits_cli(cli_db, api_app, user_id, pg_engine, capsys):  # api_app: truncates after
+    from app.billing.cli import main
+    assert main(["adjust-credits", str(user_id), "3", "--note", "goodwill: ticket 12", "--key", "t12"]) == 0
+    assert main(["adjust-credits", str(user_id), "3", "--note", "goodwill: ticket 12", "--key", "t12"]) == 0
+    assert "Already applied" in capsys.readouterr().out
+    assert main(["adjust-credits", str(user_id), "-5", "--note", "too many"]) == 1  # never below zero
+    assert scalar(pg_engine, "SELECT credits_balance FROM users WHERE id = :u", u=user_id) == 3
+    assert scalar(pg_engine, "SELECT note FROM credit_transactions WHERE reason = 'admin_adjust'") == "goodwill: ticket 12"
+    with pytest.raises(SystemExit):
+        main(["adjust-credits", str(user_id), "1"])  # --note is required
+
+
+def test_check_alerts_cli_exit_code(cli_db, pg_engine, capsys):
+    from app.billing.cli import main
+    assert main(["check-alerts"]) == 0
+    sql(pg_engine, "INSERT INTO processed_webhook_events (provider, event_id, event_type, occurred_at, failures)"
+                   " VALUES ('dodo', 'msg_y', 'refund.succeeded', now(), 5)")
+    assert main(["check-alerts"]) == 1
+    assert "webhook_failing" in capsys.readouterr().out
+    sql(pg_engine, "TRUNCATE processed_webhook_events")

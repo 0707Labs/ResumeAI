@@ -198,6 +198,10 @@ def _to_bullet(b: _LLMBullet, resume: Resume) -> TailoredBullet:
         original_text=original, change_type=change, jd_terms_used=b.jd_terms_used)
 
 
+# Note prefix when Claude was asked but failed; the API refunds such a run.
+RULES_FALLBACK = "Used rules only: "
+
+
 def tailor(resume: Resume, jd: JobDescription, analysis: GapAnalysis | None = None,
            llm: LLM | None = None) -> TailoredResume:
     fallback = rules_tailor(resume, jd)
@@ -230,7 +234,7 @@ def tailor(resume: Resume, jd: JobDescription, analysis: GapAnalysis | None = No
                                              if f.severity == "block"))
         except LLMError as exc:
             bullets = fallback
-            notes.append(f"Used rules only: {exc}")
+            notes.append(f"{RULES_FALLBACK}{exc}")
 
     bullets = _order_and_number(bullets, resume)
     bullets = [b.model_copy(update={"verification": verify_bullet(b, resume, analysis,

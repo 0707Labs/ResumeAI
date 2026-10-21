@@ -288,6 +288,14 @@ export const Me = z.object({
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
+/** POST /api/analyses: a started (billed) analysis. */
+export const AnalysisStarted = z.object({
+  analysis_id: z.uuid(),
+  pays_with: z.enum(["pass", "pro", "credit", "free"]),
+  remaining: z.number().int().nullable(),
+  usable_until: z.string(),
+});
+
 const Provider = z.enum(["google", "github", "email"]);
 export const ProviderAvailability = z.object({ google: z.boolean(), github: z.boolean(), email: z.boolean() });
 /** Where the auth flow goes next (backend AuthStep). */

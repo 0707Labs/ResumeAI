@@ -23,6 +23,7 @@ export type ApiErrorKind =
   | "unreadable_file"
   | "invalid_input"
   | "bad_response"
+  | "out_of_credits"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -35,6 +36,8 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   unreadable_file: "We couldn't open that file. It might be damaged. Try saving it again, or paste the text instead.",
   invalid_input: "Something in the input didn't look right.",
   bad_response: "The service sent back something we didn't expect. Please try again.",
+  out_of_credits:
+    "You're out of analyses for now. You can get more, or wait for your free analyses to reset at the start of next month.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -102,8 +105,9 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
   return parsed.data;
 }
 
-/** One id per resume + job analysis, sent as X-Analysis-Id so the backend can total
- * LLM cost per analysis. Random, not tied to the person; kept for the tab's session. */
+/** The server-side analysis later pipeline calls are billed to, sent as X-Analysis-Id.
+ * The backend uses Claude only for the caller's own live analysis; without one (signed out)
+ * the pipeline runs rules-only. Kept for the tab's session. */
 const ANALYSIS_KEY = "rt_analysis_id";
 
 export function currentAnalysisId(): string | null {
@@ -114,12 +118,36 @@ export function currentAnalysisId(): string | null {
   }
 }
 
-function startAnalysis(): void {
+function setAnalysisId(id: string | null): void {
   try {
-    sessionStorage.setItem(ANALYSIS_KEY, crypto.randomUUID());
+    if (id) sessionStorage.setItem(ANALYSIS_KEY, id);
+    else sessionStorage.removeItem(ANALYSIS_KEY);
   } catch {
-    /* storage blocked: costs are just not grouped */
+    /* storage blocked: later calls run rules-only */
   }
+}
+
+/** Start a billed analysis: a pass, Pro, a credit or a free run pays, in that order.
+ * Signed out (401): no analysis, rules-only. 402: nothing left to pay with, so the
+ * out-of-credits dialog opens and this throws. */
+async function startAnalysis(): Promise<void> {
+  setAnalysisId(null);
+  const res = await authPost("/api/analyses", undefined, { "Idempotency-Key": crypto.randomUUID() });
+  if (res.status === 401) return;
+  if (!res.ok) {
+    if (res.status === 402) announceOutOfCredits();
+    const detail = await readDetail(res);
+    throw new ApiError(res.status === 402 ? "out_of_credits" : classify(res.status, detail), res.status, detail);
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new ApiError("bad_response", res.status);
+  }
+  const parsed = S.AnalysisStarted.safeParse(body);
+  if (!parsed.success) throw new ApiError("bad_response", res.status);
+  setAnalysisId(parsed.data.analysis_id);
 }
 
 const json = (body: unknown): RequestInit => {
@@ -138,8 +166,8 @@ export async function csrfToken(): Promise<string> {
 }
 
 /** A state-changing auth/account call: same origin, with the CSRF header. */
-async function authPost(path: string, body?: unknown): Promise<Response> {
-  const headers: Record<string, string> = { "X-CSRF-Token": await csrfToken() };
+async function authPost(path: string, body?: unknown, extra: Record<string, string> = {}): Promise<Response> {
+  const headers: Record<string, string> = { ...extra, "X-CSRF-Token": await csrfToken() };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   try {
     return await fetch(`${API_URL}${path}`, {
@@ -187,9 +215,9 @@ export const api = {
 
   parseJD: (text: string) => request(S.JobDescription, "/api/jd/parse", json({ text })),
 
-  /** Starts a new analysis: later calls are grouped under a fresh analysis id. */
-  analyze: (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
-    startAnalysis();
+  /** Starts a new analysis (billed when signed in; see startAnalysis), then runs the gap step. */
+  analyze: async (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
+    await startAnalysis();
     return request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
   },
 

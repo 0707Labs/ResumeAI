@@ -389,3 +389,78 @@ def test_unconfigured_payments_answer_503(client, api_app, monkeypatch):
         assert client.post(URL, content=b"{}").status_code == 503
     finally:
         get_payment_provider.cache_clear()
+
+
+# --- refunds under redelivery and concurrency ----------------------------------------------------
+
+
+def test_partial_refund_redelivered_under_a_new_id_applies_once(hook, user_id, pg_engine):
+    pid = buy_pack(hook, pg_engine, user_id)
+    for _ in range(3):  # same refund_id, different webhook-id each time
+        hook("refund.succeeded", refund(partial=True, amount=240))
+    assert balance(pg_engine, user_id) == 3
+    assert scalar(pg_engine, "SELECT refunded_amount_minor FROM payments WHERE id = :i", i=pid) == 240
+
+
+def run_concurrently(pg_url, provider, events):
+    async def race():
+        engine = create_async_engine(pg_url, poolclass=NullPool)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def deliver(event):
+            async with sessions() as db:
+                return await process_webhook(db, provider, catalog(), event)
+        try:
+            return await asyncio.gather(*(deliver(e) for e in events))
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(race())
+
+
+def event(type_, data, msg_id=None):
+    return WebhookEvent(event_id=msg_id or f"msg_{uuid.uuid4().hex}", type=type_,
+                        occurred_at=datetime.now(UTC), data=data)
+
+
+def test_concurrent_refund_deliveries_take_credits_back_once(pg_url, hook, user_id, pg_engine):
+    buy_pack(hook, pg_engine, user_id)
+    results = run_concurrently(pg_url, make(FakeDodo()), [event("refund.succeeded", refund()) for _ in range(5)])
+    assert sorted(results) == ["ignored"] * 4 + ["processed"]
+    assert balance(pg_engine, user_id) == 0
+    assert count(pg_engine, "credit_transactions", "reason = 'purchase_reversal'") == 1
+
+
+def test_grants_racing_charges_never_go_negative(pg_url, api_app, user_id, pg_engine):
+    """Three pack purchases land while ten analyses try to spend credits."""
+    for i in range(3):
+        make_payment(pg_engine, user_id, checkout_id=f"cks_{i}")
+    provider = make(FakeDodo())
+
+    async def race():
+        engine = create_async_engine(pg_url, poolclass=NullPool)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def grant(i):
+            async with sessions() as db:
+                await process_webhook(db, provider, catalog(), event(
+                    "payment.succeeded", paid(user_id, checkout_id=f"cks_{i}", payment_id=f"pay_{i}")))
+
+        async def spend(i):
+            try:
+                async with sessions() as db, db.begin():
+                    await ledger.charge(db, user_id, 1, reason="analysis_charge", idempotency_key=f"c{i}")
+                return True
+            except ledger.InsufficientCredits:
+                return False
+        try:
+            results = await asyncio.gather(*[grant(i) for i in range(3)], *[spend(i) for i in range(10)])
+        finally:
+            await engine.dispose()
+        return results[3:]
+
+    spent = asyncio.run(race()).count(True)
+    final = balance(pg_engine, user_id)
+    assert final >= 0 and final == 15 - spent
+    assert scalar(pg_engine, "SELECT COALESCE(SUM(delta), 0) FROM credit_transactions") == final
+    assert scalar(pg_engine, "SELECT MIN(balance_after) FROM credit_transactions") >= 0

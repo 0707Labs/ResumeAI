@@ -55,6 +55,78 @@ Calls use `claude-opus-5-5` with server-side refusal fallbacks enabled.
 7. **Export** DOCX or PDF. Only approved bullets that re-verify on the server use
    tailored wording.
 
+## Billing (Dodo Payments)
+
+Payments go through Dodo Payments, the merchant of record (it handles tax and issues
+receipts). Credits and passes are granted **only** from verified webhooks, never from the
+checkout redirect. Product ids, prices, credits, pass length, caps, fee estimates and LLM
+prices live in `backend/billing.toml`.
+
+### Run it locally in test mode
+
+1. In the Dodo dashboard, switch to **Test mode** and create the products from
+   `billing.toml` (a one-time credit pack and a one-time pass; Pro is a subscription and
+   stays hidden while its flag is off). Copy each `pdt_...` id into its
+   `dodo_product_id.test` in `billing.toml`.
+2. Install the Dodo CLI (`npm install -g dodopayments-cli`) and log in with your
+   **test** key: `dodo login "<test API key>" test`.
+3. Start the webhook relay. It creates a test webhook endpoint in the dashboard and
+   forwards real test events, signatures intact, to your machine:
+
+   ```bash
+   dodo wh listen http://localhost:8000/api/billing/webhooks/dodo
+   ```
+
+   Then copy that endpoint's signing secret (Developer → Webhooks → the CLI's endpoint,
+   `whsec_...`). A tunnel such as `cloudflared tunnel --url http://localhost:8000` also
+   works: point a test endpoint at `<tunnel>/api/billing/webhooks/dodo`.
+4. Fill in `backend/.env` (see `.env.example`): `DODO_API_KEY` (test key),
+   `DODO_WEBHOOK_SECRET` (step 3), `DODO_ENVIRONMENT=test`, and optionally
+   `DODO_BUSINESS_ID`. Check the dashboard matches the catalog:
+
+   ```bash
+   cd backend && .venv/bin/python scripts/dodo_check_products.py
+   ```
+
+5. Start the backend with that env and the frontend, sign in, open `/pricing` and buy.
+   Pay with a test card (`4242 4242 4242 4242`, any future expiry, CVC `123`; India:
+   `4576 2389 1277 1450`; UPI `success@upi`). The success page waits for the webhook
+   and then shows your credits:
+
+   ```bash
+   cd backend && .venv/bin/uvicorn app.main:app --reload --env-file .env
+   ```
+
+6. Refunds and disputes: refund the payment in the dashboard (Transactions → Initiate
+   refund) and watch the balance drop on `/account/billing`; anything needing a human
+   shows on `/admin/billing` (admins only).
+
+`dodo wh trigger` sends **unsigned** mock events, which our endpoint rejects with 401 by
+design (we never skip verification). To exercise the whole path without a real checkout,
+sign events locally with your secret instead:
+
+```bash
+cd backend && .venv/bin/python scripts/dodo_send_webhook.py payment.succeeded --payment-row <payments.id>
+```
+
+It also sends `refund.succeeded` (`--partial N`) and `dispute.opened|lost|won`, and
+`--msg-id` replays the same delivery. It refuses to run unless `DODO_ENVIRONMENT=test`.
+
+Alerts (failing webhooks, daily LLM spend over `[alerts]` in `billing.toml`) print from
+`python -m app.billing.cli check-alerts`, which exits 1 when there are any; run it from cron.
+
+### What the billing tests cover
+
+| Requirement | Tests |
+|---|---|
+| Invalid signature rejected (bad, wrong secret, missing headers, stale, re-serialized body) | `test_dodo_provider.py::test_bad_webhooks_are_rejected`, `test_billing_webhooks.py::test_bad_signatures_are_rejected_with_401_and_change_nothing` |
+| Replayed event ignored; concurrent first deliveries grant once | `test_billing_webhooks.py::test_replayed_event_is_ignored`, `::test_concurrent_deliveries_grant_once`, `::test_same_payment_under_a_new_delivery_id_grants_once` |
+| Valid event grants credits once | `test_billing_webhooks.py::test_valid_payment_grants_credits_once` |
+| Unknown event type safely ignored | `test_billing_webhooks.py::test_unknown_event_type_is_acknowledged_and_ignored`, `test_dodo_provider.py::test_unknown_event_type_still_verifies_and_parses` |
+| Concurrent grants and charges never go negative | `test_ledger.py::test_concurrent_charges_never_overspend`, `::test_concurrent_grants_and_charges_stay_consistent`, `test_billing_webhooks.py::test_grants_racing_charges_never_go_negative` |
+| Refund adjusts the ledger once (incl. redelivery, concurrency, spent credits) | `test_billing_webhooks.py::test_full_refund_takes_back_credits_exactly_once`, `::test_partial_refund_redelivered_under_a_new_id_applies_once`, `::test_concurrent_refund_deliveries_take_credits_back_once`, `::test_refund_after_credits_were_spent_never_goes_negative_and_flags` |
+| Tampered price or user id in checkout ignored | `test_billing_checkout.py::test_tampered_price_and_user_id_are_ignored`, `test_dodo_provider.py::test_checkout_sends_config_product_and_our_metadata` |
+
 ## Tests
 
 ```bash

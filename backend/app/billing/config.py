@@ -83,6 +83,23 @@ class Downloads(_Strict):
     url_ttl_seconds: Annotated[int, Field(ge=10, le=3600)] = 120
 
 
+class Referrals(_Strict):
+    enabled: bool = True
+    # When the referrer earns the reward: once the friend's account exists (their email is
+    # verified by then), or once they finish their first tailoring.
+    trigger: Literal["on_verified_signup", "on_first_tailoring"] = "on_first_tailoring"
+    reward_credits: PositiveInt = 1
+    invitee_reward_credits: Annotated[int, Field(ge=0)] = 0
+    monthly_cap: PositiveInt = 10  # rewards per referrer per calendar month (UTC)
+    # In invite-only mode a referral link also works as an invite, this many times per user.
+    invites_per_user: Annotated[int, Field(ge=0)] = 5
+    # Referred sign-ups from one network (IP) within review_window_hours: from this many on,
+    # each new one waits in the admin queue instead of paying out.
+    same_ip_review_threshold: PositiveInt = 3
+    review_window_hours: PositiveInt = 24
+    extra_disposable_domains: list[str] = []
+
+
 class Display(_Strict):
     prices_include_tax: bool
 
@@ -127,6 +144,7 @@ class BillingConfig(_Strict):
     free: Free
     analyses: Analyses = Analyses()
     downloads: Downloads = Downloads()
+    referrals: Referrals = Referrals()
     signup: Signup
     products: dict[str, Product]
     fees: Fees

@@ -5,11 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { captureReferral } from "@/lib/referrals";
 import type { Me } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
 import { OutOfCreditsModal } from "./billing/OutOfCreditsModal";
+import { CreditsLive } from "./CreditsLive";
 import { MonitorIcon, MoonIcon, SunIcon, TrashIcon, UserIcon } from "./icons";
 import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
@@ -49,6 +51,8 @@ export function useHydrated() {
 export function AppShell({ children, initialTheme }: { children: React.ReactNode; initialTheme: Theme }) {
   useHydrated();
   const pathname = usePathname();
+  // A friend's link (?ref=CODE) on any page is kept for sign-up (lib/referrals.ts).
+  useEffect(() => { captureReferral(window.location.search); }, [pathname]);
   if (isMarketingPath(pathname)) return <>{children}</>;
   return (
     <>
@@ -89,7 +93,10 @@ function AccountLink({ pathname }: { pathname: string }) {
   if (me === undefined) return null;
   const cls = "flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg";
   return me ? (
-    <Link href="/account" className={cls}><UserIcon />Account</Link>
+    <>
+      <CreditsLive />
+      <Link href="/account" className={cls}><UserIcon />Account</Link>
+    </>
   ) : (
     <Link href="/signin" className={cls}>Sign in</Link>
   );

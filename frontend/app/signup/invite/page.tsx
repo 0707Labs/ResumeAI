@@ -30,11 +30,11 @@ export default function InvitePage() {
   if (pending === undefined || redirect) return null;
   if (pending === null) return <PendingExpired error={loadError} />;
 
-  async function check(withCode?: string) {
+  async function check(withCode?: string, referral = false) {
     setBusy(true);
     setError(null);
     try {
-      await authApi.checkInvite(withCode);
+      await (referral ? authApi.useReferralInvite() : authApi.checkInvite(withCode));
       try { sessionStorage.removeItem(INVITE_CODE_KEY); } catch { /* nothing stored */ }
       router.push("/signup/consent");
     } catch (e) {
@@ -48,6 +48,12 @@ export default function InvitePage() {
   return (
     <AuthCard title="Enter your invite"
       intro={<>Signing up as <strong className="text-fg">{pending.email}</strong> with {PROVIDER[pending.provider]}.</>}>
+      {pending.has_referral_invite && !pending.has_bound_invite && (
+        <Alert tone="ok" title="A friend invited you">
+          Your friend&apos;s link works as your invite.
+          <Button className="mt-2" busy={busy} onClick={() => void check(undefined, true)}>Use my friend&apos;s invite</Button>
+        </Alert>
+      )}
       {pending.has_bound_invite && (
         <Alert tone="ok" title="We found an invite for you">
           <Button className="mt-2" busy={busy} onClick={() => void check()}>Use my invite</Button>

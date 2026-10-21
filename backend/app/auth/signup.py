@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import ip_ref, subject_ref
+from app.billing import ledger, referrals
+from app.billing.config import get_billing_config
 from app.config import get_settings
 from app.db.models import (
     Account,
@@ -61,17 +63,34 @@ async def complete_signup(
     notice_ids: dict[str, uuid.UUID],
     research_opt_in: bool,
     ip: str | None,
+    referral_code: str | None = None,
 ) -> User:
     """Create the account for a pending identity whose invite step passed.
 
     `pending` must have been loaded with lock=True in this transaction, so a
     double submit waits and then finds the row gone. Raises SignupError (after
-    rolling back) on any failure. The caller confirmed 18+ and Terms consent."""
+    rolling back) on any failure. The caller confirmed 18+ and Terms consent.
+
+    referral_code (the rt_ref cookie) is attributed in the same transaction; in
+    invite-only mode a referral link can stand in for the invite (pending.referral_invite),
+    within the referrer's invites_per_user."""
     if pending.kind != "signup" or not pending.verified_email:
         raise SignupError("email_unverified")
-    if pending.invite_id is None and get_settings().invite_only:
+    by_referral = pending.invite_id is None and pending.referral_invite
+    if pending.invite_id is None and not by_referral and get_settings().invite_only:
         raise SignupError("invite_required")
     pending_id, email, invite_id = pending.id, pending.verified_email, pending.invite_id
+    config = get_billing_config()
+    if by_referral and get_settings().invite_only:
+        referrer = await referrals.referrer_for(db, referral_code)
+        if referrer is not None:
+            await ledger.lock_user(db, referrer.id)  # serializes use of this referrer's invites
+        if referrer is None or not config.referrals.enabled or await referrals.invites_left(
+                db, config, referrer.id) == 0:
+            await db.rollback()
+            await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id).values(referral_invite=False))
+            await db.commit()
+            raise SignupError("invite_unavailable")
 
     notices = await current_notices(db)
     purposes = REQUIRED_PURPOSES + (("research",) if research_opt_in else ())
@@ -134,6 +153,7 @@ async def complete_signup(
         )
         for p in purposes
     ])
+    await referrals.attribute(db, config, user, referral_code, ip_hmac=ip_hmac, used_as_invite=by_referral)
     await db.execute(delete(PendingAuth).where(PendingAuth.id == pending_id))
     await db.commit()
     return user

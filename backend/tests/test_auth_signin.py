@@ -132,7 +132,7 @@ def test_new_user_without_invite_gets_no_account(client, outbox, notices, pg_eng
 
     pending = client.get("/api/auth/pending").json()
     assert pending == {"kind": "signup", "provider": "email", "email": NEW, "invite_required": True,
-                       "invite_accepted": False, "has_bound_invite": False}
+                       "invite_accepted": False, "has_bound_invite": False, "has_referral_invite": False}
 
     bad = post(client, "/api/auth/signup/invite", {"code": "NOPE-NOPE-NOPE"})
     assert bad.status_code == 400 and bad.json()["detail"] == "no_invite"

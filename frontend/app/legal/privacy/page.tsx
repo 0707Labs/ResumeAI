@@ -28,6 +28,9 @@ export default function PrivacyPage() {
               <li><strong>Billing:</strong> your purchases, credit and pass history, and a customer reference from Dodo Payments. We never see or store card details.</li>
               <li><strong>Usage records:</strong> when an analysis runs, what it cost us in AI usage, and each download (format and what paid for it). These records and our logs don&apos;t contain your resume text.</li>
               <li><strong>Waitlist:</strong> your email, if you join it.</li>
+              <li><strong>Referrals:</strong> if you joined through a friend&apos;s link, that you were referred by them,
+                and a one-way hash of the network address you signed up from, used only to spot abuse. Your friend sees
+                that someone joined, never who.</li>
             </ul>
           ),
         },

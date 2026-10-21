@@ -346,3 +346,37 @@ download is what spends a credit. Code: `app/billing/entitlements.py` (decisions
   fall in the window; credits never go below zero.
 - Credit-backed tailorings have no monthly cap of their own: a user with one credit can
   keep tailoring (only Claude costs accrue). Add one if `/admin/billing` shows abuse.
+
+---
+
+## 10. Referrals
+
+Code: `app/billing/referrals.py`, `/api/referrals`, `/api/admin/referrals`; config
+`[referrals]` in `billing.toml`.
+
+- Every user has a code (made on first visit to `/account/referrals`); the link is
+  `{RT_PUBLIC_URL}/?ref=CODE`. Any page keeps a valid `?ref` in the first-party `rt_ref`
+  cookie for 30 days. The first friend's link wins.
+- **Attribution** happens in the account-creating transaction (`complete_signup`): one
+  `referrals` row per new account (a referee is attributed once). Rejected up front:
+  the same person (same address after removing `+tags`, and Gmail dots), and disposable
+  email domains (built-in list plus `extra_disposable_domains`). From the
+  `same_ip_review_threshold`-th referred sign-up on one network within
+  `review_window_hours`, each new one waits for review (`needs_review`). Networks are
+  compared by a keyed hash, never stored as addresses. We don't fingerprint devices.
+- **Reward** on the configured `trigger`: `on_verified_signup` (when the account is
+  created; every sign-up has a verified email by then) or `on_first_tailoring` (default:
+  when the friend's first tailoring finishes). It goes through the ledger: reason
+  `referral`, `reference_id` = referral id, key `referral:{id}`, so it is paid once.
+  `reward_credits` (1) to the referrer, plus optional `invitee_reward_credits`. At most
+  `monthly_cap` (10) rewards per referrer per calendar month; over it, the referral is
+  rejected (`over_monthly_cap`). Rewards lock the referrer's row, so concurrent triggers
+  can't exceed the cap.
+- **Invite-only mode:** a friend's link works as the invite, `invites_per_user` (5)
+  times per referrer. The invite page offers "Use my friend's invite"; the limit is
+  checked again when the account is created.
+- **Live feedback:** the workspace header polls `/api/referrals/updates` every 30 s and
+  on focus. It shows the balance and, once per reward, "Your friend joined. +1 credit".
+- **Admin queue** (`/admin/referrals`): approve a flagged one (it pays if its trigger
+  already fired), reject it with a reason, or reverse a paid one. A reversal takes the
+  credits back (key `referral-reversal:{id}`), never below zero.

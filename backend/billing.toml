@@ -34,6 +34,18 @@ url_ttl_seconds = 120         # signed download links expire after this
 [signup]
 bonus_credits = 0
 
+# Referrals: a friend who signs up with your link earns you credits, through the ledger.
+[referrals]
+enabled = true
+trigger = "on_first_tailoring"   # or "on_verified_signup"
+reward_credits = 1
+invitee_reward_credits = 0       # optional welcome credits for the friend
+monthly_cap = 10                 # rewards per referrer per calendar month (UTC)
+invites_per_user = 5             # invite-only mode: a referral link works as an invite this often
+same_ip_review_threshold = 3     # this many referred sign-ups from one network in the window -> admin review
+review_window_hours = 24
+extra_disposable_domains = []    # added to the built-in list in app/billing/referrals.py
+
 [products.credit_pack_5]
 kind = "credit_pack"
 name = "Credit pack"

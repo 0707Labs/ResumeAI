@@ -32,6 +32,8 @@ from app.auth.ratelimit import limiter, rate_limit
 from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
+from app.billing import referrals
+from app.billing.config import get_billing_config
 from app.config import get_settings
 from app.db.models import EmailToken, PendingAuth, Waitlist
 from app.db.session import get_db
@@ -76,6 +78,8 @@ class PendingView(BaseModel):
     invite_required: bool
     invite_accepted: bool
     has_bound_invite: bool
+    # Invite-only: the rt_ref cookie names someone with invites left, so their link can be the invite.
+    has_referral_invite: bool = False
 
 
 class PublicConfig(BaseModel):
@@ -86,6 +90,7 @@ class PublicConfig(BaseModel):
 
 class InviteIn(BaseModel):
     code: str | None = Field(default=None, max_length=64)  # None: use the invite bound to the email
+    referral: bool = False  # use the friend's referral link (rt_ref cookie) as the invite
 
 
 class NoticeOut(BaseModel):
@@ -274,7 +279,16 @@ async def get_pending(request: Request, db: AsyncSession = Depends(get_db)) -> P
     bound = bool(pending.verified_email) and await find_bound(db, pending.verified_email) is not None
     return PendingView(kind=pending.kind, provider=pending.provider, email=pending.verified_email,
                        invite_required=get_settings().invite_only,
-                       invite_accepted=pending.invite_id is not None, has_bound_invite=bound)
+                       invite_accepted=pending.invite_id is not None or pending.referral_invite,
+                       has_bound_invite=bound, has_referral_invite=await _referral_invite(db, request))
+
+
+async def _referral_invite(db: AsyncSession, request: Request) -> bool:
+    config = get_billing_config()
+    if not (get_settings().invite_only and config.referrals.enabled):
+        return False
+    referrer = await referrals.referrer_for(db, request.cookies.get(referrals.COOKIE))
+    return referrer is not None and await referrals.invites_left(db, config, referrer.id) > 0
 
 
 @router.post("/auth/signup/invite",
@@ -289,6 +303,15 @@ async def signup_invite(body: InviteIn, request: Request, db: AsyncSession = Dep
         raise _fail(400, "email_unverified")
     per_key_limit(f"invite_pending:{pending.id}", 10, FIFTEEN_MIN)
     email, provider = pending.verified_email, pending.provider  # rollback below expires `pending`
+    if body.referral and not body.code:
+        if not await _referral_invite(db, request):
+            await db.rollback()
+            log_auth_event("invite_checked", outcome="denied", provider=provider, reason="referral")
+            raise _fail(400, "no_invite")
+        pending.referral_invite = True  # used up (and re-checked) only when the account is created
+        await db.commit()
+        log_auth_event("invite_checked", provider=provider, reason="referral")
+        return AuthStep(next="consent")
     invite_id = await (find_usable(db, body.code, email) if body.code else find_bound(db, email))
     if invite_id is None:
         await db.rollback()
@@ -319,7 +342,8 @@ async def signup_complete(body: CompleteIn, request: Request, response: Response
     provider = pending.provider
     try:
         user = await complete_signup(db, pending, notice_ids=dict(body.notice_ids),
-                                     research_opt_in=body.research_opt_in, ip=_ip(request))
+                                     research_opt_in=body.research_opt_in, ip=_ip(request),
+                                     referral_code=request.cookies.get(referrals.COOKIE))
     except SignupError as exc:
         await db.rollback()
         log_auth_event("signup_failed", outcome="denied", provider=provider, reason=exc.code)

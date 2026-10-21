@@ -53,6 +53,9 @@ async def _lock_balance(db: AsyncSession, user_id: uuid.UUID) -> int:
     return balance
 
 
+lock_user = _lock_balance  # for callers that must serialize with ledger writes for a user
+
+
 async def _existing(db: AsyncSession, user_id: uuid.UUID, key: str, reason: str) -> Posted | None:
     row = await db.scalar(select(CreditTransaction).where(CreditTransaction.idempotency_key == key))
     if row is None:
@@ -103,25 +106,32 @@ async def charge(db: AsyncSession, user_id: uuid.UUID, credits: int, *, reason: 
                       reference_id=reference_id, note=note)
 
 
-async def reverse_purchase(db: AsyncSession, user_id: uuid.UUID, credits: int, *, idempotency_key: str,
-                           reference_id: str, note: str | None = None) -> Reversal:
-    """Take back credits after a refund or a lost dispute, at most once per key.
+async def take_back(db: AsyncSession, user_id: uuid.UUID, credits: int, *, reason: str, idempotency_key: str,
+                    reference_id: str, note: str | None = None) -> Reversal:
+    """Take back credits granted earlier (a refunded purchase, a reversed referral), at
+    most once per key.
 
     Policy: never below zero. If some credits were already spent, take back what is
-    left and report the shortfall; the caller flags the payment for admin review.
-    The row is written even when nothing can be taken back (delta 0), so the
-    reversal is recorded exactly once."""
+    left and report the shortfall; the caller flags it for admin review. The row is
+    written even when nothing can be taken back (delta 0), so it's recorded exactly once."""
     if credits <= 0:
         raise ValueError("a reversal must be positive")
     balance = await _lock_balance(db, user_id)
-    if (done := await _existing(db, user_id, idempotency_key, "purchase_reversal")) is not None:
+    if (done := await _existing(db, user_id, idempotency_key, reason)) is not None:
         return Reversal(done, credits, credits + done.delta)
     taken = min(credits, balance)
     shortfall = credits - taken
     if shortfall:
         note = f"{note + '; ' if note else ''}shortfall {shortfall} of {credits} credits"
-    posted = await _write(db, user_id, -taken, balance, "purchase_reversal", idempotency_key, reference_id, note)
+    posted = await _write(db, user_id, -taken, balance, reason, idempotency_key, reference_id, note)
     return Reversal(posted, credits, shortfall)
+
+
+async def reverse_purchase(db: AsyncSession, user_id: uuid.UUID, credits: int, *, idempotency_key: str,
+                           reference_id: str, note: str | None = None) -> Reversal:
+    """Take back a purchase's credits after a refund or a lost dispute (see take_back)."""
+    return await take_back(db, user_id, credits, reason="purchase_reversal", idempotency_key=idempotency_key,
+                           reference_id=reference_id, note=note)
 
 
 async def balance(db: AsyncSession, user_id: uuid.UUID) -> int:

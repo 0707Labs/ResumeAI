@@ -87,6 +87,7 @@ class User(Base):
     # Cache of SUM(credit_transactions.delta); only app.billing.ledger writes it, in the
     # same transaction as the ledger row. Its row lock serializes a user's credit changes.
     credits_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    referral_code: Mapped[str | None] = mapped_column(Text, unique=True)  # made on first use
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
@@ -268,6 +269,8 @@ class PendingAuth(Base):
     invite_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invites.id", ondelete="SET NULL")
     )
+    # Invite-only mode: a referral link stands in for the invite (checked again at sign-up).
+    referral_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = _created_at()
 
@@ -630,4 +633,49 @@ class Download(Base):
         Index("ix_downloads_analysis_created", "analysis_id", "created_at"),
         Index("ix_downloads_pass_id", "pass_id", postgresql_where=text("pass_id IS NOT NULL")),
         Index("ix_downloads_subscription_id", "subscription_id", postgresql_where=text("subscription_id IS NOT NULL")),
+    )
+
+
+REFERRAL_STATUSES = ("pending", "rewarded", "rejected")
+
+
+class Referral(Base):
+    """A referred account (see app.billing.referrals). One per referee. Credits move only
+    through the ledger (reason 'referral', reference_id = this id); reward_credits and
+    invitee_credits record what was paid. ip_hmac is the sign-up network, keyed, so
+    clusters can be spotted without storing addresses."""
+
+    __tablename__ = "referrals"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    referrer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    referee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    reason: Mapped[str | None] = mapped_column(Text)
+    needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    used_as_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    ip_hmac: Mapped[str | None] = mapped_column(Text)
+    reward_credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    invitee_credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = _created_at()
+    rewarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # referrer was notified
+
+    __table_args__ = (
+        CheckConstraint(_in("status", REFERRAL_STATUSES), name="status"),
+        CheckConstraint("referrer_id <> referee_id", name="not_self"),
+        CheckConstraint("status <> 'rewarded' OR rewarded_at IS NOT NULL", name="rewarded"),
+        CheckConstraint("reversed_at IS NULL OR status = 'rejected'", name="reversed"),
+        Index("ix_referrals_referrer_created", "referrer_id", "created_at"),
+        Index("ix_referrals_review", "created_at", postgresql_where=text("needs_review")),
+        Index("ix_referrals_ip", "ip_hmac", "created_at", postgresql_where=text("ip_hmac IS NOT NULL")),
     )

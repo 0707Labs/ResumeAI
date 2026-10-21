@@ -333,6 +333,8 @@ export const PendingSignIn = z.object({
   invite_required: z.boolean(),
   invite_accepted: z.boolean(),
   has_bound_invite: z.boolean(),
+  /** Invite-only: a friend's referral link (rt_ref cookie) can be the invite. */
+  has_referral_invite: z.boolean().default(false),
 });
 export const Notice = z.object({
   id: z.uuid(),
@@ -491,6 +493,54 @@ export type ScoreComponent = z.infer<typeof ScoreComponent>;
 export type ATSReport = z.infer<typeof ATSReport>;
 export type ScoreResponse = z.infer<typeof ScoreResponse>;
 export type MentorAdvice = z.infer<typeof MentorAdvice>;
+/** GET /api/referrals: your link and what it earned (friends are never named). */
+const ReferralStatus = z.enum(["pending", "rewarded", "rejected"]);
+export const Referrals = z.object({
+  enabled: z.boolean(),
+  code: z.string(),
+  link: z.string(),
+  trigger: z.enum(["on_verified_signup", "on_first_tailoring"]),
+  reward_credits: z.number().int(),
+  invitee_reward_credits: z.number().int(),
+  monthly_cap: z.number().int(),
+  rewarded_this_month: z.number().int(),
+  invite_only: z.boolean(),
+  invites_left: z.number().int(),
+  total_earned: z.number().int(),
+  pending: z.number().int(),
+  rewarded: z.number().int(),
+  referrals: z.array(z.object({
+    id: z.uuid(),
+    status: ReferralStatus,
+    reason: z.string().nullable(),
+    needs_review: z.boolean(),
+    created_at: z.string(),
+    rewarded_at: z.string().nullable(),
+    credits: z.number().int(),
+  })),
+});
+/** GET /api/referrals/updates: polled by the header. */
+export const ReferralUpdates = z.object({
+  credits_balance: z.number().int(),
+  new_rewards: z.array(z.object({ id: z.uuid(), credits: z.number().int(), rewarded_at: z.string() })),
+});
+export const AdminReferrals = z.array(z.object({
+  id: z.uuid(),
+  referrer_email: z.string().nullable(),
+  referee_email: z.string().nullable(),
+  status: ReferralStatus,
+  reason: z.string().nullable(),
+  needs_review: z.boolean(),
+  used_as_invite: z.boolean(),
+  same_network: z.number().int(),
+  reward_credits: z.number().int(),
+  created_at: z.string(),
+  rewarded_at: z.string().nullable(),
+  reversed_at: z.string().nullable(),
+}));
+export type Referrals = z.infer<typeof Referrals>;
+export type ReferralUpdates = z.infer<typeof ReferralUpdates>;
+export type AdminReferrals = z.infer<typeof AdminReferrals>;
 export type ExportPreview = z.infer<typeof ExportPreview>;
 export type Me = z.infer<typeof Me>;
 export type ProviderAvailability = z.infer<typeof ProviderAvailability>;

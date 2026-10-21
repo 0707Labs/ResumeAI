@@ -125,6 +125,8 @@ export const authApi = {
   /** code omitted: use the invite issued to the verified email. */
   checkInvite: (code?: string) =>
     call(S.AuthStep, "/api/auth/signup/invite", { method: "POST", body: code ? { code } : {} }),
+  /** Use the friend's referral link (rt_ref cookie) as the invite. */
+  useReferralInvite: () => call(S.AuthStep, "/api/auth/signup/invite", { method: "POST", body: { referral: true } }),
   notices: () => call(S.Notices, "/api/auth/notices"),
   completeSignup: (body: {
     age_18_plus: true;

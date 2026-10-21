@@ -67,6 +67,16 @@ function Account() {
           )}
         </div>
       </Card>
+      <Card>
+        <h2 className="text-lg font-semibold">Invite friends</h2>
+        <p className="mt-1 text-sm text-muted">Share your link and earn credits when friends join.</p>
+        <div className="mt-3 flex flex-wrap gap-4">
+          <Link href="/account/referrals" className="text-sm font-medium text-accent underline">Your referral link</Link>
+          {me.role === "admin" && (
+            <Link href="/admin/referrals" className="text-sm font-medium text-accent underline">Referral review queue</Link>
+          )}
+        </div>
+      </Card>
       {providers && <SignInMethods providers={providers} onChange={reload} onError={setError} />}
       <SignOut />
       <DeleteAccount />

@@ -17,7 +17,7 @@ from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.signing import sign, unsign
-from app.billing import analyses
+from app.billing import analyses, referrals
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import parse_analysis_id
 from app.config import get_settings
@@ -144,9 +144,11 @@ class TailorRequest(BaseModel):
 
 @router.post("/api/tailor")
 async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(billed_analysis),
-                        db: AsyncSession = Depends(get_db)) -> TailoredResume:
+                        db: AsyncSession = Depends(get_db),
+                        config: BillingConfig = Depends(get_billing_config)) -> TailoredResume:
     """Free. For a signed-in analysis Claude tailors once (a repeat is rules-only), and
-    the first result is kept on the analysis."""
+    the first result is kept on the analysis. A finished tailoring is also the
+    on_first_tailoring trigger for the user's referral, if they were referred."""
     billed = pinned_to(billed, body.resume, body.jd)
     if billed is not None and billed.tailored is not None:
         billed = None
@@ -158,6 +160,8 @@ async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(b
         billed.tailored = result.model_dump(mode="json")
         billed.llm_tailored = llm is not None and not any(n.startswith(RULES_FALLBACK) for n in result.notes)
         billed.tailored_at = func.now()
+        if billed.user_id is not None:
+            await referrals.on_first_tailoring(db, config, billed.user_id)
         await db.commit()
     return result
 

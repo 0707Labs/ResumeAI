@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
-from app.api.analyses import billed_analysis, pinned_to
+from app.api.analyses import billed_analysis, over_daily_cap, pinned_to
 from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
@@ -54,6 +54,7 @@ router = APIRouter()
 
 NO_KEY = "Rules only (no ANTHROPIC_API_KEY set)."
 NO_ANALYSIS = "Rules only (sign in and start an analysis to use Claude)."
+DAILY_LIMIT = "Rules only (today's Claude analyses are used up; more from 00:00 UTC)."
 
 
 def claude_for(use_llm: bool, analysis: Analysis | None) -> tuple[LLM | None, str | None]:
@@ -66,7 +67,7 @@ def claude_for(use_llm: bool, analysis: Analysis | None) -> tuple[LLM | None, st
     if llm is None:
         return None, NO_KEY
     if analysis is None:
-        return None, NO_ANALYSIS
+        return None, DAILY_LIMIT if over_daily_cap.get() else NO_ANALYSIS
     return llm, None
 
 

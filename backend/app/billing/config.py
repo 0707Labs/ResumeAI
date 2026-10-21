@@ -71,6 +71,11 @@ class Free(_Strict):
 class Analyses(_Strict):
     # How long a started analysis may use Claude.
     usable_hours: PositiveInt = 24
+    # Analyses per user per UTC day that may use Claude; later ones that day run
+    # rules-only (they still start, and still download). 0 turns Claude off.
+    claude_analyses_per_day: Annotated[int, Field(ge=0)] = 10
+    # The same, for a user with an active pass or Pro.
+    paid_claude_analyses_per_day: Annotated[int, Field(ge=0)] = 30
 
 
 class Downloads(_Strict):

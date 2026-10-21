@@ -23,6 +23,10 @@ analyses_per_month = 2        # free tailorings a month (calendar month, UTC); d
 # needs what a download would need (an active pass, Pro, or a credit balance); it spends nothing.
 [analyses]
 usable_hours = 24             # Claude may be used this long for one analysis
+# Bounds Claude spend: analyses per user per UTC day (from 00:00 UTC) that may use Claude.
+# Past it an analysis still starts and downloads, but runs rules-only.
+claude_analyses_per_day = 10
+paid_claude_analyses_per_day = 30   # with an active pass or Pro
 
 # A download is charged to an active pass under its fair-use cap, then Pro under its cap,
 # then credits. Re-downloading the same tailored resume is free for a while after that.

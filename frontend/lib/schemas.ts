@@ -301,6 +301,9 @@ export const AnalysisStarted = z.object({
   analysis_id: z.uuid(),
   usable_until: z.string(),
   uses: z.enum(["pass", "pro", "credit", "free"]).nullable(),
+  // false: started over the daily Claude cap, so this analysis runs rules-only.
+  claude: z.boolean().default(true),
+  claude_per_day: z.number().int().nonnegative().optional(),
 });
 /** POST /api/downloads/{fmt}: a paid download's short-lived signed link. */
 export const DownloadLink = z.object({

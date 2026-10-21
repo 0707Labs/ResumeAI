@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, api, classify, messageFor } from "@/lib/api";
+import { ApiError, api, classify, dailyLimitNote, messageFor } from "@/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -116,6 +116,36 @@ describe("analysis id and the download paywall", () => {
   }
 
   afterEach(() => sessionStorage.clear());
+
+  const gapBody = (notes: string[]) => ({
+    items: [], candidate_years_experience: null, notes, counts: { evidenced: 0, implied: 0, missing: 0 }, required_coverage: 0,
+  });
+  const withStart = (startBody: object, notes: string[]) => vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL) => {
+    if (String(url) === "/api/auth/csrf") return new Response(JSON.stringify({ csrf_token: "t" }));
+    if (String(url) === "/api/analyses") return new Response(JSON.stringify(startBody));
+    return new Response(JSON.stringify(gapBody(notes)));
+  }));
+
+  it("over the daily Claude cap: the analysis still starts, and the note says why it's rules-only", async () => {
+    withStart({ ...started(ids[0]), claude: false, claude_per_day: 10 },
+      ["Rules only (today's Claude analyses are used up; more from 00:00 UTC)."]);
+    const gap = await api.analyze({} as never, {} as never);
+    expect(sessionStorage.getItem("rt_analysis_id")).toBe(ids[0]);
+    expect(gap.notes).toEqual([dailyLimitNote(10)]);
+    expect(gap.notes[0]).toMatch(/today's 10 Claude analyses.*00:00 UTC/);
+  });
+
+  it("under the cap the gap notes are left alone", async () => {
+    withStart({ ...started(ids[0]), claude: true, claude_per_day: 10 }, ["Refined with Claude."]);
+    expect((await api.analyze({} as never, {} as never)).notes).toEqual(["Refined with Claude."]);
+  });
+
+  it("429 on start is a rate-limit message, not bad input", async () => {
+    backend(() => new Response(JSON.stringify({ detail: "rate_limited" }), { status: 429 }));
+    const err = await api.analyze({} as never, {} as never).catch((e) => e);
+    expect(err.kind).toBe("rate_limited");
+    expect(classify(429)).toBe("rate_limited");
+  });
 
   it("analyze starts a server-side analysis with the inputs; later calls send its id", async () => {
     let n = 0;

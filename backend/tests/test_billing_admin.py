@@ -80,7 +80,9 @@ def test_record_llm_usage_never_raises_without_a_database(monkeypatch):
     record_llm_usage("GapOut", response())  # no exception
 
 
-def test_analysis_id_header_reaches_sync_pipeline_code():
+def test_an_unchecked_analysis_id_header_never_tags_usage():
+    """Only app.api.analyses.billed_analysis sets the id, after checking the caller owns
+    the analysis (tests/test_analyses.py covers the signed-in path)."""
     app = create_app()
 
     @app.get("/test/analysis-id")
@@ -89,10 +91,7 @@ def test_analysis_id_header_reaches_sync_pipeline_code():
         return {"id": str(value) if value else None}
 
     with TestClient(app) as c:
-        aid = str(uuid.uuid4())
-        assert c.get("/test/analysis-id", headers={"X-Analysis-Id": aid}).json() == {"id": aid}
-        assert c.get("/test/analysis-id", headers={"X-Analysis-Id": "nope"}).json() == {"id": None}
-        assert c.get("/test/analysis-id").json() == {"id": None}
+        assert c.get("/test/analysis-id", headers={"X-Analysis-Id": str(uuid.uuid4())}).json() == {"id": None}
 
 
 # --- admin view ----------------------------------------------------------------------------------

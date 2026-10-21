@@ -66,6 +66,13 @@ class Free(_Strict):
     analyses_per_month: Annotated[int, Field(ge=0)]
 
 
+class Analyses(_Strict):
+    credits_per_analysis: PositiveInt = 1
+    # How long a started analysis may use Claude. A credit not committed by then (tailoring
+    # never finished) is refunded, and the run stops counting against any allowance.
+    usable_hours: PositiveInt = 24
+
+
 class Display(_Strict):
     prices_include_tax: bool
 
@@ -108,6 +115,7 @@ class BillingConfig(_Strict):
     version: PositiveInt
     display: Display
     free: Free
+    analyses: Analyses = Analyses()
     signup: Signup
     products: dict[str, Product]
     fees: Fees

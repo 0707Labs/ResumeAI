@@ -343,6 +343,11 @@ class CreditTransaction(Base):
         CheckConstraint("balance_after >= 0", name="balance_after"),
         Index("ix_credit_transactions_user_created", "user_id", "created_at"),
         Index("ix_credit_transactions_reference_id", "reference_id"),
+        # One charge and at most one refund per analysis, on top of the idempotency keys.
+        Index("ix_credit_transactions_one_charge", "reference_id", unique=True,
+              postgresql_where=text("reason = 'analysis_charge'")),
+        Index("ix_credit_transactions_one_refund", "reference_id", unique=True,
+              postgresql_where=text("reason = 'refund'")),
     )
 
 
@@ -534,8 +539,9 @@ class BillingReview(Base):
 
 class LlmUsage(Base):
     """One row per Claude call: tokens and cost, for spend tracking and cost per analysis.
-    analysis_id is the browser's id for one resume + job run (X-Analysis-Id), used only
-    for grouping. No prompt or output text is stored."""
+    analysis_id is the server-side analyses.id the call was billed to (set only after the
+    X-Analysis-Id header is checked against the signed-in user). No FK, so recording a
+    usage row can never fail on it. No prompt or output text is stored."""
 
     __tablename__ = "llm_usage"
 
@@ -551,3 +557,57 @@ class LlmUsage(Base):
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (Index("ix_llm_usage_created_at", "created_at"),)
+
+
+ANALYSIS_STATUSES = ("pending", "succeeded", "failed")
+ENTITLEMENTS = ("pass", "pro", "credit", "free")
+BILLING_STATES = ("none", "reserved", "committed", "refunded")
+
+
+class Analysis(Base):
+    """One resume + job run, the unit of billing (see app.billing.analyses).
+
+    entitlement says what pays: a pass, Pro, a credit or the free allowance. Only a
+    credit run has a reservation: charged at start ('reserved'), kept on a successful
+    Claude tailoring ('committed'), given back once otherwise ('refunded'). A 'failed'
+    run (error, rules-only fallback, abandoned) doesn't count against any allowance.
+    Claude may be used for this run's stages until usable_until."""
+
+    __tablename__ = "analyses"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    entitlement: Mapped[str] = mapped_column(Text, nullable=False)
+    billing_state: Mapped[str] = mapped_column(Text, nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    pass_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("passes.id"))
+    subscription_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscriptions.id"))
+    usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        CheckConstraint(_in("status", ANALYSIS_STATUSES), name="status"),
+        CheckConstraint(_in("entitlement", ENTITLEMENTS), name="entitlement"),
+        CheckConstraint(_in("billing_state", BILLING_STATES), name="billing_state"),
+        CheckConstraint("(entitlement = 'credit') = (billing_state <> 'none')", name="credit_state"),
+        CheckConstraint("(entitlement = 'credit') = (credits > 0)", name="credits"),
+        CheckConstraint("(billing_state = 'reserved') = (entitlement = 'credit' AND status = 'pending')",
+                        name="reserved_while_pending"),
+        CheckConstraint("billing_state <> 'committed' OR status = 'succeeded'", name="committed"),
+        CheckConstraint("(entitlement = 'pass') = (pass_id IS NOT NULL)", name="pass"),
+        CheckConstraint("(entitlement = 'pro') = (subscription_id IS NOT NULL)", name="pro"),
+        CheckConstraint("(status = 'pending') = (finished_at IS NULL)", name="finished"),
+        Index("ix_analyses_user_created", "user_id", "created_at"),
+        Index("ix_analyses_pass_id", "pass_id", postgresql_where=text("pass_id IS NOT NULL")),
+        Index("ix_analyses_subscription_id", "subscription_id",
+              postgresql_where=text("subscription_id IS NOT NULL")),
+        Index("ix_analyses_pending_until", "usable_until", postgresql_where=text("status = 'pending'")),
+    )

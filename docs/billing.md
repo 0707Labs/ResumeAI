@@ -12,7 +12,8 @@ mode before relying on it.
 Code map: catalog `backend/billing.toml`; provider `backend/app/billing/providers/dodo.py`;
 webhook handling `backend/app/billing/events.py` and `webhooks.py`; ledger
 `backend/app/billing/ledger.py`; admin metrics `backend/app/billing/admin.py`; CLI
-`python -m app.billing.cli`. Local test-mode instructions are in the README
+`python -m app.billing.cli`; spending `backend/app/billing/analyses.py` and
+`entitlements.py`. Local test-mode instructions are in the README
 ("Billing (Dodo Payments)").
 
 ---
@@ -299,3 +300,34 @@ fees from `[fees.dodo]`:
 Dodo reports no fee per payment, so check the estimates against payout reports.
 "Margin if fully used" assumes every credit or pass run is used, at the average LLM
 cost per analysis from `llm_usage` (priced from `[llm_prices]`).
+
+
+---
+
+## 9. Spending: analyses and entitlements
+
+A purchase is only worth something because starting an analysis spends it.
+
+- **Analyze** (signed in) calls `POST /api/analyses`. Holding the user's row lock, the
+  backend picks what pays, in this order: an **active pass** under its fair-use cap,
+  then **Pro** (an `active` subscription) under its per-period cap, then **one credit**
+  (`[analyses].credits_per_analysis`), then the **free allowance**
+  (`[free].analyses_per_month`, calendar month in UTC). Nothing left: **402
+  `no_credits`**, and the app opens the out-of-credits dialog.
+- A credit is charged at start (ledger key `charge:{analysis_id}`, reason
+  `analysis_charge`) and the analysis is `reserved`.
+- `POST /api/tailor` with that `X-Analysis-Id` settles it once:
+  - Claude tailored it: **committed** (the credit is kept; pass, Pro and free runs count).
+  - Claude failed and it fell back to rules only, or tailoring crashed: **refunded**
+    (`refund:{analysis_id}`, reason `refund`), and the run counts against nothing.
+  - Never tailored within `[analyses].usable_hours`: refunded as `abandoned` by
+    `python -m app.billing.cli sweep-analyses` (run it from cron, hourly) or on the
+    user's next start.
+  A second refund or charge for one analysis is impossible: the conditional update on
+  the analysis, the ledger keys and two partial unique indexes all prevent it.
+- **Claude is used only for the caller's own live analysis.** Signed out, or with an
+  unknown, someone else's, failed or expired analysis id, every stage runs rules-only
+  (no Claude calls, so nothing to pay for). Claude tailors once per analysis; gap,
+  score and mentor may use it until `usable_until`. `llm_usage.analysis_id` is the
+  checked server-side id, never the raw header.
+- Free runs currently get the full pipeline (mentor and export included).

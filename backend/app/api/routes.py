@@ -2,13 +2,19 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
+from app.api.analyses import billed_analysis
+from app.billing import analyses
 from app.config import get_settings
+from app.db.models import Analysis
+from app.db.session import get_db
 from app.export.render import to_docx, to_pdf
-from app.llm.client import get_llm
+from app.llm.client import LLM, get_llm
 from app.mentor import build_advice, polish
 from app.models import (
     WEIGHTS,
@@ -25,6 +31,7 @@ from app.models import (
 from app.parsing.synonyms import skill_synonyms
 from app.scoring import score
 from app.tailoring import apply_tailoring, tailor, verify_bullet, verify_summary
+from app.tailoring.tailor import RULES_FALLBACK
 from app.parsing import (
     MAX_BYTES,
     ExtractionError,
@@ -34,6 +41,22 @@ from app.parsing import (
 )
 
 router = APIRouter()
+
+NO_KEY = "Rules only (no ANTHROPIC_API_KEY set)."
+NO_ANALYSIS = "Rules only (sign in and start an analysis to use Claude)."
+
+
+def claude_for(use_llm: bool, analysis: Analysis | None) -> tuple[LLM | None, str | None]:
+    """Claude only for a request billed to the caller's own live analysis; otherwise
+    rules-only, with a note saying why (None when the caller asked for rules only)."""
+    if not use_llm:
+        return None, None
+    llm = get_llm()
+    if llm is None:
+        return None, NO_KEY
+    if analysis is None:
+        return None, NO_ANALYSIS
+    return llm, None
 
 
 @router.get("/health")
@@ -77,12 +100,11 @@ class GapRequest(BaseModel):
 
 
 @router.post("/api/gap/analyze")
-def gap_analyze(body: GapRequest) -> GapAnalysis:
+def gap_analyze(body: GapRequest, billed: Analysis | None = Depends(billed_analysis)) -> GapAnalysis:
     analysis = analyze(body.resume, body.jd)
-    llm = get_llm() if body.use_llm else None
+    llm, why = claude_for(body.use_llm, billed)
     if llm is None:
-        note = "Rules only." if not body.use_llm else "Rules only (no ANTHROPIC_API_KEY set)."
-        return analysis.model_copy(update={"notes": [note]})
+        return analysis.model_copy(update={"notes": [why or "Rules only."]})
     analysis, note = refine_with_llm(analysis, body.resume, llm)
     return analysis.model_copy(update={"notes": [note]})
 
@@ -109,11 +131,30 @@ class TailorRequest(BaseModel):
 
 
 @router.post("/api/tailor")
-def tailor_resume(body: TailorRequest) -> TailoredResume:
-    llm = get_llm() if body.use_llm else None
-    result = tailor(body.resume, body.jd, body.analysis, llm)
-    if body.use_llm and llm is None:
-        result.notes.insert(0, "No ANTHROPIC_API_KEY set.")
+async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(billed_analysis),
+                        db: AsyncSession = Depends(get_db)) -> TailoredResume:
+    """Tailoring settles a billed analysis: a Claude tailoring commits its credit (or
+    counts its pass, Pro or free run); an error or a rules-only fallback refunds it.
+    Claude tailors once per analysis; a later call is rules-only."""
+    if billed is not None and billed.status != "pending":
+        billed = None
+    llm, why = claude_for(body.use_llm, billed)
+    try:
+        result = await run_in_threadpool(tailor, body.resume, body.jd, body.analysis, llm)
+    except Exception:
+        if billed is not None:
+            await analyses.release(db, billed.id, billed.user_id, reason="error")
+            await db.commit()
+        raise
+    if why:
+        result.notes.insert(0, why)
+    if billed is not None:
+        if llm is None or any(n.startswith(RULES_FALLBACK) for n in result.notes):
+            await analyses.release(db, billed.id, billed.user_id, reason="llm_degraded", degraded=True)
+            result.notes.append("This run fell back to rules only, so it wasn't charged.")
+        else:
+            await analyses.finish(db, billed.id, billed.user_id)
+        await db.commit()
     return result
 
 
@@ -177,8 +218,8 @@ class ScoreResponse(BaseModel):
 
 
 @router.post("/api/ats/score")
-def ats_score(body: ScoreRequest) -> ScoreResponse:
-    llm = get_llm() if body.use_llm else None
+def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis)) -> ScoreResponse:
+    llm, _ = claude_for(body.use_llm, billed)
     before = score(body.resume, body.jd, llm=llm)
     if body.tailored is None:
         return ScoreResponse(before=before)
@@ -197,11 +238,11 @@ class MentorRequest(BaseModel):
 
 
 @router.post("/api/mentor")
-def mentor(body: MentorRequest) -> MentorAdvice:
+def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysis)) -> MentorAdvice:
     analysis = body.analysis or analyze(body.resume, body.jd)
     ats = body.ats or score(body.resume, body.jd)
     advice = build_advice(body.resume, body.jd, analysis, ats)
-    llm = get_llm() if body.use_llm else None
+    llm, _ = claude_for(body.use_llm, billed)
     return polish(advice, llm) if llm is not None else advice
 
 

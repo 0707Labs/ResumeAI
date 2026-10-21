@@ -19,6 +19,12 @@ prices_include_tax = true
 [free]
 analyses_per_month = 2        # calendar month, UTC
 
+# What starting a resume + job analysis costs. Order of payment: an active pass under its
+# fair-use cap, then Pro under its cap, then credits, then the free allowance.
+[analyses]
+credits_per_analysis = 1
+usable_hours = 24             # Claude may be used this long; an unfinished credit run is refunded after
+
 [signup]
 bonus_credits = 0
 

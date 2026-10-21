@@ -20,7 +20,8 @@ from app.db.models import LlmUsage
 
 log = logging.getLogger("app.billing")
 
-# The browser's id for the analysis being worked on (X-Analysis-Id), set per request.
+# The server-side analysis this request is billed to, set per request by
+# app.api.analyses.billed_analysis only after checking X-Analysis-Id belongs to the caller.
 current_analysis_id: contextvars.ContextVar[uuid.UUID | None] = contextvars.ContextVar(
     "current_analysis_id", default=None
 )

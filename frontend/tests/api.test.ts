@@ -95,17 +95,50 @@ describe("session", () => {
 });
 
 describe("analysis id", () => {
-  it("starts a new id on analyze and sends it with later pipeline calls", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+  const started = (id: string) => ({ analysis_id: id, pays_with: "free", remaining: 1, usable_until: "2026-10-22T00:00:00Z" });
+  const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+
+  function backend(analyses: () => Response) {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, ..._rest: [RequestInit?]) => {
+      if (String(url) === "/api/auth/csrf") return new Response(JSON.stringify({ csrf_token: "t" }));
+      if (String(url) === "/api/analyses") return analyses();
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
-    const header = (i: number) => (fetchMock.mock.calls[i] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    const pipeline = () => fetchMock.mock.calls.filter((c) => !/\/api\/(auth|analyses)/.test(String(c[0])));
+    const header = (i: number) => (pipeline()[i][1]?.headers ?? {}) as Record<string, string>;
+    return { fetchMock, header };
+  }
+
+  it("starts a server-side analysis on analyze and sends its id with later pipeline calls", async () => {
+    let n = 0;
+    const { fetchMock, header } = backend(() => new Response(JSON.stringify(started(ids[n++]))));
     await api.analyze({} as never, {} as never).catch(() => undefined);
-    const first = header(0)["X-Analysis-Id"];
-    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    const start = fetchMock.mock.calls.find((c) => String(c[0]) === "/api/analyses")!;
+    expect((start[1]?.headers as Record<string, string>)["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(header(0)["X-Analysis-Id"]).toBe(ids[0]);
     await api.mentor({} as never, {} as never, {} as never).catch(() => undefined);
-    expect(header(1)["X-Analysis-Id"]).toBe(first);
+    expect(header(1)["X-Analysis-Id"]).toBe(ids[0]);
     await api.analyze({} as never, {} as never).catch(() => undefined);
-    expect(header(2)["X-Analysis-Id"]).not.toBe(first);
-    vi.unstubAllGlobals();
+    expect(header(2)["X-Analysis-Id"]).toBe(ids[1]);
+  });
+
+  it("signed out: no analysis id, the pipeline runs rules-only", async () => {
+    sessionStorage.setItem("rt_analysis_id", ids[0]);
+    const { header } = backend(() => new Response(JSON.stringify({ detail: "not_signed_in" }), { status: 401 }));
+    await api.analyze({} as never, {} as never).catch(() => undefined);
+    expect(header(0)["X-Analysis-Id"]).toBeUndefined();
+  });
+
+  it("402: opens the out-of-credits dialog and stops before the gap step", async () => {
+    const opened = vi.fn();
+    window.addEventListener("rt:out-of-credits", opened);
+    const { header } = backend(() => new Response(JSON.stringify({ detail: "no_credits" }), { status: 402 }));
+    const err = await api.analyze({} as never, {} as never).catch((e) => e);
+    window.removeEventListener("rt:out-of-credits", opened);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.kind).toBe("out_of_credits");
+    expect(opened).toHaveBeenCalledOnce();
+    expect(() => header(0)).toThrow();
   });
 });

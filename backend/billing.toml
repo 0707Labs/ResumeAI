@@ -1,0 +1,58 @@
+# Billing catalog: the one place for product IDs, prices, credit amounts, pass length,
+# fair-use caps and payment-fee estimates. Loaded and validated by app/billing/config.py
+# (an invalid file fails startup). Handlers never hard-code any of these values.
+#
+# Prices are minor units (paise, cents) and tax-inclusive: the amount shown is the amount
+# paid. Dodo charges what its product says, so these must match the Dodo dashboard;
+# they are what we display, never what we send. Change `version` whenever a price,
+# credit amount, pass length or cap changes; purchases snapshot it.
+#
+# PLACEHOLDER PRICES: replace with the real ones before launch.
+
+version = 1
+
+[free]
+analyses_per_month = 2        # calendar month, UTC
+
+[signup]
+bonus_credits = 0
+
+[products.credit_pack_5]
+kind = "credit_pack"
+name = "Credit pack"
+billing = "one_time"
+credits = 5
+prices = { INR = 49900, USD = 600 }
+# Dodo product IDs (pdt_...) per mode; products are separate in test and live mode.
+dodo_product_id = { test = "", live = "" }
+
+[products.job_hunt_pass]
+kind = "pass"
+name = "Job Hunt Pass"
+billing = "one_time"
+pass_days = 30
+fair_use_cap = 40             # analyses per pass
+prices = { INR = 99900, USD = 1200 }
+dodo_product_id = { test = "", live = "" }
+
+[products.pro_monthly]
+kind = "subscription"
+name = "Pro"
+billing = "subscription"
+enabled = false               # feature flag; RT_BILLING_PRO_ENABLED=1 overrides
+interval = "month"
+fair_use_cap = 100            # analyses per billing period
+prices = { INR = 79900, USD = 900 }
+dodo_product_id = { test = "", live = "" }
+
+# Estimates for margin reporting only. Dodo's payment object reports no fee, so actual
+# fees come from Dodo's reports. Source: dodopayments.com/pricing (read 2026-10-21).
+[fees.dodo]
+base_pct = 4.0
+base_fixed_usd_cents = 40
+international_extra_pct = 1.5     # non-US cards and alternative payment methods
+india_pct = 4.0                   # domestic INR cards and UPI
+india_fixed_usd_cents = 15
+subscription_extra_pct = 0.5
+refund_fixed_usd_cents = 100
+dispute_fixed_usd_cents = 3000

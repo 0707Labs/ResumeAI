@@ -35,6 +35,16 @@ class Settings:
     google_client_secret: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_SECRET", ""))
     github_client_id: str = field(default_factory=lambda: os.environ.get("GITHUB_CLIENT_ID", ""))
     github_client_secret: str = field(default_factory=lambda: os.environ.get("GITHUB_CLIENT_SECRET", ""))
+    # Dodo Payments (merchant of record). Passed to the SDK explicitly: its own env vars
+    # (DODO_PAYMENTS_*) are not used, and it would default to live mode.
+    dodo_api_key: str = field(default_factory=lambda: os.environ.get("DODO_API_KEY", ""))
+    dodo_webhook_secret: str = field(default_factory=lambda: os.environ.get("DODO_WEBHOOK_SECRET", ""))
+    # "test" or "live"; anything else is refused when the provider is built.
+    dodo_environment: str = field(
+        default_factory=lambda: os.environ.get("DODO_ENVIRONMENT", "test").strip().lower()
+    )
+    # Optional: the static customer-portal login link for buyers we have no Dodo customer id for.
+    dodo_business_id: str = field(default_factory=lambda: os.environ.get("DODO_BUSINESS_ID", ""))
 
 
 def get_settings() -> Settings:

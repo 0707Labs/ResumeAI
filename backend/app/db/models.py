@@ -1,4 +1,4 @@
-"""ORM models for auth, invites, waitlist and consent.
+"""ORM models for auth, invites, waitlist, consent, and the credit ledger and passes.
 
 The Alembic migrations own the schema (CHECKs, partial indexes, the consent
 trigger are hand-written there); these models mirror it so the app can query.
@@ -38,6 +38,10 @@ NAMING = {
 }
 
 PROVIDERS = ("google", "github", "email")
+LEDGER_REASONS = (
+    "signup_bonus", "purchase", "pass_grant", "analysis_charge", "refund",
+    "referral", "admin_adjust", "purchase_reversal",
+)
 CONSENT_PURPOSES = ("service", "research", "age_18_plus", "waitlist")
 
 
@@ -74,9 +78,13 @@ class User(Base):
     created_at: Mapped[datetime] = _created_at()
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Cache of SUM(credit_transactions.delta); only app.billing.ledger writes it, in the
+    # same transaction as the ledger row. Its row lock serializes a user's credit changes.
+    credits_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
+        CheckConstraint("credits_balance >= 0", name="credits_balance"),
         CheckConstraint(_in("role", ("user", "admin")), name="role"),
         CheckConstraint(_in("status", ("active", "suspended")), name="status"),
         Index("users_email_live", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
@@ -297,4 +305,62 @@ class EmailToken(Base):
             "(purpose = 'verify_pending') = (pending_id IS NOT NULL)", name="pending_matches_purpose"
         ),
         CheckConstraint("(purpose = 'link') = (user_id IS NOT NULL)", name="user_matches_purpose"),
+    )
+
+
+class CreditTransaction(Base):
+    """The credit ledger, append-only (a trigger rejects edits and deletes; the one
+    update allowed is the FK nulling user_id when a user is purged).
+
+    Every change to users.credits_balance writes one row here, in the same
+    transaction, through app.billing.ledger. 'refund' is a failed analysis giving its
+    credit back; 'purchase_reversal' takes credits back after a payment refund or a
+    lost dispute, floored at the balance (delta may then be 0, never below)."""
+
+    __tablename__ = "credit_transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_id: Mapped[str | None] = mapped_column(Text)  # payment id, analysis id, ...
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("reason", LEDGER_REASONS), name="reason"),
+        CheckConstraint("delta <> 0 OR reason = 'purchase_reversal'", name="delta_nonzero"),
+        CheckConstraint("balance_after >= 0", name="balance_after"),
+        Index("ix_credit_transactions_user_created", "user_id", "created_at"),
+        Index("ix_credit_transactions_reference_id", "reference_id"),
+    )
+
+
+class Pass(Base):
+    """A time-limited pass (e.g. the 30-day Job Hunt Pass). One row per purchase;
+    buying again while one is active starts the new one when the last one ends.
+    Length and cap are copied from the catalog at grant time."""
+
+    __tablename__ = "passes"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    product_key: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)  # payment id
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    analyses_cap: Mapped[int] = mapped_column(Integer, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint("expires_at > starts_at", name="period"),
+        CheckConstraint("analyses_cap > 0", name="analyses_cap"),
+        Index("ix_passes_user_expires", "user_id", "expires_at"),
     )

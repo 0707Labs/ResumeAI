@@ -17,6 +17,7 @@ dependencies = [
     "authlib>=1.9",
     "httpx2>=2.15",
     "joserfc>=1.7",
+    "dodopayments[webhooks]>=1.121",
 ]
 
 [project.optional-dependencies]

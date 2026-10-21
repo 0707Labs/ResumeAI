@@ -107,6 +107,7 @@ async def payment_succeeded(db, provider, config, event) -> Outcome:
     payment.tax_minor = data.get("tax")
     payment.settlement_amount_minor = data.get("settlement_amount")
     payment.settlement_currency = data.get("settlement_currency")
+    payment.settlement_tax_minor = data.get("settlement_tax")
     payment.paid_at = _now()
     payment.updated_at = _now()
     await db.flush()
@@ -194,15 +195,22 @@ async def refund_succeeded(db, provider, config, event) -> Outcome:
         await flag(db, "unknown_payment", f"unknown_refund:{refund_id}", refund_id=refund_id,
                    provider_payment_id=data.get("payment_id"))
         return "flagged"
+    if refund_id in payment.refund_ids:
+        return "ignored"  # this refund was already applied (a redelivery under a new id)
+    payment.refund_ids = [*payment.refund_ids, refund_id]
     key = f"refund:{refund_id}"
     outcome: Outcome = "processed"
+    amount, currency = data.get("amount"), data.get("currency")
     if not data.get("is_partial"):
         await _reverse_in_full(db, payment, key, "refund")
         payment.status = "refunded"
+        payment.refunded_amount_minor = payment.amount_minor or 0
     else:
         if payment.status != "refunded":
             payment.status = "partially_refunded"
-        amount, currency = data.get("amount"), data.get("currency")
+        if amount and currency and currency == payment.currency:
+            payment.refunded_amount_minor = min(payment.amount_minor or amount,
+                                                payment.refunded_amount_minor + amount)
         if (payment.kind == "credit_pack" and amount and payment.amount_minor
                 and currency and currency == payment.currency):
             credits = payment.snapshot["credits"] * amount // payment.amount_minor

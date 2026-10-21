@@ -381,6 +381,62 @@ export const LedgerPage = z.object({
 });
 export const PortalLink = z.object({ url: z.url({ protocol: /^https$/ }) });
 
+const AdminAlert = z.object({ kind: z.string(), severity: z.enum(["critical", "warning"]), message: z.string() });
+export const AdminOverview = z.object({
+  days: z.number().int(),
+  payment_counts: z.record(z.string(), z.number().int()),
+  payments: z.array(z.object({
+    id: z.uuid(),
+    email: z.string().nullable(),
+    product_key: z.string(),
+    status: z.string(),
+    amount_minor: z.number().int().nullable(),
+    currency: z.string().nullable(),
+    refunded_amount_minor: z.number().int(),
+    provider_payment_id: z.string().nullable(),
+    created_at: z.string(),
+    paid_at: z.string().nullable(),
+  })),
+  credits: z.object({ sold: z.number(), consumed: z.number(), reversed: z.number(), outstanding: z.number() }),
+  llm: z.object({
+    calls: z.number().int(),
+    total_cost_usd: z.number(),
+    analyses: z.number().int(),
+    avg_cost_per_analysis_usd: z.number().nullable(),
+    unpriced_calls: z.number().int(),
+    by_model: z.array(z.object({ model: z.string(), calls: z.number().int(), cost_usd: z.number() })),
+    daily: z.array(z.object({ day: z.string(), cost_usd: z.number() })),
+  }),
+  margin: z.array(z.object({
+    product_key: z.string(),
+    units: z.number().int(),
+    settled_usd_cents: z.number().int(),
+    refunded_usd_cents: z.number().int(),
+    fees_usd_cents: z.number().int(),
+    net_usd_cents: z.number().int(),
+    other_currency_units: z.number().int(),
+    runs_if_fully_used: z.number().int(),
+    llm_cost_if_fully_used_usd_cents: z.number().int().nullable(),
+    margin_if_fully_used_usd_cents: z.number().int().nullable(),
+  })),
+  fees_are_estimates: z.boolean(),
+  reviews: z.array(z.object({
+    id: z.uuid(),
+    kind: z.string(),
+    payment_id: z.uuid().nullable(),
+    detail: z.record(z.string(), z.unknown()),
+    created_at: z.string(),
+  })),
+  failing_webhooks: z.array(z.object({
+    event_id: z.string(),
+    event_type: z.string(),
+    failures: z.number().int(),
+    last_error: z.string().nullable(),
+    received_at: z.string(),
+  })),
+  alerts: z.array(AdminAlert),
+});
+
 // --- inferred types ------------------------------------------------------------------------------------
 
 export type Resume = z.infer<typeof Resume>;
@@ -414,3 +470,4 @@ export type Plans = z.infer<typeof Plans>;
 export type PaymentStatus = z.infer<typeof PaymentStatus>;
 export type BillingSummary = z.infer<typeof BillingSummary>;
 export type LedgerPage = z.infer<typeof LedgerPage>;
+export type AdminOverview = z.infer<typeof AdminOverview>;

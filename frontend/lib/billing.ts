@@ -31,6 +31,11 @@ export const billingApi = {
   portal: () => call(S.PortalLink, "/api/billing/portal", { method: "POST" }),
 };
 
+export const adminBillingApi = {
+  overview: (days: number) => call(S.AdminOverview, `/api/admin/billing/overview?days=${days}`),
+  resolveReview: (id: string) => call(null, `/api/admin/billing/reviews/${encodeURIComponent(id)}/resolve`, { method: "POST" }),
+};
+
 /** Leave our site for the provider's hosted page (checkout or portal). */
 export function goTo(url: string) {
   window.location.assign(url);

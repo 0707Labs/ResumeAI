@@ -15,7 +15,7 @@ import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
 /** Sign-in, account and billing pages: no tailoring progress bar there. */
-const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing"];
+const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing", "/admin"];
 const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 
 const STEPS = [

@@ -102,11 +102,34 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
   return parsed.data;
 }
 
-const json = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+/** One id per resume + job analysis, sent as X-Analysis-Id so the backend can total
+ * LLM cost per analysis. Random, not tied to the person; kept for the tab's session. */
+const ANALYSIS_KEY = "rt_analysis_id";
+
+export function currentAnalysisId(): string | null {
+  try {
+    return sessionStorage.getItem(ANALYSIS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function startAnalysis(): void {
+  try {
+    sessionStorage.setItem(ANALYSIS_KEY, crypto.randomUUID());
+  } catch {
+    /* storage blocked: costs are just not grouped */
+  }
+}
+
+const json = (body: unknown): RequestInit => {
+  const id = currentAnalysisId();
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(id ? { "X-Analysis-Id": id } : {}) },
+    body: JSON.stringify(body),
+  };
+};
 
 /** The double-submit CSRF token: the backend's rt_csrf cookie, fetched if not set yet. */
 export async function csrfToken(): Promise<string> {
@@ -164,8 +187,11 @@ export const api = {
 
   parseJD: (text: string) => request(S.JobDescription, "/api/jd/parse", json({ text })),
 
-  analyze: (resume: S.Resume, jd: S.JobDescription, useLLM = true) =>
-    request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM })),
+  /** Starts a new analysis: later calls are grouped under a fresh analysis id. */
+  analyze: (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
+    startAnalysis();
+    return request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
+  },
 
   /** Explicit yes/no/skip per question id. "skip" clears an earlier answer. */
   submitAnswers: (analysis: S.GapAnalysis, answers: Record<string, { choice: "yes" | "no" | "skip"; text: string }>) =>

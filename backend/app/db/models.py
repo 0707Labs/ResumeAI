@@ -15,6 +15,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Numeric,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -419,6 +420,11 @@ class Payment(Base):
     tax_minor: Mapped[int | None] = mapped_column(Integer)
     settlement_amount_minor: Mapped[int | None] = mapped_column(Integer)
     settlement_currency: Mapped[str | None] = mapped_column(Text)
+    settlement_tax_minor: Mapped[int | None] = mapped_column(Integer)
+    # Sum of succeeded refunds, in the payment's currency (for revenue net of refunds).
+    refunded_amount_minor: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Provider refund ids already applied, so a refund redelivered under a new id applies once.
+    refund_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Credits taken back so far by refunds and lost disputes (requested, incl. any shortfall).
     credits_reversed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -429,6 +435,7 @@ class Payment(Base):
 
     __table_args__ = (
         CheckConstraint("credits_reversed >= 0", name="credits_reversed"),
+        CheckConstraint("refunded_amount_minor >= 0", name="refunded_amount_minor"),
         UniqueConstraint("user_id", "idempotency_key"),
         UniqueConstraint("provider", "provider_checkout_id"),
         UniqueConstraint("provider", "provider_payment_id"),
@@ -523,3 +530,24 @@ class BillingReview(Base):
         CheckConstraint(_in("kind", REVIEW_KINDS), name="kind"),
         Index("ix_billing_reviews_open", "created_at", postgresql_where=text("resolved_at IS NULL")),
     )
+
+
+class LlmUsage(Base):
+    """One row per Claude call: tokens and cost, for spend tracking and cost per analysis.
+    analysis_id is the browser's id for one resume + job run (X-Analysis-Id), used only
+    for grouping. No prompt or output text is stored."""
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)  # the model that answered (fallbacks!)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6))  # NULL: model not priced in billing.toml
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (Index("ix_llm_usage_created_at", "created_at"),)

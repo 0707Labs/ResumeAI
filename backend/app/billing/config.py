@@ -83,10 +83,25 @@ class DodoFees(_Strict):
     subscription_extra_pct: Annotated[float, Field(ge=0)]
     refund_fixed_usd_cents: Annotated[int, Field(ge=0)]
     dispute_fixed_usd_cents: Annotated[int, Field(ge=0)]
+    settlement_is_net_of_fees: bool = False
 
 
 class Fees(_Strict):
     dodo: DodoFees
+
+
+class Alerts(_Strict):
+    webhook_failures: PositiveInt
+    daily_llm_spend_usd: Annotated[float, Field(gt=0)]
+
+
+class LlmPrice(_Strict):
+    """USD per million tokens."""
+
+    input: Annotated[float, Field(ge=0)]
+    output: Annotated[float, Field(ge=0)]
+    cache_read: Annotated[float, Field(ge=0)]
+    cache_write: Annotated[float, Field(ge=0)]
 
 
 class BillingConfig(_Strict):
@@ -96,6 +111,8 @@ class BillingConfig(_Strict):
     signup: Signup
     products: dict[str, Product]
     fees: Fees
+    alerts: Alerts
+    llm_prices: dict[str, LlmPrice]
 
     @model_validator(mode="before")
     @classmethod

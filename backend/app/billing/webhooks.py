@@ -55,25 +55,31 @@ async def process_webhook(db: AsyncSession, provider: PaymentProvider, config: B
         await db.commit()
     except Exception as exc:
         await db.rollback()
-        await _record_failure(db, provider.name, event, exc)
+        failures = await _record_failure(db, provider.name, event, exc)
+        if failures == config.alerts.webhook_failures:
+            log.critical("ALERT webhook %s %s has failed %d times; the purchase may not be granted",
+                         event.type, event.event_id, failures)
         raise
     log.info("webhook %s %s: %s", event.type, event.event_id, outcome)
     return outcome
 
 
-async def _record_failure(db: AsyncSession, provider: str, event: WebhookEvent, exc: Exception) -> None:
+async def _record_failure(db: AsyncSession, provider: str, event: WebhookEvent, exc: Exception) -> int:
+    """Count the failure (separate transaction); returns the failure count so far, 0 if unknown."""
     error = exc.__class__.__name__  # never the message: it may quote payload data
+    failures = 0
     try:
-        await db.execute(
+        failures = await db.scalar(
             insert(ProcessedWebhookEvent).values(
                 provider=provider, event_id=event.event_id, event_type=event.type,
                 occurred_at=event.occurred_at, failures=1, last_error=error,
             ).on_conflict_do_update(
                 index_elements=["provider", "event_id"],
                 set_={"failures": ProcessedWebhookEvent.failures + 1, "last_error": error},
-            )
-        )
+            ).returning(ProcessedWebhookEvent.failures)
+        ) or 0
         await db.commit()
     except Exception:  # noqa: BLE001 - the original error is what matters
         await db.rollback()
     log.error("webhook %s %s failed: %s", event.type, event.event_id, error)
+    return failures

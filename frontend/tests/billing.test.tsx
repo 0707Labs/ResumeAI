@@ -216,3 +216,51 @@ describe("out-of-credits dialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+describe("billing admin page", () => {
+  const OVERVIEW = {
+    days: 30,
+    payment_counts: { paid: 3, refunded: 1, failed: 2 },
+    payments: [{ id: PAYMENT_ID, email: "ada@example.com", product_key: "credit_pack_5", status: "refunded",
+      amount_minor: 49900, currency: "INR", refunded_amount_minor: 49900, provider_payment_id: "pay_1",
+      created_at: "2026-10-01T00:00:00Z", paid_at: "2026-10-01T00:00:00Z" }],
+    credits: { sold: 20, consumed: 7, reversed: 5, outstanding: 8 },
+    llm: { calls: 12, total_cost_usd: 0.9, analyses: 4, avg_cost_per_analysis_usd: 0.225, unpriced_calls: 0,
+      by_model: [{ model: "claude-opus-5-5", calls: 12, cost_usd: 0.9 }], daily: [{ day: "2026-10-20", cost_usd: 0.9 }] },
+    margin: [{ product_key: "credit_pack_5", units: 4, settled_usd_cents: 2032, refunded_usd_cents: 508,
+      fees_usd_cents: 160, net_usd_cents: 1364, other_currency_units: 0, runs_if_fully_used: 20,
+      llm_cost_if_fully_used_usd_cents: 450, margin_if_fully_used_usd_cents: 914 }],
+    fees_are_estimates: true,
+    reviews: [{ id: "33333333-3333-4333-8333-333333333333", kind: "credits_already_used", payment_id: PAYMENT_ID,
+      detail: { shortfall: 3 }, created_at: "2026-10-02T00:00:00Z" }],
+    failing_webhooks: [],
+    alerts: [{ kind: "llm_spend", severity: "warning", message: "LLM spend today is $25.00, over the $20.00 threshold." }],
+  };
+
+  it("is admins only", async () => {
+    routes({ "GET /api/me": ME });
+    const { default: AdminPage } = await import("@/app/admin/billing/page");
+    render(<AdminPage />);
+    expect(await screen.findByText("Admins only")).toBeInTheDocument();
+  });
+
+  it("shows alerts, margin, costs and resolves a review", async () => {
+    let resolved = false;
+    routes({
+      "GET /api/me": { ...ME, role: "admin" },
+      "GET /api/admin/billing/overview?days=30": () => json(resolved ? { ...OVERVIEW, reviews: [] } : OVERVIEW),
+      "POST /api/admin/billing/reviews/33333333-3333-4333-8333-333333333333/resolve": () => {
+        resolved = true;
+        return new Response(null, { status: 204 });
+      },
+    });
+    const { default: AdminPage } = await import("@/app/admin/billing/page");
+    render(<AdminPage />);
+    expect(await screen.findByText(/over the \$20.00 threshold/)).toBeInTheDocument();
+    expect(screen.getByText("$13.64")).toBeInTheDocument();
+    expect(screen.getByText("$0.225")).toBeInTheDocument();
+    expect(screen.getByText(/Dodo fees are estimates/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
+    expect(await screen.findByText("Nothing to review.")).toBeInTheDocument();
+  });
+});

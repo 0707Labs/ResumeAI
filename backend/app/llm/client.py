@@ -6,7 +6,8 @@ and the rest of the app never touches SDK types.
 
 import logging
 import os
-from typing import Protocol, TypeVar
+from collections.abc import Callable
+from typing import Any, Protocol, TypeVar
 
 import anthropic
 from pydantic import BaseModel
@@ -28,9 +29,12 @@ class LLM(Protocol):
 
 
 class ClaudeLLM:
-    def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL):
+    def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL,
+                 on_usage: Callable[[str, Any], None] | None = None):
         self.client = client or anthropic.Anthropic(default_headers=_workspace_header())
         self.model = model
+        # Called with (schema name, response) after every response, for cost tracking.
+        self.on_usage = on_usage
         # (schema name, input tokens, output tokens) per successful call, for cost checks.
         self.usage: list[tuple[str, int, int]] = []
 
@@ -54,6 +58,8 @@ class ClaudeLLM:
 
         self.usage.append((schema.__name__, response.usage.input_tokens,
                            response.usage.output_tokens))
+        if self.on_usage is not None:
+            self.on_usage(schema.__name__, response)
         if response.stop_reason == "refusal":
             raise LLMError("Claude declined this request.")
         if response.stop_reason == "max_tokens":
@@ -81,4 +87,8 @@ def _describe(exc: anthropic.APIError) -> str:
 
 def get_llm() -> LLM | None:
     """None when no API key is configured: features degrade to rules-only."""
-    return ClaudeLLM() if get_settings().llm_configured else None
+    if not get_settings().llm_configured:
+        return None
+    from app.billing.costs import record_llm_usage
+
+    return ClaudeLLM(on_usage=record_llm_usage)

@@ -60,9 +60,12 @@ function Account() {
       <Card>
         <h2 className="text-lg font-semibold">Billing</h2>
         <p className="mt-1 text-sm text-muted">Credits, passes, purchases and receipts.</p>
-        <Link href="/account/billing" className="mt-3 inline-block text-sm font-medium text-accent underline">
-          Go to billing
-        </Link>
+        <div className="mt-3 flex flex-wrap gap-4">
+          <Link href="/account/billing" className="text-sm font-medium text-accent underline">Go to billing</Link>
+          {me.role === "admin" && (
+            <Link href="/admin/billing" className="text-sm font-medium text-accent underline">Billing admin</Link>
+          )}
+        </div>
       </Card>
       {providers && <SignInMethods providers={providers} onChange={reload} onError={setError} />}
       <SignOut />

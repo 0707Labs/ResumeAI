@@ -93,3 +93,19 @@ describe("session", () => {
     expect((fetchMock.mock.calls[1][1]?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("fresh");
   });
 });
+
+describe("analysis id", () => {
+  it("starts a new id on analyze and sends it with later pipeline calls", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const header = (i: number) => (fetchMock.mock.calls[i] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    await api.analyze({} as never, {} as never).catch(() => undefined);
+    const first = header(0)["X-Analysis-Id"];
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    await api.mentor({} as never, {} as never, {} as never).catch(() => undefined);
+    expect(header(1)["X-Analysis-Id"]).toBe(first);
+    await api.analyze({} as never, {} as never).catch(() => undefined);
+    expect(header(2)["X-Analysis-Id"]).not.toBe(first);
+    vi.unstubAllGlobals();
+  });
+});

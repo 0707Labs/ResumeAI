@@ -559,19 +559,18 @@ class LlmUsage(Base):
     __table_args__ = (Index("ix_llm_usage_created_at", "created_at"),)
 
 
-ANALYSIS_STATUSES = ("pending", "succeeded", "failed")
-ENTITLEMENTS = ("pass", "pro", "credit", "free")
-BILLING_STATES = ("none", "reserved", "committed", "refunded")
+DOWNLOAD_FORMATS = ("docx", "pdf")
+PAID_WITH = ("pass", "pro", "credit", "window")
 
 
 class Analysis(Base):
-    """One resume + job run, the unit of billing (see app.billing.analyses).
+    """One resume + job run (see app.billing.analyses).
 
-    entitlement says what pays: a pass, Pro, a credit or the free allowance. Only a
-    credit run has a reservation: charged at start ('reserved'), kept on a successful
-    Claude tailoring ('committed'), given back once otherwise ('refunded'). A 'failed'
-    run (error, rules-only fallback, abandoned) doesn't count against any allowance.
-    Claude may be used for this run's stages until usable_until."""
+    Starting one pins the parsed resume and job description, so Claude calls and the
+    download are tied to these inputs (inputs_sha256), not to whatever a browser sends.
+    The monthly free tailorings count these rows, except runs that ended rules-only
+    (llm_tailored false). tailored is the last tailoring result. Claude may be used until
+    usable_until. Downloads, which are what pays, are rows in downloads."""
 
     __tablename__ = "analyses"
 
@@ -580,34 +579,55 @@ class Analysis(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
-    entitlement: Mapped[str] = mapped_column(Text, nullable=False)
-    billing_state: Mapped[str] = mapped_column(Text, nullable=False)
-    credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    pass_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("passes.id"))
-    subscription_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscriptions.id"))
+    resume: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    jd: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    inputs_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    tailored: Mapped[dict | None] = mapped_column(JSONB)
+    llm_tailored: Mapped[bool | None] = mapped_column(Boolean)
+    tailored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    llm_degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    failure_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
-        CheckConstraint(_in("status", ANALYSIS_STATUSES), name="status"),
-        CheckConstraint(_in("entitlement", ENTITLEMENTS), name="entitlement"),
-        CheckConstraint(_in("billing_state", BILLING_STATES), name="billing_state"),
-        # Tailoring spends no credit (0008); only runs from before hold a reservation.
-        CheckConstraint("billing_state = 'none' OR entitlement = 'credit'", name="credit_state"),
-        CheckConstraint("(credits > 0) = (billing_state <> 'none')", name="credits"),
-        CheckConstraint("billing_state <> 'reserved' OR status = 'pending'", name="reserved_while_pending"),
-        CheckConstraint("billing_state <> 'committed' OR status = 'succeeded'", name="committed"),
-        CheckConstraint("(entitlement = 'pass') = (pass_id IS NOT NULL)", name="pass"),
-        CheckConstraint("(entitlement = 'pro') = (subscription_id IS NOT NULL)", name="pro"),
-        CheckConstraint("(status = 'pending') = (finished_at IS NULL)", name="finished"),
+        CheckConstraint("(tailored IS NULL) = (tailored_at IS NULL) AND (tailored IS NULL) = (llm_tailored IS NULL)",
+                        name="tailored"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
-        Index("ix_analyses_pass_id", "pass_id", postgresql_where=text("pass_id IS NOT NULL")),
-        Index("ix_analyses_subscription_id", "subscription_id",
-              postgresql_where=text("subscription_id IS NOT NULL")),
-        Index("ix_analyses_pending_until", "usable_until", postgresql_where=text("status = 'pending'")),
+    )
+
+
+class Download(Base):
+    """One clean-file download of an analysis: the download log, and what downloads are
+    paid in. paid_with is what paid ('pass', 'pro', 'credit'), or 'window' when a paid
+    download of the same analysis less than redownload_free_days ago covers it. A credit
+    is spent through the ledger with key download:{id}. final_resume is what the signed
+    link renders (approved, verified text only); nothing here is logged."""
+
+    __tablename__ = "downloads"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    analysis_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="CASCADE"), nullable=False
+    )
+    format: Mapped[str] = mapped_column(Text, nullable=False)
+    paid_with: Mapped[str] = mapped_column(Text, nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    pass_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("passes.id"))
+    subscription_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscriptions.id"))
+    final_resume: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    served_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("format", DOWNLOAD_FORMATS), name="format"),
+        CheckConstraint(_in("paid_with", PAID_WITH), name="paid_with"),
+        CheckConstraint("(paid_with = 'credit') = (credits > 0)", name="credits"),
+        CheckConstraint("(paid_with = 'pass') = (pass_id IS NOT NULL)", name="pass"),
+        CheckConstraint("(paid_with = 'pro') = (subscription_id IS NOT NULL)", name="pro"),
+        Index("ix_downloads_analysis_created", "analysis_id", "created_at"),
+        Index("ix_downloads_pass_id", "pass_id", postgresql_where=text("pass_id IS NOT NULL")),
+        Index("ix_downloads_subscription_id", "subscription_id", postgresql_where=text("subscription_id IS NOT NULL")),
     )

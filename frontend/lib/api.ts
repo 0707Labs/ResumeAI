@@ -24,6 +24,8 @@ export type ApiErrorKind =
   | "invalid_input"
   | "bad_response"
   | "out_of_credits"
+  | "tailoring_limit"
+  | "sign_in_required"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -37,7 +39,10 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   invalid_input: "Something in the input didn't look right.",
   bad_response: "The service sent back something we didn't expect. Please try again.",
   out_of_credits:
+    "Downloading the clean file needs a credit or a pass. Tailoring and review stay free.",
+  tailoring_limit:
     "You've used this month's free tailorings. Get credits or a pass to keep going, or wait for them to reset at the start of next month.",
+  sign_in_required: "Sign in to download your tailored resume. Your work here stays in this tab.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -73,9 +78,12 @@ export function classify(status: number, detail?: string): ApiErrorKind {
   return "server";
 }
 
-/** 402 from any call: show the out-of-credits dialog (mounted once in AppShell). */
-export function announceOutOfCredits() {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event("rt:out-of-credits"));
+/** Why the pricing dialog opened: past the free tailorings, or a download that needs paying for. */
+export type OutOfCredits = { reason: "tailoring" } | { reason: "download"; fmt: "docx" | "pdf" };
+
+/** 402 from any call: show the pricing dialog (mounted once in AppShell). */
+export function announceOutOfCredits(detail: OutOfCredits = { reason: "tailoring" }) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rt:out-of-credits", { detail }));
 }
 
 async function request<T extends z.ZodType>(schema: T, path: string, init?: RequestInit): Promise<z.infer<T>> {
@@ -105,9 +113,9 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
   return parsed.data;
 }
 
-/** The server-side analysis later pipeline calls are billed to, sent as X-Analysis-Id.
- * The backend uses Claude only for the caller's own live analysis; without one (signed out)
- * the pipeline runs rules-only. Kept for the tab's session. */
+/** The server-side analysis for this resume + job, sent as X-Analysis-Id. The backend uses
+ * Claude only for the caller's own analysis (signed out: rules-only), and the download is
+ * charged to it once. Kept for the tab's session. */
 const ANALYSIS_KEY = "rt_analysis_id";
 
 export function currentAnalysisId(): string | null {
@@ -127,17 +135,18 @@ function setAnalysisId(id: string | null): void {
   }
 }
 
-/** Start a tailoring: a free run, a pass, Pro, or a credit balance allows it, in that
- * order; nothing is spent (the download is what's paid). Signed out (401): no analysis,
- * rules-only. 402: nothing allows another run, so the pricing dialog opens and this throws. */
-async function startAnalysis(): Promise<void> {
+/** Start a tailoring: the server pins this resume and job description to it. Spends
+ * nothing (the download is what's paid). Signed out (401): no analysis, rules-only.
+ * 402: past this month's free tailorings with no pass or credits, so the pricing dialog
+ * opens and this throws. */
+async function startAnalysis(resume: S.Resume, jd: S.JobDescription): Promise<void> {
   setAnalysisId(null);
-  const res = await authPost("/api/analyses", undefined, { "Idempotency-Key": crypto.randomUUID() });
+  const res = await authPost("/api/analyses", { resume, jd }, { "Idempotency-Key": crypto.randomUUID() });
   if (res.status === 401) return;
   if (!res.ok) {
-    if (res.status === 402) announceOutOfCredits();
+    if (res.status === 402) announceOutOfCredits({ reason: "tailoring" });
     const detail = await readDetail(res);
-    throw new ApiError(res.status === 402 ? "out_of_credits" : classify(res.status, detail), res.status, detail);
+    throw new ApiError(res.status === 402 ? "tailoring_limit" : classify(res.status, detail), res.status, detail);
   }
   let body: unknown;
   try {
@@ -225,9 +234,9 @@ export const api = {
 
   parseJD: (text: string) => request(S.JobDescription, "/api/jd/parse", json({ text })),
 
-  /** Starts a new analysis (billed when signed in; see startAnalysis), then runs the gap step. */
+  /** Starts a new analysis (when signed in; see startAnalysis), then runs the gap step. */
   analyze: async (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
-    await startAnalysis();
+    await startAnalysis(resume, jd);
     return request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
   },
 
@@ -258,19 +267,25 @@ export const api = {
     signal?: AbortSignal) =>
     request(S.ExportPreview, "/api/export/preview", { ...json({ resume, tailored, analysis, jd_text: jdText }), signal }),
 
-  async exportFile(fmt: "docx" | "pdf", resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string) {
-    let res: Response;
-    try {
-      res = await fetch(`${API_URL}/api/export/${fmt}`, json({ resume, tailored, analysis, jd_text: jdText }));
-    } catch {
-      throw new ApiError("backend_down", 0);
-    }
+  /** Pay for a clean download and get its short-lived signed link (the file is built on
+   * the server only after the entitlement check). Re-downloading the same tailored resume
+   * within the window is free. Needs sign-in: someone who signed in after analyzing gets an
+   * analysis started here. 402 opens the pricing dialog for this download. */
+  async requestDownload(fmt: "docx" | "pdf", resume: S.Resume, jd: S.JobDescription, tailored: S.TailoredResume,
+    analysis: S.GapAnalysis | null): Promise<S.DownloadLink> {
+    if (!currentAnalysisId()) await startAnalysis(resume, jd);
+    if (!currentAnalysisId()) throw new ApiError("sign_in_required", 401);
+    const res = await authPost(`/api/downloads/${fmt}`, { resume, tailored, analysis, jd_text: jd.raw_text },
+      { "X-Analysis-Id": currentAnalysisId()! });
     if (!res.ok) {
+      if (res.status === 402) announceOutOfCredits({ reason: "download", fmt });
       const detail = await readDetail(res);
-      throw new ApiError(classify(res.status, detail), res.status, detail);
+      const kind = res.status === 402 ? "out_of_credits" : res.status === 401 ? "sign_in_required" : classify(res.status, detail);
+      throw new ApiError(kind, res.status, detail);
     }
-    const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `resume.${fmt}`;
-    return { blob: await res.blob(), filename };
+    const parsed = S.DownloadLink.safeParse(await res.json().catch(() => undefined));
+    if (!parsed.success) throw new ApiError("bad_response", res.status);
+    return parsed.data;
   },
 };
 

@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { BillingAlert } from "@/components/billing/BillingAlert";
 import { Alert, Card, Spinner } from "@/components/ui";
-import { GIVE_UP_MS, POLL_MS, SUPPORT_EMAIL, billingApi } from "@/lib/billing";
+import { GIVE_UP_MS, POLL_MS, SUPPORT_EMAIL, billingApi, pendingDownload } from "@/lib/billing";
 import type { PaymentStatus } from "@/lib/schemas";
 
 const FAILED = new Set(["failed", "cancelled", "checkout_failed"]);
@@ -31,6 +31,10 @@ function CheckoutSuccess() {
   const [error, setError] = useState<unknown>(null);
   const [gaveUp, setGaveUp] = useState(false);
   const [round, setRound] = useState(0); // bump to start polling again
+  const router = useRouter();
+  const paid = payment?.status === "paid";
+  // Bought to finish a download: once the webhook has granted it, go back and finish it.
+  useEffect(() => { if (paid && pendingDownload()) router.replace("/app/export?resume=download"); }, [paid, router]);
 
   useEffect(() => {
     if (!paymentId) return;

@@ -83,8 +83,8 @@ frontend/
   `E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://127.0.0.1:8100` runs a separate pair instead.
   Specs live in e2e/; Vitest only picks up tests/.
   The workspace needs an account, so every spec except landing needs Postgres (the backend's
-  RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites and notices with the admin CLI and reads
-  magic links from backend/.dev-outbox. A run sends 5 magic links, exactly the 5-per-15-min per-IP
+  RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites, notices and credits with the admin CLIs
+  and reads magic links from backend/.dev-outbox. A run sends 5 magic links, exactly the 5-per-15-min per-IP
   limit, which a reused backend keeps in memory: restart it (or wait) between runs.
   Point RT_DATABASE_URL at a separate migrated database when other branches share the dev one.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
@@ -116,7 +116,9 @@ frontend/
   /signin?next=<path>, app/app/layout.tsx re-checks /api/me server-side, the API enforces regardless.
   `next` is allowlisted on both sides (oauth.safe_next, lib/auth safeNext); default after sign-in is /app.
 - Tailoring is free to try (monthly free allowance, then a pass, Pro or a credit balance allows a run;
-  nothing is spent); the clean download spends the credit. See docs/billing.md section 9.
+  nothing is spent); the clean download spends the credit via can_user_run, re-downloads of the
+  same analysis are free for [downloads].redownload_free_days, and files go out only through
+  short-lived signed links. See docs/billing.md section 9.
 - RT_INVITE_ONLY (default on) gates new accounts; off skips the invite step (an entered invite is still used).
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.

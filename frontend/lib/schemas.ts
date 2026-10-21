@@ -288,7 +288,6 @@ export const Me = z.object({
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
-/** POST /api/analyses: a started (billed) analysis. */
 /** GET /api/analyses/allowance: free tailorings left this month and what the next run uses. */
 export const Allowance = z.object({
   free_allowance: z.number().int(),
@@ -297,11 +296,18 @@ export const Allowance = z.object({
   next_uses: z.enum(["pass", "pro", "credit", "free"]).nullable(),
   credits_balance: z.number().int(),
 });
+/** POST /api/analyses: a started analysis (spends nothing; the download pays). */
 export const AnalysisStarted = z.object({
   analysis_id: z.uuid(),
-  pays_with: z.enum(["pass", "pro", "credit", "free"]),
-  remaining: z.number().int().nullable(),
   usable_until: z.string(),
+  uses: z.enum(["pass", "pro", "credit", "free"]).nullable(),
+});
+/** POST /api/downloads/{fmt}: a paid download's short-lived signed link. */
+export const DownloadLink = z.object({
+  url: z.string().startsWith("/api/downloads/file/"),
+  expires_at: z.string(),
+  paid_with: z.enum(["pass", "pro", "credit", "window"]),
+  credits_balance: z.number().int(),
 });
 
 const Provider = z.enum(["google", "github", "email"]);
@@ -482,6 +488,7 @@ export type Me = z.infer<typeof Me>;
 export type ProviderAvailability = z.infer<typeof ProviderAvailability>;
 export type AuthStep = z.infer<typeof AuthStep>;
 export type PendingSignIn = z.infer<typeof PendingSignIn>;
+export type DownloadLink = z.infer<typeof DownloadLink>;
 export type Allowance = z.infer<typeof Allowance>;
 export type PublicConfig = z.infer<typeof PublicConfig>;
 export type Notice = z.infer<typeof Notice>;

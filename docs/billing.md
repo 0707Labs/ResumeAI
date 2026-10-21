@@ -304,39 +304,45 @@ cost per analysis from `llm_usage` (priced from `[llm_prices]`).
 
 ---
 
-## 9. Spending: tailoring is free to try, downloads are paid
+## 9. Spending: tailoring is free to try, the download pays
 
 Tailoring and reviewing cost nothing, so people see the value first. The clean DOCX/PDF
-download spends the credit (landing Step 4). Starting a tailoring only checks that the
-user is allowed another one.
+download is what spends a credit. Code: `app/billing/entitlements.py` (decisions),
+`app/billing/analyses.py` (starts and downloads), `/api/analyses` and `/api/downloads`.
 
-- **Analyze** (signed in) calls `POST /api/analyses`. Holding the user's row lock, the
-  backend picks what allows the run (`can_start_tailoring` in
-  `app/billing/entitlements.py`), in this order: the **free allowance**
-  (`[free].analyses_per_month`, calendar month in UTC), then an **active pass** under
-  its fair-use cap, then **Pro** (an `active` subscription) under its per-period cap,
-  then a **credit balance** of at least `[downloads].credits_per_download`. Nothing is
-  charged. Nothing left: **402 `no_credits`**, and the app opens the pricing dialog.
-- `GET /api/analyses/allowance` tells the workspace how many free tailorings are left
-  this month, when they reset, and what the next run would use.
-- `can_user_run` is the paid-action check for downloads: an active pass, active Pro, or
-  a credit balance of at least `credits_per_download`. Fair-use caps limit tailorings,
-  not downloads.
-- `POST /api/tailor` with that `X-Analysis-Id` settles the run once:
-  - Claude tailored it: **succeeded** (free, pass and Pro runs count).
-  - Claude failed and it fell back to rules only, or tailoring crashed: **failed**, and
-    the run counts against nothing.
-  - Never tailored within `[analyses].usable_hours`: released as `abandoned` by
-    `python -m app.billing.cli sweep-analyses` (run it from cron, hourly) or on the
-    user's next start.
-- Runs started before migration 0008 hold a reserved credit (`charge:{analysis_id}`);
-  they still settle as before, and a second refund is impossible (conditional update,
-  ledger keys, partial unique indexes).
-- Credit-backed tailorings have no monthly cap of their own yet. A user with one credit
-  can keep tailoring (only Claude costs accrue); add a cap if `/admin/billing` shows abuse.
-- **Claude is used only for the caller's own live analysis.** Signed out, or with an
-  unknown, someone else's, failed or expired analysis id, every stage runs rules-only
-  (no Claude calls, so nothing to pay for). Claude tailors once per analysis; gap,
-  score and mentor may use it until `usable_until`. `llm_usage.analysis_id` is the
-  checked server-side id, never the raw header.
-- Free runs get the full pipeline up to export; the clean download is gated in Step 4.
+- **Analyze** (signed in) calls `POST /api/analyses`. It pins the parsed resume and job
+  description on the server (`analyses.resume`, `.jd`, `.inputs_sha256`) and spends
+  nothing. Holding the user's row lock, `can_start_tailoring` allows it with a **free
+  tailoring** (`[free].analyses_per_month`, calendar month in UTC; runs that ended
+  rules-only don't count), or past those with whatever a download would need (below).
+  Nothing left: **402 `no_credits`** and the pricing dialog ("free tailorings used").
+  `GET /api/analyses/allowance` tells the workspace what's left and when it resets.
+- **Claude is used only for the caller's own analysis and its pinned inputs.** Signed
+  out, or with an unknown, someone else's or expired (`[analyses].usable_hours`)
+  analysis, or with a resume or job description other than the pinned ones, every stage
+  runs rules-only. Claude tailors once per analysis; the first result is stored on it
+  (`tailored`, `llm_tailored`). `llm_usage.analysis_id` is the checked server-side id.
+- **Downloading** is two requests. `POST /api/downloads/{docx,pdf}` needs sign-in, CSRF
+  and the analysis (`X-Analysis-Id`). Holding the user's row lock it decides what pays
+  (`can_user_run`): a paid download of the **same analysis** less than
+  `[downloads].redownload_free_days` ago (default 7) covers it (`paid_with = 'window'`);
+  otherwise an **active pass** under its fair-use cap, then **Pro** under its per-period
+  cap, then **credits** (`[downloads].credits_per_download`, ledger key
+  `download:{download_id}`, reason `analysis_charge`). Fair-use caps count paid
+  downloads. Nothing left: **402 `no_credits`**, no row, no file. Then it renders the
+  file once inside the same transaction (a failed render charges nothing) and returns a
+  **signed link** (`/api/downloads/file/{token}`, HMAC with `RT_AUTH_SECRET`, valid
+  `[downloads].url_ttl_seconds`, default 120). `GET` on the link serves the file only to
+  the user who paid, only until it expires (410 after), with `Cache-Control: no-store`.
+- The file is built from the pinned resume and job description; the browser's approved
+  and edited bullets are re-verified against that resume. Nothing is rendered before the
+  entitlement check passes.
+- Every download is a `downloads` row (format, what paid, credits, served_at) and one
+  `app.billing` log line with ids only; no resume text is logged.
+- **Pricing dialog for a download:** buying from it remembers the format in the tab
+  (sessionStorage). `/billing/success` waits for the webhook as before, then sends the
+  buyer to `/app/export?resume=download`, which starts the download once.
+- Concurrent clicks are safe: the row lock serializes them, so one pays and the rest
+  fall in the window; credits never go below zero.
+- Credit-backed tailorings have no monthly cap of their own: a user with one credit can
+  keep tailoring (only Claude costs accrue). Add one if `/admin/billing` shows abuse.

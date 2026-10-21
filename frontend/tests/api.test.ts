@@ -94,28 +94,36 @@ describe("session", () => {
   });
 });
 
-describe("analysis id", () => {
-  const started = (id: string) => ({ analysis_id: id, pays_with: "free", remaining: 1, usable_until: "2026-10-22T00:00:00Z" });
+describe("analysis id and the download paywall", () => {
+  const started = (id: string) => ({ analysis_id: id, usable_until: "2026-10-22T00:00:00Z", uses: "free" });
   const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  const pdf = () => new Response(JSON.stringify({
+    url: "/api/downloads/file/abc.def", expires_at: "2026-10-22T00:00:00Z", paid_with: "credit", credits_balance: 2,
+  }));
 
-  function backend(analyses: () => Response) {
+  function backend(analyses: () => Response, exportRes: () => Response = pdf) {
     const fetchMock = vi.fn(async (url: RequestInfo | URL, ..._rest: [RequestInit?]) => {
       if (String(url) === "/api/auth/csrf") return new Response(JSON.stringify({ csrf_token: "t" }));
       if (String(url) === "/api/analyses") return analyses();
+      if (String(url).startsWith("/api/downloads/")) return exportRes();
       return new Response(JSON.stringify({}), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
+    const calls = (path: string) => fetchMock.mock.calls.filter((c) => String(c[0]).startsWith(path));
     const pipeline = () => fetchMock.mock.calls.filter((c) => !/\/api\/(auth|analyses)/.test(String(c[0])));
     const header = (i: number) => (pipeline()[i][1]?.headers ?? {}) as Record<string, string>;
-    return { fetchMock, header };
+    return { calls, header };
   }
 
-  it("starts a server-side analysis on analyze and sends its id with later pipeline calls", async () => {
+  afterEach(() => sessionStorage.clear());
+
+  it("analyze starts a server-side analysis with the inputs; later calls send its id", async () => {
     let n = 0;
-    const { fetchMock, header } = backend(() => new Response(JSON.stringify(started(ids[n++]))));
-    await api.analyze({} as never, {} as never).catch(() => undefined);
-    const start = fetchMock.mock.calls.find((c) => String(c[0]) === "/api/analyses")!;
+    const { calls, header } = backend(() => new Response(JSON.stringify(started(ids[n++]))));
+    await api.analyze({ name: "R" } as never, { raw_text: "J" } as never).catch(() => undefined);
+    const [start] = calls("/api/analyses");
     expect((start[1]?.headers as Record<string, string>)["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(JSON.parse(String(start[1]?.body))).toEqual({ resume: { name: "R" }, jd: { raw_text: "J" } });
     expect(header(0)["X-Analysis-Id"]).toBe(ids[0]);
     await api.mentor({} as never, {} as never, {} as never).catch(() => undefined);
     expect(header(1)["X-Analysis-Id"]).toBe(ids[0]);
@@ -123,22 +131,47 @@ describe("analysis id", () => {
     expect(header(2)["X-Analysis-Id"]).toBe(ids[1]);
   });
 
-  it("signed out: no analysis id, the pipeline runs rules-only", async () => {
+  it("signed out: no analysis id, rules-only, and the download asks to sign in", async () => {
     sessionStorage.setItem("rt_analysis_id", ids[0]);
-    const { header } = backend(() => new Response(JSON.stringify({ detail: "not_signed_in" }), { status: 401 }));
+    const { calls, header } = backend(() => new Response(JSON.stringify({ detail: "not_signed_in" }), { status: 401 }));
     await api.analyze({} as never, {} as never).catch(() => undefined);
     expect(header(0)["X-Analysis-Id"]).toBeUndefined();
+    const err = await api.requestDownload("pdf", {} as never, { raw_text: "J" } as never, {} as never, null)
+      .catch((e: ApiError) => e);
+    expect((err as ApiError).kind).toBe("sign_in_required");
+    expect(calls("/api/downloads/")).toHaveLength(0);
   });
 
-  it("402: opens the out-of-credits dialog and stops before the gap step", async () => {
+  it("signed in after analyzing: the download starts an analysis first", async () => {
+    const { calls } = backend(() => new Response(JSON.stringify(started(ids[0]))));
+    const out = await api.requestDownload("pdf", {} as never, { raw_text: "J" } as never, {} as never, null);
+    expect([out.url, out.paid_with]).toEqual(["/api/downloads/file/abc.def", "credit"]);
+    const [exp] = calls("/api/downloads/pdf");
+    expect((exp[1]?.headers as Record<string, string>)["X-Analysis-Id"]).toBe(ids[0]);
+    expect((exp[1]?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("t");
+  });
+
+  it("402 on download opens the pricing dialog for that download", async () => {
+    sessionStorage.setItem("rt_analysis_id", ids[0]);
     const opened = vi.fn();
     window.addEventListener("rt:out-of-credits", opened);
-    const { header } = backend(() => new Response(JSON.stringify({ detail: "no_credits" }), { status: 402 }));
-    const err = await api.analyze({} as never, {} as never).catch((e) => e);
+    backend(() => new Response("{}"), () => new Response(JSON.stringify({ detail: "no_credits" }), { status: 402 }));
+    const err = await api.requestDownload("docx", {} as never, { raw_text: "J" } as never, {} as never, null)
+      .catch((e: ApiError) => e);
     window.removeEventListener("rt:out-of-credits", opened);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err.kind).toBe("out_of_credits");
+    expect((err as ApiError).kind).toBe("out_of_credits");
     expect(opened).toHaveBeenCalledOnce();
-    expect(() => header(0)).toThrow();
+    expect((opened.mock.calls[0][0] as CustomEvent).detail).toEqual({ reason: "download", fmt: "docx" });
+  });
+
+  it("402 on analyze: past the free tailorings, the pricing dialog opens for tailoring", async () => {
+    const opened = vi.fn();
+    window.addEventListener("rt:out-of-credits", opened);
+    backend(() => new Response(JSON.stringify({ detail: "no_credits" }), { status: 402 }));
+    const err = await api.analyze({} as never, {} as never).catch((e: ApiError) => e);
+    window.removeEventListener("rt:out-of-credits", opened);
+    expect((err as ApiError).kind).toBe("tailoring_limit");
+    expect((opened.mock.calls[0][0] as CustomEvent).detail).toEqual({ reason: "tailoring" });
   });
 });

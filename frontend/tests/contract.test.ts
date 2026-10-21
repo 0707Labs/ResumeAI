@@ -6,7 +6,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { authApi } from "@/lib/auth";
 
 describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
@@ -29,13 +29,15 @@ describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
     const mentor = await api.mentor(resume, jd, analysis, score.before, false);
     const preview = await api.exportPreview(resume, tailored, analysis, jd.raw_text);
     expect(preview.resume.name).toBe(resume.name);
-    const out = await api.exportFile("pdf", resume, tailored, analysis, jd.raw_text);
+    // Downloading needs sign-in (it's what pays); Node has no cookie jar, so we're signed out.
+    const out = await api.requestDownload("pdf", resume, jd, tailored, analysis).catch((e: ApiError) => e);
     expect(resume.sections.length).toBeGreaterThan(0);
     expect(analysis.items.length).toBe(jd.requirements.length);
     expect(verified.bullets).toHaveLength(tailored.bullets.length);
     expect(score.after).not.toBeNull();
     expect(mentor.plan.weeks).toHaveLength(2);
-    expect(out.filename).toMatch(/\.pdf$/);
+    expect(out).toBeInstanceOf(ApiError);
+    expect((out as ApiError).kind).toBe("sign_in_required");
   }, 30_000);
 
   it("signed-out auth endpoints match the zod schemas", async () => {

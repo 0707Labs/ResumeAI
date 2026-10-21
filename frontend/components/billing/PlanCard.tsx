@@ -39,11 +39,12 @@ export function planPrice(plan: Plan): string {
 /** Starts checkout for one plan: only the product key goes to our backend; the browser
  * then leaves for the provider's hosted payment page. A new key per click, so a double
  * click opens one checkout, never two. */
-export function BuyButton({ plan, signedIn, onError, className = "" }: {
+export function BuyButton({ plan, signedIn, onError, className = "", beforeCheckout }: {
   plan: Plan;
   signedIn: boolean;
   onError: (e: unknown) => void;
   className?: string;
+  beforeCheckout?: () => void; // e.g. remember a download to finish after paying
 }) {
   const [busy, setBusy] = useState(false);
   const [clickKey] = useState(() => crypto.randomUUID());
@@ -66,6 +67,7 @@ export function BuyButton({ plan, signedIn, onError, className = "" }: {
       onError(null);
       try {
         const { checkout_url } = await billingApi.checkout(plan.key, clickKey);
+        beforeCheckout?.();
         goTo(checkout_url);
       } catch (e) {
         onError(e);

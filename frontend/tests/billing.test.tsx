@@ -7,7 +7,7 @@ import CheckoutSuccessPage from "@/app/billing/success/page";
 import PricingPage from "@/app/pricing/page";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
 import { announceOutOfCredits } from "@/lib/api";
-import { GIVE_UP_MS, formatMoney } from "@/lib/billing";
+import { GIVE_UP_MS, formatMoney, pendingDownload, rememberPendingDownload, takePendingDownload } from "@/lib/billing";
 
 const router = { push: vi.fn(), replace: vi.fn() };
 let search = new URLSearchParams();
@@ -262,5 +262,40 @@ describe("billing admin page", () => {
     expect(screen.getByText(/Dodo fees are estimates/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
     expect(await screen.findByText("Nothing to review.")).toBeInTheDocument();
+  });
+});
+
+const paidPack = { id: PAYMENT_ID, product_key: "credit_pack_5", kind: "credit_pack", status: "paid", credits_balance: 5 };
+
+describe("download paywall", () => {
+  it("a download's dialog says so, and buying remembers the format for after checkout", async () => {
+    sessionStorage.clear();
+    routes({ "GET /api/billing/plans": PLANS, "GET /api/auth/csrf": { csrf_token: "tok" },
+      "POST /api/billing/checkout": { payment_id: PAYMENT_ID, checkout_url: "https://test.checkout.dodopayments.com/x" } });
+    render(<OutOfCreditsModal />);
+    act(() => announceOutOfCredits({ reason: "download", fmt: "pdf" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download your tailored resume" });
+    expect(dialog).toHaveTextContent(/the download starts by itself/);
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Buy Credit pack" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://test.checkout.dodopayments.com/x"));
+    expect(pendingDownload()).toBe("pdf");
+  });
+
+  it("checkout success goes back to the export page once paid, when a download is waiting", async () => {
+    sessionStorage.clear();
+    rememberPendingDownload("docx");
+    search = new URLSearchParams(`payment=${PAYMENT_ID}`);
+    routes({ [`GET /api/billing/payments/${PAYMENT_ID}`]: () => json(paidPack) });
+    render(<CheckoutSuccessPage />);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/export?resume=download"));
+  });
+
+  it("the remembered download is used once and only for an hour", () => {
+    sessionStorage.clear();
+    rememberPendingDownload("pdf");
+    expect(takePendingDownload()).toBe("pdf");
+    expect(takePendingDownload()).toBeNull();
+    sessionStorage.setItem("rt:pending-download", JSON.stringify({ fmt: "pdf", at: Date.now() - 2 * 60 * 60 * 1000 }));
+    expect(pendingDownload()).toBeNull();
   });
 });

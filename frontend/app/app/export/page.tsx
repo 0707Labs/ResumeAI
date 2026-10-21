@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useHydrated } from "@/components/AppShell";
 import { ExportPanel, type Format } from "@/components/ExportPanel";
 import { ResumeDocument } from "@/components/ResumeDocument";
 import { Alert, Card, Spinner } from "@/components/ui";
-import { api, messageFor } from "@/lib/api";
-import { saveBlob } from "@/lib/download";
+import { ApiError, api, messageFor } from "@/lib/api";
+import { takePendingDownload } from "@/lib/billing";
+import { openDownload } from "@/lib/download";
 import { counts, exportCheck, withDecisions } from "@/lib/review";
 import type { ExportPreview } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
@@ -21,7 +22,9 @@ export default function ExportPage() {
   const [markChanges, setMarkChanges] = useState(true);
   const [busy, setBusy] = useState<Format | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [downloaded, setDownloaded] = useState<string | null>(null);
+  const resumed = useRef(false);
 
   const payload = useMemo(() => (tailored ? withDecisions(tailored, decisions) : null), [tailored, decisions]);
 
@@ -35,8 +38,43 @@ export default function ExportPage() {
     return () => controller.abort();
   }, [resume, payload, analysis, jd]);
 
+  const check = tailored ? exportCheck(tailored, decisions) : null;
+
+  async function download(fmt: Format) {
+    if (!check?.ok || !resume || !jd || !payload) return;
+    setBusy(fmt);
+    setError(null);
+    setNeedsSignIn(false);
+    setDownloaded(null);
+    try {
+      const link = await api.requestDownload(fmt, resume, jd, payload, analysis);
+      openDownload(link.url);
+      setDownloaded(link.paid_with === "window"
+        ? `Your ${fmt.toUpperCase()} is downloading. Re-downloading this resume is free for a week after you paid.`
+        : link.paid_with === "credit"
+          ? `Your ${fmt.toUpperCase()} is downloading. 1 credit used; ${link.credits_balance} left.`
+          : `Your ${fmt.toUpperCase()} is downloading, covered by your ${link.paid_with === "pass" ? "Job Hunt Pass" : "Pro plan"}.`);
+    } catch (e) {
+      const signIn = e instanceof ApiError && e.kind === "sign_in_required";
+      setNeedsSignIn(signIn);
+      setError(signIn ? null : messageFor(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Back from checkout to finish a download that needed paying for: start it once.
+  useEffect(() => {
+    if (!hydrated || resumed.current || !check?.ok) return;
+    if (new URLSearchParams(window.location.search).get("resume") !== "download") return;
+    resumed.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+    const fmt = takePendingDownload();
+    if (fmt) void download(fmt);
+  });
+
   if (!hydrated) return null;
-  if (!resume || !tailored || !payload) {
+  if (!resume || !jd || !tailored || !payload) {
     return (
       <Alert tone="info" title="Nothing to export yet">
         Review your tailored bullets on the <Link href="/app/review" className="font-medium text-accent underline">review page</Link> first.
@@ -44,25 +82,9 @@ export default function ExportPage() {
     );
   }
 
-  const check = exportCheck(tailored, decisions);
+  if (!check) return null;
   const unresolved = tailored.bullets.filter((b) => check.unresolved.includes(b.id));
   const approved = counts(tailored, decisions).approved;
-
-  async function download(fmt: Format) {
-    if (!check.ok || !resume || !payload) return;
-    setBusy(fmt);
-    setError(null);
-    setDownloaded(null);
-    try {
-      const { blob, filename } = await api.exportFile(fmt, resume, payload, analysis, jd?.raw_text ?? "");
-      saveBlob(blob, filename);
-      setDownloaded(filename);
-    } catch (e) {
-      setError(messageFor(e));
-    } finally {
-      setBusy(null);
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -92,7 +114,14 @@ export default function ExportPage() {
           )}
         </div>
 
-        <div className="lg:sticky lg:top-4">
+        <div className="space-y-4 lg:sticky lg:top-4">
+          {needsSignIn && (
+            <Alert tone="info" title="Sign in to download">
+              Tailoring and the preview are free; downloading needs an account.{" "}
+              <Link href="/signin?next=/app/export" className="font-medium text-accent underline">Sign in</Link> and
+              come back here: your work stays in this tab.
+            </Alert>
+          )}
           <ExportPanel
             unresolved={unresolved}
             summaryUnresolved={check.summaryUnresolved}

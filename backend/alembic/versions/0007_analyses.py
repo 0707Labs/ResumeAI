@@ -1,12 +1,16 @@
-"""Analyses: the unit of billing for the tailoring pipeline.
+"""Analyses and downloads: tailoring is free to try, the clean download pays.
 
-One row per resume + job run a signed-in user starts. It records what pays for the run
-(an active pass, Pro, a credit, or the monthly free allowance) and, for a credit, the
-reservation: the credit is charged when the run starts ('reserved'), kept when tailoring
-succeeds with Claude ('committed') and given back once if it fails, falls back to rules
-only, or is abandoned ('refunded'). Failed runs don't count against free or fair-use caps.
+analyses: one resume + job run per row. Starting one pins the parsed resume and job
+description on the server, so the pipeline's Claude calls and the download are tied to
+those inputs rather than to whatever a browser sends. It spends nothing: the monthly free
+tailorings allow it, or past those, an active pass, Pro or a credit balance.
 
-Also makes the ledger refuse a second charge or a second refund for one analysis.
+downloads: one row per clean DOCX/PDF download, the download log. A download is charged
+to a pass, Pro or credits ('pass', 'pro', 'credit'), or covered by a paid download of the
+same analysis within the re-download window ('window'). Fair-use caps count paid
+downloads. final_resume is what the short-lived signed link renders.
+
+Also makes the ledger refuse a second charge or a second refund for one reference.
 
 Revision ID: 0007_analyses
 Revises: 0006_llm_usage
@@ -17,7 +21,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 revision: str = "0007_analyses"
 down_revision: str | None = "0006_llm_usage"
@@ -31,45 +35,54 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column("user_id", UUID(as_uuid=True)),
         sa.Column("idempotency_key", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False, server_default="pending"),
-        sa.Column("entitlement", sa.Text(), nullable=False),
-        sa.Column("billing_state", sa.Text(), nullable=False),
-        sa.Column("credits", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("pass_id", UUID(as_uuid=True)),
-        sa.Column("subscription_id", UUID(as_uuid=True)),
+        sa.Column("resume", JSONB(), nullable=False),
+        sa.Column("jd", JSONB(), nullable=False),
+        sa.Column("inputs_sha256", sa.Text(), nullable=False),
+        sa.Column("tailored", JSONB()),
+        sa.Column("llm_tailored", sa.Boolean()),
+        sa.Column("tailored_at", sa.DateTime(timezone=True)),
         sa.Column("usable_until", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("finished_at", sa.DateTime(timezone=True)),
-        sa.Column("llm_degraded", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("failure_reason", sa.Text()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id", name="pk_analyses"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_analyses_user_id_users", ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["pass_id"], ["passes.id"], name="fk_analyses_pass_id_passes"),
-        sa.ForeignKeyConstraint(["subscription_id"], ["subscriptions.id"],
-                                name="fk_analyses_subscription_id_subscriptions"),
         sa.UniqueConstraint("user_id", "idempotency_key", name="uq_analyses_user_id_idempotency_key"),
-        sa.CheckConstraint("status IN ('pending', 'succeeded', 'failed')", name="ck_analyses_status"),
-        sa.CheckConstraint("entitlement IN ('pass', 'pro', 'credit', 'free')", name="ck_analyses_entitlement"),
-        sa.CheckConstraint("billing_state IN ('none', 'reserved', 'committed', 'refunded')",
-                           name="ck_analyses_billing_state"),
-        # Only a credit run has a reservation; it holds while pending and settles once.
-        sa.CheckConstraint("(entitlement = 'credit') = (billing_state <> 'none')", name="ck_analyses_credit_state"),
-        sa.CheckConstraint("(entitlement = 'credit') = (credits > 0)", name="ck_analyses_credits"),
-        sa.CheckConstraint("(billing_state = 'reserved') = (entitlement = 'credit' AND status = 'pending')",
-                           name="ck_analyses_reserved_while_pending"),
-        sa.CheckConstraint("billing_state <> 'committed' OR status = 'succeeded'", name="ck_analyses_committed"),
-        sa.CheckConstraint("(entitlement = 'pass') = (pass_id IS NOT NULL)", name="ck_analyses_pass"),
-        sa.CheckConstraint("(entitlement = 'pro') = (subscription_id IS NOT NULL)", name="ck_analyses_pro"),
-        sa.CheckConstraint("(status = 'pending') = (finished_at IS NULL)", name="ck_analyses_finished"),
+        sa.CheckConstraint("(tailored IS NULL) = (tailored_at IS NULL) AND (tailored IS NULL) = (llm_tailored IS NULL)",
+                           name="ck_analyses_tailored"),
     )
     op.create_index("ix_analyses_user_created", "analyses", ["user_id", "created_at"])
-    op.create_index("ix_analyses_pass_id", "analyses", ["pass_id"], postgresql_where=sa.text("pass_id IS NOT NULL"))
-    op.create_index("ix_analyses_subscription_id", "analyses", ["subscription_id"],
-                    postgresql_where=sa.text("subscription_id IS NOT NULL"))
-    op.create_index("ix_analyses_pending_until", "analyses", ["usable_until"],
-                    postgresql_where=sa.text("status = 'pending'"))
 
-    # Belt and braces on top of the charge:/refund: idempotency keys.
+    op.create_table(
+        "downloads",
+        sa.Column("id", UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("user_id", UUID(as_uuid=True)),
+        sa.Column("analysis_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("format", sa.Text(), nullable=False),
+        sa.Column("paid_with", sa.Text(), nullable=False),
+        sa.Column("credits", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("pass_id", UUID(as_uuid=True)),
+        sa.Column("subscription_id", UUID(as_uuid=True)),
+        sa.Column("final_resume", JSONB(), nullable=False),
+        sa.Column("served_at", sa.DateTime(timezone=True)),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.PrimaryKeyConstraint("id", name="pk_downloads"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_downloads_user_id_users", ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["analysis_id"], ["analyses.id"], name="fk_downloads_analysis_id_analyses",
+                                ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["pass_id"], ["passes.id"], name="fk_downloads_pass_id_passes"),
+        sa.ForeignKeyConstraint(["subscription_id"], ["subscriptions.id"],
+                                name="fk_downloads_subscription_id_subscriptions"),
+        sa.CheckConstraint("format IN ('docx', 'pdf')", name="ck_downloads_format"),
+        sa.CheckConstraint("paid_with IN ('pass', 'pro', 'credit', 'window')", name="ck_downloads_paid_with"),
+        sa.CheckConstraint("(paid_with = 'credit') = (credits > 0)", name="ck_downloads_credits"),
+        sa.CheckConstraint("(paid_with = 'pass') = (pass_id IS NOT NULL)", name="ck_downloads_pass"),
+        sa.CheckConstraint("(paid_with = 'pro') = (subscription_id IS NOT NULL)", name="ck_downloads_pro"),
+    )
+    op.create_index("ix_downloads_analysis_created", "downloads", ["analysis_id", "created_at"])
+    op.create_index("ix_downloads_pass_id", "downloads", ["pass_id"], postgresql_where=sa.text("pass_id IS NOT NULL"))
+    op.create_index("ix_downloads_subscription_id", "downloads", ["subscription_id"],
+                    postgresql_where=sa.text("subscription_id IS NOT NULL"))
+
+    # Belt and braces on top of the download:/refund: idempotency keys.
     op.create_index("ix_credit_transactions_one_charge", "credit_transactions", ["reference_id"], unique=True,
                     postgresql_where=sa.text("reason = 'analysis_charge'"))
     op.create_index("ix_credit_transactions_one_refund", "credit_transactions", ["reference_id"], unique=True,
@@ -79,4 +92,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_credit_transactions_one_refund", table_name="credit_transactions")
     op.drop_index("ix_credit_transactions_one_charge", table_name="credit_transactions")
+    op.drop_table("downloads")
     op.drop_table("analyses")

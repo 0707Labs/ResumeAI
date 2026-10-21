@@ -1,39 +1,50 @@
-"""Tailorings ("analyses"): start (decide what allows it), finish, release (a failed run
-stops counting), and the sweep for abandoned runs. Starting never spends a credit; the
-clean download does. Rows from before that change may still hold a reserved credit, so
-release still refunds one exactly once.
+"""Analyses (tailoring runs) and downloads: tailoring is free to try, the download pays.
 
-Every function runs inside the caller's transaction and never commits. Each one locks
-the user's row first (the same lock app.billing.ledger takes), so for one user, starts,
-commits and refunds are serialized and always take locks in the order user, then analysis:
-- concurrent starts can't overspend credits, the free allowance or a fair-use cap;
-- an analysis is settled once: the conditional UPDATE ... WHERE status = 'pending' lets only
-  one of a racing finish, failure or sweep through, and the refund:{id} ledger key (plus a
-  unique index on refunds per analysis) backs that up.
+start_analysis() pins a resume and job description on the server. It spends nothing:
+the monthly free tailorings allow it, or, past those, whatever a download would need (an
+active pass, Pro, or a credit balance; see app.billing.entitlements). pay_for_download()
+runs when the user asks for the clean DOCX/PDF of an analysis: a paid download of the
+same analysis within redownload_free_days covers it ('window'); otherwise it is charged
+to a pass, Pro or credits (can_user_run), once, through the ledger.
+
+Every function runs inside the caller's transaction and never commits. The download
+route checks the file renders inside the same transaction, so a failed export charges
+nothing. Each function first locks the user's row (the same lock app.billing.ledger
+takes), so one user's starts and downloads are serialized: concurrent clicks can't
+overspend credits, the free tailorings or a fair-use cap, and can't pay twice for one
+analysis within the window.
 """
 
+import hashlib
+import json
 import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing import ledger
 from app.billing.config import BillingConfig
-from app.billing.entitlements import CapUsage, Decision, Snapshot, can_start_tailoring
-from app.db.models import Analysis, Pass, Subscription, User
+from app.billing.entitlements import CapUsage, Decision, Snapshot, can_start_tailoring, can_user_run
+from app.db.models import Analysis, Download, Pass, Subscription, User
 
 log = logging.getLogger("app.billing")
 
-COUNTS = Analysis.status != "failed"  # runs that use up an allowance or a cap
+# Runs that use up a free tailoring: all but those that ended rules-only.
+COUNTS = or_(Analysis.llm_tailored.is_(None), Analysis.llm_tailored.is_(True))
+PAID = Download.paid_with != "window"  # downloads that were charged to something
 
 
 class NoEntitlement(Exception):
     def __init__(self, decision: Decision):
         super().__init__(decision.reason)
         self.decision = decision
+
+
+class UnknownAnalysis(Exception):
+    """Not this user's analysis (or no such analysis)."""
 
 
 @dataclass(frozen=True)
@@ -43,8 +54,25 @@ class Started:
     replay: bool
 
 
+@dataclass(frozen=True)
+class Paid:
+    download: Download
+    decision: Decision | None  # None when the re-download window covered it
+
+
+def inputs_digest(resume: dict, jd: dict) -> str:
+    """sha256 of the parsed resume and job description, as JSON with sorted keys."""
+    blob = json.dumps({"resume": resume, "jd": jd}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 def month_start(now: datetime) -> datetime:
     return now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def next_month_start(now: datetime) -> datetime:
+    start = month_start(now)
+    return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
 
 
 def _minus_interval(end: datetime, interval: str | None) -> datetime:
@@ -66,17 +94,19 @@ async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> int:
     return balance
 
 
-async def _count(db: AsyncSession, *where) -> int:
-    return int(await db.scalar(select(func.count()).select_from(Analysis).where(COUNTS, *where)))
+async def _paid_downloads(db: AsyncSession, *where) -> int:
+    return int(await db.scalar(select(func.count()).select_from(Download).where(PAID, *where)))
 
 
 async def snapshot(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, balance: int,
                    now: datetime) -> Snapshot:
+    """What this user has now. Fair-use caps count paid downloads; the free allowance
+    counts tailorings started this calendar month."""
     passes = []
     for p in await db.scalars(select(Pass).where(
             Pass.user_id == user_id, Pass.revoked_at.is_(None), Pass.starts_at <= now, Pass.expires_at > now)
             .order_by(Pass.starts_at, Pass.id)):
-        passes.append(CapUsage(p.id, await _count(db, Analysis.pass_id == p.id), p.analyses_cap))
+        passes.append(CapUsage(p.id, await _paid_downloads(db, Download.pass_id == p.id), p.analyses_cap))
 
     pro = None
     sub = await db.scalar(select(Subscription).where(
@@ -87,38 +117,33 @@ async def snapshot(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, 
         # Someone who paid keeps Pro even if the product's sale flag is later turned off.
         start = (_minus_interval(sub.current_period_end, product.interval) if sub.current_period_end
                  else now - timedelta(days=31))
-        used = await _count(db, Analysis.subscription_id == sub.id, Analysis.created_at > start)
+        used = await _paid_downloads(db, Download.subscription_id == sub.id, Download.created_at > start)
         pro = CapUsage(sub.id, used, product.fair_use_cap)
 
-    free_used = await _count(db, Analysis.user_id == user_id, Analysis.entitlement == "free",
-                             Analysis.created_at >= month_start(now))
+    free_used = int(await db.scalar(select(func.count()).select_from(Analysis).where(
+        Analysis.user_id == user_id, COUNTS, Analysis.created_at >= month_start(now))))
     return Snapshot(credits=balance, passes=tuple(passes), pro=pro, free_used=free_used,
                     free_allowance=config.free.analyses_per_month,
                     credits_per_download=config.downloads.credits_per_download)
 
 
-async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, *,
+async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, *, resume: dict, jd: dict,
                          idempotency_key: str, now: datetime | None = None) -> Started:
-    """Decide what allows this tailoring (nothing is charged). The same key returns the
-    same analysis. Raises NoEntitlement when nothing does."""
+    """Pin a resume and job description for this user. Spends nothing; raises
+    NoEntitlement past the free tailorings without a pass, Pro or credits. The same
+    key returns the same analysis."""
     now = now or datetime.now(UTC)
     balance = await _lock_user(db, user_id)
-    if await _sweep_user(db, user_id, now):
-        balance = await _lock_user(db, user_id)
     existing = await db.scalar(select(Analysis).where(
         Analysis.user_id == user_id, Analysis.idempotency_key == idempotency_key))
     if existing is not None:
         return Started(existing, None, replay=True)
-
     decision = can_start_tailoring(await snapshot(db, config, user_id, balance, now))
     if not decision.allowed:
         raise NoEntitlement(decision)
-    row = Analysis(
-        id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, status="pending",
-        entitlement=decision.pays_with, billing_state="none",
-        credits=0, pass_id=decision.pass_id, subscription_id=decision.subscription_id,
-        usable_until=now + timedelta(hours=config.analyses.usable_hours), created_at=now,
-    )
+    row = Analysis(id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, resume=resume, jd=jd,
+                   inputs_sha256=inputs_digest(resume, jd), created_at=now,
+                   usable_until=now + timedelta(hours=config.analyses.usable_hours))
     db.add(row)
     await db.flush()
     return Started(row, decision, replay=False)
@@ -126,67 +151,49 @@ async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.
 
 async def usable(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID,
                  now: datetime | None = None) -> Analysis | None:
-    """The user's analysis if Claude may still be used for it (not failed, not past
-    usable_until). Anyone else's id, or an unknown one, gives None."""
+    """The user's analysis while Claude may still be used for it; anyone else's id, an
+    unknown one or an expired one gives None."""
     now = now or datetime.now(UTC)
     return await db.scalar(select(Analysis).where(
-        Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.status != "failed",
-        Analysis.usable_until > now))
+        Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.usable_until > now))
 
 
-async def finish(db: AsyncSession, analysis_id: uuid.UUID, user_id: uuid.UUID, *,
-                 now: datetime | None = None) -> bool:
-    """Tailoring succeeded with Claude: the run counts. True only the first time; False
-    also for a run already released (a late success keeps its result)."""
-    await _lock_user(db, user_id)
-    result = await db.execute(
-        update(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.status == "pending")
-        .values(status="succeeded", finished_at=now or func.now(),
-                billing_state=case((Analysis.billing_state == "reserved", "committed"), else_=Analysis.billing_state))
-    )
-    if result.rowcount != 1:
-        log.info("analysis %s was already settled; nothing committed", analysis_id)
-    return result.rowcount == 1
+async def owned(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID) -> Analysis:
+    row = await db.scalar(select(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user_id))
+    if row is None:
+        raise UnknownAnalysis(analysis_id)
+    return row
 
 
-async def release(db: AsyncSession, analysis_id: uuid.UUID, user_id: uuid.UUID | None, *, reason: str,
-                  degraded: bool = False, now: datetime | None = None) -> bool:
-    """Mark a pending analysis failed (it stops counting) and refund a legacy reserved credit, exactly once.
-    reason: 'llm_degraded' (fell back to rules only), 'error', 'abandoned'."""
-    if user_id is not None:
-        await _lock_user(db, user_id)
-    settled = (await db.execute(
-        update(Analysis).where(Analysis.id == analysis_id, Analysis.status == "pending")
-        .values(status="failed", failure_reason=reason, llm_degraded=degraded, finished_at=now or func.now(),
-                billing_state=case((Analysis.billing_state == "reserved", "refunded"), else_=Analysis.billing_state))
-        .returning(Analysis.billing_state, Analysis.credits, Analysis.user_id)
-    )).one_or_none()
-    if settled is None:
-        return False
-    state, credits, owner = settled
-    if state == "refunded" and owner is not None:
-        await ledger.grant(db, owner, credits, reason="refund", idempotency_key=f"refund:{analysis_id}",
-                           reference_id=str(analysis_id), note=reason)
-    return True
-
-
-async def _sweep_user(db: AsyncSession, user_id: uuid.UUID, now: datetime) -> int:
-    """Release this user's runs left pending past usable_until (caller holds the user lock)."""
-    stale = list(await db.scalars(select(Analysis.id).where(
-        Analysis.user_id == user_id, Analysis.status == "pending", Analysis.usable_until <= now)))
-    for analysis_id in stale:
-        await release(db, analysis_id, user_id, reason="abandoned", now=now)
-    return len(stale)
-
-
-async def sweep(db: AsyncSession, *, now: datetime | None = None, limit: int = 500) -> int:
-    """Release every abandoned run (for cron). Runs are also swept per user on their next
-    start, so a missed cron run only delays a refund."""
+async def pay_for_download(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, analysis_id: uuid.UUID,
+                           *, fmt: str, final_resume: dict, now: datetime | None = None) -> Paid:
+    """Record a download of this analysis and pay for it: free within the re-download
+    window of a paid download of the same analysis, else charged to a pass, Pro or
+    credits (key download:{id}). Raises NoEntitlement when nothing pays and
+    UnknownAnalysis for someone else's analysis."""
     now = now or datetime.now(UTC)
-    stale = (await db.execute(select(Analysis.id, Analysis.user_id).where(
-        Analysis.status == "pending", Analysis.usable_until <= now)
-        .order_by(Analysis.user_id, Analysis.id).limit(limit))).all()
-    released = 0
-    for analysis_id, user_id in stale:
-        released += await release(db, analysis_id, user_id, reason="abandoned", now=now)
-    return released
+    balance = await _lock_user(db, user_id)
+    await owned(db, user_id, analysis_id)
+    window = timedelta(days=config.downloads.redownload_free_days)
+    last_paid = await db.scalar(select(func.max(Download.created_at)).where(
+        Download.analysis_id == analysis_id, Download.user_id == user_id, PAID))
+    decision = None
+    row = Download(id=uuid.uuid4(), user_id=user_id, analysis_id=analysis_id, format=fmt,
+                   final_resume=final_resume, created_at=now)
+    if last_paid is not None and now - last_paid < window:
+        row.paid_with = "window"
+    else:
+        decision = can_user_run(await snapshot(db, config, user_id, balance, now))
+        if not decision.allowed:
+            raise NoEntitlement(decision)
+        row.paid_with, row.pass_id, row.subscription_id = decision.pays_with, decision.pass_id, decision.subscription_id
+        row.credits = config.downloads.credits_per_download if decision.pays_with == "credit" else 0
+    db.add(row)
+    await db.flush()
+    if row.paid_with == "credit":
+        await ledger.charge(db, user_id, row.credits, reason="analysis_charge",
+                            idempotency_key=f"download:{row.id}", reference_id=str(row.id))
+    # The download log: ids and what paid, never resume text.
+    log.info("download user=%s analysis=%s download=%s format=%s paid_with=%s credits=%d",
+             user_id, analysis_id, row.id, fmt, row.paid_with, row.credits)
+    return Paid(row, decision)

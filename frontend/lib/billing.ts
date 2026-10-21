@@ -16,6 +16,31 @@ export const GIVE_UP_MS = 90_000;
 /** Fires when any API call answers 402 (see announceOutOfCredits in api.ts). */
 export const OUT_OF_CREDITS_EVENT = "rt:out-of-credits";
 
+// A download waiting on a purchase: kept in this tab (sessionStorage survives the trip to
+// the checkout page and back) so /billing/success can send the buyer back to finish it.
+const PENDING_DOWNLOAD_KEY = "rt:pending-download";
+const PENDING_TTL_MS = 60 * 60 * 1000;
+
+export function rememberPendingDownload(fmt: "docx" | "pdf") {
+  try { sessionStorage.setItem(PENDING_DOWNLOAD_KEY, JSON.stringify({ fmt, at: Date.now() })); } catch { /* blocked */ }
+}
+
+/** The format waiting to be downloaded (left in place until takePendingDownload). */
+export function pendingDownload(): "docx" | "pdf" | null {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(PENDING_DOWNLOAD_KEY) ?? "null") as { fmt?: string; at?: number } | null;
+    if (saved && (saved.fmt === "docx" || saved.fmt === "pdf") && typeof saved.at === "number"
+        && Date.now() - saved.at < PENDING_TTL_MS) return saved.fmt;
+  } catch { /* fall through */ }
+  return null;
+}
+
+export function takePendingDownload(): "docx" | "pdf" | null {
+  const fmt = pendingDownload();
+  try { sessionStorage.removeItem(PENDING_DOWNLOAD_KEY); } catch { /* blocked */ }
+  return fmt;
+}
+
 export const billingApi = {
   plans: () => call(S.Plans, "/api/billing/plans"),
   checkout: (productKey: string, idempotencyKey: string) =>

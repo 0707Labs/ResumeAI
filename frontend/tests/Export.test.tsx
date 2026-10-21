@@ -14,8 +14,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/app/export",
 }));
-const saveBlob = vi.fn();
-vi.mock("@/lib/download", () => ({ saveBlob: (...a: unknown[]) => saveBlob(...a) }));
+const openDownload = vi.fn();
+vi.mock("@/lib/download", () => ({ openDownload: (...a: unknown[]) => openDownload(...a) }));
+const link = (paid_with: "credit" | "window" | "pass" | "pro", credits_balance = 0) => ({
+  url: "/api/downloads/file/abc.def", expires_at: "2026-10-22T00:00:00Z", paid_with, credits_balance,
+});
 
 const finalResume: Resume = {
   ...resume,
@@ -28,7 +31,7 @@ const preview: ExportPreview = { resume: finalResume, changed_lines: [verified.t
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  saveBlob.mockReset();
+  openDownload.mockReset();
   useSession.getState().clearAll();
   const s = useSession.getState();
   s.setResume(resume, { mode: "file", fileName: "cv.pdf" });
@@ -42,7 +45,7 @@ const downloadButton = (fmt: "DOCX" | "PDF") => screen.getByRole("button", { nam
 describe("Step 6: export", () => {
   it("can't download until flagged changes are resolved, and says why", async () => {
     vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
-    const exportFile = vi.spyOn(api, "exportFile");
+    const requestDownload = vi.spyOn(api, "requestDownload");
     render(<ExportPage />);
 
     const panel = screen.getByTestId("export-panel");
@@ -52,7 +55,7 @@ describe("Step 6: export", () => {
     expect(downloadButton("DOCX")).toBeDisabled();
     expect(downloadButton("PDF")).toBeDisabled();
     expect(downloadButton("DOCX")).toHaveAccessibleDescription(/still need your decision/i);
-    expect(exportFile).not.toHaveBeenCalled();
+    expect(requestDownload).not.toHaveBeenCalled();
     // The preview is still available while you decide.
     expect(await screen.findByTestId("resume-document")).toBeInTheDocument();
   });
@@ -79,20 +82,19 @@ describe("Step 6: export", () => {
     useSession.getState().decide("t2", "rejected");
     useSession.getState().decide("t3", "rejected");
     vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
-    const blob = new Blob(["docx"]);
-    const exportFile = vi.spyOn(api, "exportFile").mockResolvedValue({ blob, filename: "Asha_Rao_tailored.docx" });
+    const requestDownload = vi.spyOn(api, "requestDownload").mockResolvedValue(link("credit", 2));
 
     render(<ExportPage />);
     expect(screen.getByText(/1 approved change included/i)).toBeInTheDocument();
     await user.click(downloadButton("DOCX"));
 
-    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(blob, "Asha_Rao_tailored.docx"));
-    const [fmt, , sent] = exportFile.mock.calls[0];
+    await waitFor(() => expect(openDownload).toHaveBeenCalledWith("/api/downloads/file/abc.def"));
+    const [fmt, , , sent] = requestDownload.mock.calls[0];
     expect(fmt).toBe("docx");
     expect(sent.bullets.map((b) => [b.id, b.review])).toEqual([
       ["t1", "approved"], ["t2", "rejected"], ["t3", "rejected"], ["t4", "pending"],
     ]);
-    expect(await screen.findByText("Asha_Rao_tailored.docx")).toBeInTheDocument();
+    expect(await screen.findByText(/1 credit used; 2 left/)).toBeInTheDocument();
   });
 
   it("shows a friendly error if the download fails", async () => {
@@ -100,11 +102,25 @@ describe("Step 6: export", () => {
     useSession.getState().decide("t2", "approved");
     useSession.getState().decide("t3", "rejected");
     vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
-    vi.spyOn(api, "exportFile").mockRejectedValue(new ApiError("backend_down", 0));
+    vi.spyOn(api, "requestDownload").mockRejectedValue(new ApiError("backend_down", 0));
     render(<ExportPage />);
     await user.click(downloadButton("PDF"));
     expect(await screen.findByRole("alert")).toHaveTextContent(/can't reach the analysis service/i);
-    expect(saveBlob).not.toHaveBeenCalled();
+    expect(openDownload).not.toHaveBeenCalled();
+  });
+
+  it("signed out: asks to sign in to download, and comes back here after", async () => {
+    const user = userEvent.setup();
+    useSession.getState().decide("t2", "approved");
+    useSession.getState().decide("t3", "rejected");
+    vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
+    vi.spyOn(api, "requestDownload").mockRejectedValue(new ApiError("sign_in_required", 401));
+    render(<ExportPage />);
+    await user.click(downloadButton("DOCX"));
+    expect(await screen.findByText("Sign in to download")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/export");
+    expect(screen.queryByText("Download didn't finish")).not.toBeInTheDocument();
+    expect(openDownload).not.toHaveBeenCalled();
   });
 
   it("sends nothing anywhere but our own origin (proxied to the backend)", async () => {
@@ -116,4 +132,21 @@ describe("Step 6: export", () => {
     expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith("/api/"))).toBe(true);
     vi.unstubAllGlobals();
   });
+
+  it("back from checkout: finishes the download that needed paying for, once", async () => {
+    useSession.getState().decide("t2", "approved");
+    useSession.getState().decide("t3", "rejected");
+    vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
+    const requestDownload = vi.spyOn(api, "requestDownload").mockResolvedValue(link("credit", 4));
+    sessionStorage.setItem("rt:pending-download", JSON.stringify({ fmt: "pdf", at: Date.now() }));
+    window.history.replaceState(null, "", "/app/export?resume=download");
+    const { rerender } = render(<ExportPage />);
+    await waitFor(() => expect(openDownload).toHaveBeenCalledWith("/api/downloads/file/abc.def"));
+    expect(requestDownload.mock.calls[0][0]).toBe("pdf");
+    expect(window.location.search).toBe("");
+    rerender(<ExportPage />);
+    expect(requestDownload).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem("rt:pending-download")).toBeNull();
+  });
 });
+

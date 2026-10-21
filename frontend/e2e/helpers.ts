@@ -63,3 +63,11 @@ export async function signUp(page: Page, tag: string): Promise<string> {
   await expect(page).toHaveURL(/\/app$/);
   return email;
 }
+
+/** Grant credits to the account signed in on `page`, with the billing admin CLI (what a
+ * verified purchase webhook does through the same ledger). */
+export async function giveCredits(page: Page, n: number) {
+  const me = await (await page.request.get("/api/me")).json();
+  execFileSync(join(BACKEND, ".venv/bin/python"),
+    ["-m", "app.billing.cli", "adjust-credits", me.id, String(n), "--note", "e2e"], { cwd: BACKEND, encoding: "utf8" });
+}

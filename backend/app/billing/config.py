@@ -63,21 +63,24 @@ class Product(_Strict):
 
 
 class Free(_Strict):
-    # Tailorings a month (calendar month, UTC) that need no pass or credits. Downloading
-    # the clean file is paid regardless.
+    # Tailorings a user may start each calendar month (UTC) with nothing else. Downloads
+    # are always paid.
     analyses_per_month: Annotated[int, Field(ge=0)]
 
 
 class Analyses(_Strict):
-    # How long a started tailoring may use Claude. One never finished by then stops counting
-    # against the free allowance or a fair-use cap.
+    # How long a started analysis may use Claude.
     usable_hours: PositiveInt = 24
 
 
 class Downloads(_Strict):
-    # Credits one clean download spends. Past the free allowance, starting a tailoring
-    # needs at least this balance (it spends nothing; the download does).
+    # Credits one clean download spends when no pass or Pro covers it. Past the free
+    # tailorings, starting one needs what a download would (it spends nothing).
     credits_per_download: PositiveInt = 1
+    # Re-downloading the same tailored resume is free this long after a paid download.
+    redownload_free_days: Annotated[int, Field(ge=0)] = 7
+    # Signed download links stop working after this.
+    url_ttl_seconds: Annotated[int, Field(ge=10, le=3600)] = 120
 
 
 class Display(_Strict):

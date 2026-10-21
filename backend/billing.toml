@@ -17,15 +17,19 @@ version = 1
 prices_include_tax = true
 
 [free]
-analyses_per_month = 2        # free tailorings a month (calendar month, UTC); downloads are paid
+analyses_per_month = 2        # free tailorings a month (calendar month, UTC); downloads are always paid
 
-# Starting a tailoring never spends a credit. Order: the free allowance, then an active pass
-# under its fair-use cap, then Pro under its cap, then a credit balance that covers a download.
+# Tailoring is free to try; the clean download pays. Past the free tailorings, starting one
+# needs what a download would need (an active pass, Pro, or a credit balance); it spends nothing.
 [analyses]
-usable_hours = 24             # Claude may be used this long; an unfinished run stops counting after
+usable_hours = 24             # Claude may be used this long for one analysis
 
+# A download is charged to an active pass under its fair-use cap, then Pro under its cap,
+# then credits. Re-downloading the same tailored resume is free for a while after that.
 [downloads]
-credits_per_download = 1      # what one clean DOCX/PDF download spends
+credits_per_download = 1
+redownload_free_days = 7
+url_ttl_seconds = 120         # signed download links expire after this
 
 [signup]
 bonus_credits = 0

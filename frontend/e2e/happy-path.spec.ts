@@ -2,12 +2,14 @@ import { readFile } from "node:fs/promises";
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { API, ensureNotices, signUp } from "./helpers";
+import { API, ensureNotices, giveCredits, signUp } from "./helpers";
 
 // One full pass through the app against the real backend in rules-only mode
 // (no ANTHROPIC_API_KEY), so every tailored bullet starts out unchanged and the
 // only edits are the two made here by hand. The workspace needs an account, so it
-// starts by signing up (Postgres required, as for auth.spec.ts).
+// starts by signing up (Postgres required, as for auth.spec.ts). Downloading is what
+// pays: the first try opens the pricing dialog, then a credit (granted with the admin
+// CLI, as the purchase webhook would) pays for it.
 
 const ANSWER = "At Acme Retail I built dbt models that feed the weekly SQL extracts.";
 const CITED = "Cut weekly reporting time by 30% by automating SQL extracts with dbt models";
@@ -106,6 +108,17 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await expect(changed).toHaveCount(1);
   await expect(changed).toContainText(CITED);
 
+  // No credits yet: the pricing dialog, and no file.
+  let downloads = 0;
+  page.on("download", () => { downloads += 1; });
+  await page.getByRole("button", { name: "Download DOCX" }).click();
+  const paywall = page.getByRole("dialog", { name: "Download your tailored resume" });
+  await expect(paywall).toBeVisible();
+  await paywall.getByRole("button", { name: "Not now" }).click();
+  expect(downloads).toBe(0);
+
+  // One credit (as the purchase webhook would grant): the download spends it.
+  await giveCredits(page, 1);
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Download DOCX" }).click(),
@@ -114,6 +127,15 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   const file = await readFile(await download.path());
   expect(file.subarray(0, 4).toString("latin1")).toBe("PK\x03\x04");
   expect(file.includes("word/document.xml")).toBe(true);
+  await expect(page.getByText("1 credit used; 0 left.")).toBeVisible();
+
+  // The same resume again, as PDF: free within the re-download window.
+  const [pdf] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download PDF" }).click(),
+  ]);
+  expect(pdf.suggestedFilename()).toBe("Asha_Rao_tailored.pdf");
+  await expect(page.getByText(/free for a week after you paid/)).toBeVisible();
 
   // 7. Free allowance: a rules-only run doesn't count, and nothing was charged. Two more
   // starts use this month's two free tailorings; the third opens the pricing dialog.

@@ -26,7 +26,7 @@ export default function PrivacyPage() {
               <li><strong>Account:</strong> your email, the sign-in methods you connect (Google, GitHub or email link), and your account status.</li>
               <li><strong>Consent records:</strong> which version of these terms you accepted, your 18+ confirmation, and any optional research consent, with a one-way hash of the IP address used.</li>
               <li><strong>Billing:</strong> your purchases, credit and pass history, and a customer reference from Dodo Payments. We never see or store card details.</li>
-              <li><strong>Usage records:</strong> when an analysis runs, what it cost us in AI usage, and whether it finished. These records don&apos;t contain your resume text.</li>
+              <li><strong>Usage records:</strong> when an analysis runs, what it cost us in AI usage, and each download (format and what paid for it). These records and our logs don&apos;t contain your resume text.</li>
               <li><strong>Waitlist:</strong> your email, if you join it.</li>
             </ul>
           ),
@@ -38,7 +38,9 @@ export default function PrivacyPage() {
               <p>
                 Your resume, the job description and your answers are sent to our service to produce results. Your work in
                 progress is kept in your browser tab (session storage) and cleared when you close it or choose Clear all.
-                We don&apos;t keep resume or job description text in our database.
+                When you start a tailoring, we keep the parsed resume and job description with it on our servers, so AI
+                use and the downloaded file are tied to exactly what you submitted. When you download, we keep the
+                final resume behind that download for the re-download period. [Retention period to be decided.]
               </p>
               <p>
                 When AI features are on, this text is sent to Anthropic, which provides the Claude models we use, to

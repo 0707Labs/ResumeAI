@@ -14,6 +14,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -411,12 +412,23 @@ class Payment(Base):
     checkout_url: Mapped[str | None] = mapped_column(Text)
     checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_payment_id: Mapped[str | None] = mapped_column(Text)
+    provider_subscription_id: Mapped[str | None] = mapped_column(Text)
+    # As reported by the provider's verified webhook (total incl. tax; minor units).
+    currency: Mapped[str | None] = mapped_column(Text)
+    amount_minor: Mapped[int | None] = mapped_column(Integer)
+    tax_minor: Mapped[int | None] = mapped_column(Integer)
+    settlement_amount_minor: Mapped[int | None] = mapped_column(Integer)
+    settlement_currency: Mapped[str | None] = mapped_column(Text)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Credits taken back so far by refunds and lost disputes (requested, incl. any shortfall).
+    credits_reversed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (
+        CheckConstraint("credits_reversed >= 0", name="credits_reversed"),
         UniqueConstraint("user_id", "idempotency_key"),
         UniqueConstraint("provider", "provider_checkout_id"),
         UniqueConstraint("provider", "provider_payment_id"),
@@ -425,4 +437,89 @@ class Payment(Base):
         CheckConstraint(_in("kind", ("credit_pack", "pass", "subscription")), name="kind"),
         CheckConstraint(_in("status", PAYMENT_STATUSES), name="status"),
         Index("ix_payments_user_created", "user_id", "created_at"),
+    )
+
+
+SUBSCRIPTION_STATUSES = ("pending", "active", "on_hold", "paused", "cancelled", "failed", "expired", "past_due")
+REVIEW_KINDS = (
+    "credits_already_used", "partial_refund", "dispute_opened", "payment_mismatch",
+    "unknown_payment", "user_missing",
+)
+
+
+class ProcessedWebhookEvent(Base):
+    """One row per webhook delivery id. processed_at is set in the same transaction as
+    the event's effects, so a replay of a processed id does nothing. A delivery that
+    failed leaves processed_at NULL with a failure count, and the provider retries it."""
+
+    __tablename__ = "processed_webhook_events"
+
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    event_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = _created_at()
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(Text)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint("outcome IS NULL OR " + _in("outcome", ("processed", "ignored", "flagged")),
+                        name="outcome"),
+        CheckConstraint("(processed_at IS NULL) = (outcome IS NULL)", name="outcome_when_processed"),
+        Index("ix_processed_webhook_events_failing", "received_at",
+              postgresql_where=text("processed_at IS NULL")),
+    )
+
+
+class Subscription(Base):
+    """A provider subscription (Pro), mirrored from webhooks. Events can arrive out of
+    order, so an event older than last_event_at is ignored."""
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_subscription_id: Mapped[str] = mapped_column(Text, nullable=False)
+    product_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subscription_id"),
+        CheckConstraint(_in("provider", ("dodo",)), name="provider"),
+        CheckConstraint(_in("status", SUBSCRIPTION_STATUSES), name="status"),
+    )
+
+
+class BillingReview(Base):
+    """Something a human must look at: credits already spent when a refund came in,
+    a partial refund, an open dispute, a payment that doesn't match our record.
+    dedupe_key makes each flag appear once however often its webhook is delivered."""
+
+    __tablename__ = "billing_reviews"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), index=True
+    )
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = _created_at()
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", REVIEW_KINDS), name="kind"),
+        Index("ix_billing_reviews_open", "created_at", postgresql_where=text("resolved_at IS NULL")),
     )

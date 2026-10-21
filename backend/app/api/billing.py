@@ -1,8 +1,8 @@
-"""/api/billing: starting a checkout. Webhooks, status and the billing page come later."""
+"""/api/billing: starting a checkout and receiving the provider's webhooks."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,8 @@ from app.auth.ratelimit import rate_limit
 from app.billing.checkout import CheckoutError, start_checkout
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.providers import PaymentProvider, ProviderNotConfigured, get_payment_provider
+from app.billing.providers.base import InvalidSignature, PaymentError
+from app.billing.webhooks import process_webhook
 from app.config import get_settings
 from app.db.models import User
 from app.db.session import get_db
@@ -67,3 +69,31 @@ async def checkout(
     except CheckoutError as exc:
         raise HTTPException(status_code=ERROR_STATUS[exc.code], detail=exc.code) from None
     return CheckoutOut(payment_id=started.payment_id, checkout_url=started.checkout_url)
+
+
+class WebhookAck(BaseModel):
+    status: str
+
+
+@router.post("/webhooks/dodo")
+async def dodo_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    config: BillingConfig = Depends(billing_config),
+    provider: PaymentProvider = Depends(payment_provider),
+) -> WebhookAck:
+    """Public: Dodo calls it. Authenticated by the signature over the exact raw body,
+    not by cookies, so there is no CSRF check. 401 on a bad signature, 400 on a
+    signed but malformed body, 5xx (so Dodo retries) when processing fails."""
+    raw = await request.body()
+    try:
+        event = provider.handle_webhook(raw, request.headers)
+    except InvalidSignature:
+        raise HTTPException(status_code=401, detail="invalid_signature") from None
+    except PaymentError:
+        raise HTTPException(status_code=400, detail="malformed_event") from None
+    try:
+        result = await process_webhook(db, provider, config, event)
+    except Exception:  # noqa: BLE001 - recorded in process_webhook; Dodo retries on 5xx
+        raise HTTPException(status_code=500, detail="processing_failed") from None
+    return WebhookAck(status=result)

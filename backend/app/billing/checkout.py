@@ -33,10 +33,11 @@ class StartedCheckout:
     checkout_url: str
 
 
-def snapshot(config: BillingConfig, product: Product) -> dict:
+def snapshot(config: BillingConfig, product: Product, mode: str) -> dict:
     """What this purchase promises, frozen at checkout."""
     return {
         "catalog_version": config.version,
+        "provider_product_id": product.dodo_product_id.for_mode(mode),
         "name": product.name,
         "credits": product.credits,
         "pass_days": product.pass_days,
@@ -59,7 +60,7 @@ async def start_checkout(db: AsyncSession, provider: PaymentProvider, config: Bi
     inserted = await db.scalar(
         insert(Payment).values(
             user_id=buyer.user_id, provider=provider.name, mode=provider.mode, product_key=product.key,
-            kind=product.kind, snapshot=snapshot(config, product), idempotency_key=key,
+            kind=product.kind, snapshot=snapshot(config, product, provider.mode), idempotency_key=key,
         ).on_conflict_do_nothing(index_elements=["user_id", "idempotency_key"]).returning(Payment.id)
     )
     if inserted is None:  # this key was used before: same click, retried

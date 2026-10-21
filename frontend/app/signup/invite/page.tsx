@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { AuthCard, AuthErrorAlert } from "@/components/auth/AuthCard";
+import { INVITE_CODE_KEY } from "@/components/site/SignUpButton";
 import { PendingExpired } from "@/components/auth/PendingExpired";
 import { usePending } from "@/components/auth/usePending";
 import { Alert, Button, Label, inputClass } from "@/components/ui";
@@ -15,7 +16,10 @@ const PROVIDER = { google: "Google", github: "GitHub", email: "an email link" } 
 export default function InvitePage() {
   const router = useRouter();
   const { pending, error: loadError } = usePending();
-  const [code, setCode] = useState("");
+  // Pre-filled from the landing page's invite dialog, if the visitor typed one there.
+  const [code, setCode] = useState(() => {
+    try { return typeof window === "undefined" ? "" : sessionStorage.getItem(INVITE_CODE_KEY) ?? ""; } catch { return ""; }
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -31,6 +35,7 @@ export default function InvitePage() {
     setError(null);
     try {
       await authApi.checkInvite(withCode);
+      try { sessionStorage.removeItem(INVITE_CODE_KEY); } catch { /* nothing stored */ }
       router.push("/signup/consent");
     } catch (e) {
       setError(e);

@@ -1,301 +1,312 @@
-"use client";
+import type { Metadata } from "next";
+import Link from "next/link";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { ArrowRightIcon, CheckIcon, ErrorIcon, FileIcon, ShieldIcon, UploadIcon } from "@/components/icons";
+import { PublicPage } from "@/components/site/PublicPage";
+import { SignUpButton } from "@/components/site/SignUpButton";
+import { priceList } from "@/lib/billing";
+import type { Plans } from "@/lib/schemas";
+import { COMPANY, SITE_URL, getPlans, getPublicConfig } from "@/lib/site";
 
-import { useHydrated } from "@/components/AppShell";
-import { ArrowRightIcon, ShieldIcon } from "@/components/icons";
-import { ResumePreview } from "@/components/ResumePreview";
-import { Alert, Button, Card, Label, inputClass } from "@/components/ui";
-import { UploadDropzone } from "@/components/UploadDropzone";
-import { api, messageFor } from "@/lib/api";
-import type { Resume } from "@/lib/schemas";
-import { useSession } from "@/lib/store";
+const TITLE = "Resume Tailor: tailor your resume to any job, honestly";
+const DESCRIPTION =
+  "Tailor your resume to any job description without inventing experience. Every change cites your original " +
+  "resume, a verifier blocks new claims, and you approve each edit. See an ATS-style score and mentor advice.";
 
-const MIN_JD_CHARS = 80;
-
-type Tab = "upload" | "paste";
-type Stage = null | "resume" | "jd" | "gaps";
-const STAGE_TEXT: Record<Exclude<Stage, null>, string> = {
-  resume: "Reading your resume…",
-  jd: "Reading the job description…",
-  gaps: "Comparing the job with your resume…",
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  metadataBase: new URL(SITE_URL),
+  alternates: { canonical: "/" },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: "/", siteName: COMPANY.product, type: "website" },
+  twitter: { card: "summary", title: TITLE, description: DESCRIPTION },
 };
 
-export default function InputPage() {
-  const hydrated = useHydrated();
-  const router = useRouter();
-  const s = useSession();
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: "Will it add skills or experience I don't have?",
+    a: "No. Every rewritten line has to point at the line of your resume it came from, and a separate verifier " +
+      "blocks new tools, numbers, titles, employers or stronger claims than your original. If the job asks for " +
+      "something your resume doesn't show, we ask you about it instead of filling it in.",
+  },
+  {
+    q: "Does a high score mean I'll get past every ATS?",
+    a: "No. Our score is a transparent estimate built from keyword coverage, relevance, title fit, formatting and " +
+      "quantified impact, with the full breakdown shown. Real applicant tracking systems differ from each other, " +
+      "and a person reads your resume in the end.",
+  },
+  {
+    q: "What happens to my resume?",
+    a: "Your resume and the job description are sent to our service to produce the analysis, and your work in " +
+      "progress stays in your browser tab. We don't use analytics or tracking. The Privacy Policy has the details, " +
+      "including how AI processing works and how long anything is kept.",
+  },
+  {
+    q: "What does a credit get me?",
+    a: "One credit covers one resume tailored to one job. You start with a free monthly allowance; credit packs " +
+      "and the Job Hunt Pass are for when you're applying to a lot of roles. There's no subscription unless you " +
+      "choose one.",
+  },
+  {
+    q: "Can I get a refund?",
+    a: "Payments are handled by Dodo Payments, our merchant of record, which also issues your receipt. The Refund " +
+      "Policy explains when unused credits and passes can be refunded and how to ask.",
+  },
+  {
+    q: "Why is it invite-only?",
+    a: "We're opening up gradually so we can keep quality high and costs honest. Join the waitlist and we'll " +
+      "email you when there's room, or use an invite from someone who already has an account.",
+  },
+];
 
-  const [tab, setTab] = useState<Tab>("upload");
-  const [pasteDraft, setPasteDraft] = useState("");
-  const [resumeBusy, setResumeBusy] = useState(false);
-  const [resumeError, setResumeError] = useState<string | null>(null);
-  const [stage, setStage] = useState<Stage>(null);
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-
-  // Restore the paste tab after a refresh.
-  useEffect(() => {
-    if (!hydrated) return;
-    if (s.resumeInput?.mode === "paste") {
-      setTab("paste");
-      setPasteDraft(s.resumeInput.text);
-    }
-  }, [hydrated]); // first hydration only
-
-  const pasteIsCurrent = s.resumeInput?.mode === "paste" && s.resumeInput.text === pasteDraft && !!s.resume;
-  const resumeReady = tab === "upload" ? s.resumeInput?.mode === "file" && !!s.resume : pasteDraft.trim().length > 0;
-  const jdReady = s.jdText.trim().length >= MIN_JD_CHARS;
-  const busy = stage !== null || resumeBusy;
-
-  async function loadFile(file: File) {
-    setResumeError(null);
-    setResumeBusy(true);
-    try {
-      const resume = await api.parseResumeFile(file);
-      s.setResume(resume, { mode: "file", fileName: file.name });
-    } catch (e) {
-      setResumeError(messageFor(e));
-    } finally {
-      setResumeBusy(false);
-    }
-  }
-
-  async function checkPaste(text = pasteDraft): Promise<Resume | null> {
-    setResumeError(null);
-    setResumeBusy(true);
-    try {
-      const resume = await api.parseResumeText(text);
-      s.setResume(resume, { mode: "paste", text });
-      return resume;
-    } catch (e) {
-      setResumeError(messageFor(e));
-      return null;
-    } finally {
-      setResumeBusy(false);
-    }
-  }
-
-  function pasteInstead() {
-    setPasteDraft(s.resume?.raw_text ?? "");
-    setTab("paste");
-  }
-
-  async function loadSample() {
-    setAnalyzeError(null);
-    try {
-      const sample = await api.sample();
-      setTab("paste");
-      setPasteDraft(sample.resume_text);
-      s.setJobInputs({ jdText: sample.jd_text, jobTitle: "", company: "" });
-      await checkPaste(sample.resume_text);
-    } catch (e) {
-      setResumeError(messageFor(e));
-    }
-  }
-
-  async function analyze() {
-    setAnalyzeError(null);
-    try {
-      let resume = s.resume;
-      if (tab === "paste" && !pasteIsCurrent) {
-        setStage("resume");
-        resume = await api.parseResumeText(pasteDraft);
-        s.setResume(resume, { mode: "paste", text: pasteDraft });
-      }
-      if (!resume) return;
-      setStage("jd");
-      const parsed = await api.parseJD(s.jdText);
-      // The user's own title/company win over what we guessed from the text.
-      const jd = {
-        ...parsed,
-        title: s.jobTitle.trim() || parsed.title,
-        company: s.company.trim() || parsed.company,
-      };
-      setStage("gaps");
-      const analysis = await api.analyze(resume, jd);
-      s.setAnalyzed(jd, analysis);
-      router.push("/analysis");
-    } catch (e) {
-      setAnalyzeError(messageFor(e));
-    } finally {
-      setStage(null);
-    }
-  }
-
-  const missing: string[] = [];
-  if (!resumeReady) missing.push(tab === "upload" ? "Upload your resume (or paste it as text)." : "Paste your resume text.");
-  if (!jdReady) missing.push("Paste the job description (a few lines at least).");
-
+export default async function LandingPage() {
+  const [{ invite_only: inviteOnly }, plans] = await Promise.all([getPublicConfig(), getPlans()]);
+  const faq = inviteOnly ? FAQ : FAQ.filter((f) => !f.q.startsWith("Why is it invite-only"));
   return (
-    <div className="space-y-6">
-      <div className="max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Let&apos;s look at this job together</h1>
-        <p className="mt-2 text-muted">
-          Share your resume and the job description. We&apos;ll show what already matches, ask about anything that
-          seems missing, and suggest honest edits for you to review.
-        </p>
-      </div>
-
-      <div className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
-        <ShieldIcon className="mt-0.5 h-5 w-5 text-accent" />
-        <p>
-          <span className="font-medium">We never add experience you don&apos;t have. You approve every change.</span>{" "}
-          <span className="text-muted">Your resume stays in this tab and is only sent to our analysis service.</span>
-        </p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card aria-labelledby="resume-heading">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="resume-heading" className="text-lg font-semibold">Your resume</h2>
-            <button type="button" onClick={loadSample} disabled={busy}
-              className="text-sm text-accent underline-offset-2 hover:underline disabled:opacity-50">
-              No resume handy? Try a sample
-            </button>
-          </div>
-
-          <Tabs tab={tab} onChange={setTab} />
-
-          <div className="mt-4">
-            {tab === "upload" ? (
-              <div role="tabpanel" id="panel-upload" aria-labelledby="tab-upload">
-                <UploadDropzone
-                  onFile={loadFile}
-                  onReject={setResumeError}
-                  busy={resumeBusy}
-                  fileName={s.resumeInput?.mode === "file" ? s.resumeInput.fileName : null}
-                />
-                {resumeError && <div className="mt-4"><Alert tone="bad" role="alert" title="We couldn't use that file">{resumeError}</Alert></div>}
-                {s.resume && s.resumeInput?.mode === "file" && <ResumePreview resume={s.resume} onPasteInstead={pasteInstead} />}
-              </div>
-            ) : (
-              <div role="tabpanel" id="panel-paste" aria-labelledby="tab-paste">
-                <Label htmlFor="resume-text" hint="(plain text is fine)">Resume text</Label>
-                <textarea
-                  id="resume-text"
-                  value={pasteDraft}
-                  onChange={(e) => setPasteDraft(e.target.value)}
-                  rows={12}
-                  placeholder={"Jane Doe\njane@example.com\n\nExperience\nData Analyst | Acme | 2022 – Present\n• Built…"}
-                  className={`${inputClass} font-mono`}
-                />
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <Button variant="secondary" onClick={() => checkPaste()} busy={resumeBusy} disabled={!pasteDraft.trim()}>
-                    Check what we read
-                  </Button>
-                  {pasteIsCurrent && <span className="text-sm text-ok">Up to date</span>}
-                </div>
-                {resumeError && <div className="mt-4"><Alert tone="bad" role="alert" title="We couldn't read that">{resumeError}</Alert></div>}
-                {s.resume && pasteIsCurrent && (
-                  <ResumePreview resume={s.resume} onPasteInstead={() => document.getElementById("resume-text")?.focus()} />
-                )}
-              </div>
-            )}
-          </div>
-        </Card>
-
-        <JobCard />
-      </div>
-
-      <Card as="div" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div aria-live="polite" className="text-sm">
-            {stage ? <span className="text-fg">{STAGE_TEXT[stage]}</span>
-              : missing.length > 0 ? <span className="text-muted">Before we can analyze:</span>
-              : <span className="text-ok">Ready when you are.</span>}
-          </div>
-          {!stage && missing.length > 0 && (
-            <ul id="analyze-missing" className="list-inside list-disc text-sm text-muted">
-              {missing.map((m) => <li key={m}>{m}</li>)}
-            </ul>
-          )}
-          {analyzeError && <Alert tone="bad" role="alert" title="Analysis didn't finish">{analyzeError}</Alert>}
-        </div>
-        <Button
-          onClick={analyze}
-          busy={stage !== null}
-          disabled={!hydrated || !resumeReady || !jdReady || resumeBusy}
-          aria-describedby={missing.length ? "analyze-missing" : undefined}
-          className="shrink-0 px-6"
-        >
-          Analyze <ArrowRightIcon />
-        </Button>
-      </Card>
-    </div>
+    <PublicPage>
+      <script type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd(faq)).replace(/</g, "\\u003c") }} />
+      <Hero inviteOnly={inviteOnly} />
+      <HowItWorks />
+      <Honesty />
+      <Sample />
+      <Pricing plans={plans} inviteOnly={inviteOnly} />
+      <Faq items={faq} />
+    </PublicPage>
   );
 }
 
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
-  const refs = useRef<Record<Tab, HTMLButtonElement | null>>({ upload: null, paste: null });
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "upload", label: "Upload a file" },
-    { id: "paste", label: "Paste text" },
-  ];
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    const next: Tab = tab === "upload" ? "paste" : "upload";
-    onChange(next);
-    refs.current[next]?.focus();
+function faqJsonLd(items: { q: string; a: string }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map(({ q, a }) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
   };
+}
+
+function Section({ id, title, intro, children, tint = false }: {
+  id: string;
+  title: string;
+  intro?: string;
+  children: React.ReactNode;
+  tint?: boolean;
+}) {
   return (
-    <div role="tablist" aria-label="How to add your resume" className="mt-4 inline-flex rounded-lg bg-surface-2 p-1" onKeyDown={onKey}>
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          ref={(el) => { refs.current[t.id] = el; }}
-          id={`tab-${t.id}`}
-          role="tab"
-          type="button"
-          aria-selected={tab === t.id}
-          aria-controls={`panel-${t.id}`}
-          tabIndex={tab === t.id ? 0 : -1}
-          onClick={() => onChange(t.id)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium ${tab === t.id ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg"}`}
-        >
-          {t.label}
-        </button>
-      ))}
+    <section id={id} aria-labelledby={`${id}-title`} className={`scroll-mt-4 ${tint ? "bg-surface" : ""}`}>
+      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+        <h2 id={`${id}-title`} className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h2>
+        {intro && <p className="mt-3 max-w-2xl text-muted">{intro}</p>}
+        <div className="mt-8">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function Hero({ inviteOnly }: { inviteOnly: boolean }) {
+  return (
+    <section aria-labelledby="hero-title" className="mx-auto max-w-6xl px-4 pb-14 pt-14 sm:px-6 sm:pt-24">
+      <p className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-sm font-medium text-accent">
+        <ShieldIcon /> Honest by design
+      </p>
+      <h1 id="hero-title" className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+        Tailor your resume to any job, without ever inventing experience
+      </h1>
+      <p className="mt-5 max-w-2xl text-lg text-muted">
+        Upload your resume and paste the job description. We reorder and reword what&apos;s already true, ask you
+        about the gaps, and show you every change before it counts. You approve each edit.
+      </p>
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        {inviteOnly ? (
+          <Link href="/waitlist" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent px-5 py-2.5 font-medium text-accent-fg hover:bg-accent-hover">
+            Request an invite <ArrowRightIcon />
+          </Link>
+        ) : (
+          <Link href="/signup" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent px-5 py-2.5 font-medium text-accent-fg hover:bg-accent-hover">
+            Get started free <ArrowRightIcon />
+          </Link>
+        )}
+        <Link href="#sample" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface px-5 py-2.5 font-medium text-fg hover:bg-surface-2">
+          See a sample
+        </Link>
+      </div>
+      {inviteOnly && (
+        <div className="mt-4 text-sm text-muted">
+          Have an invite code? <SignUpButton inviteOnly label="Sign up with your invite" variant="secondary" className="ml-1" />
+        </div>
+      )}
+    </section>
+  );
+}
+
+const STEPS = [
+  { Icon: UploadIcon, title: "Add your resume and the job", body: "Upload a PDF or Word file and paste the job description. We split your resume into numbered bullets so every change can be traced." },
+  { Icon: FileIcon, title: "Answer a few gap questions", body: "Requirements your resume doesn't show become yes-or-no questions for you. Nothing is filled in on your behalf." },
+  { Icon: CheckIcon, title: "Review, score and download", body: "Accept or reject each rewritten line, see an ATS-style score with its full breakdown, and get mentor-style advice." },
+];
+
+function HowItWorks() {
+  return (
+    <Section id="how-it-works" title="How it works" intro="Three steps, usually a few minutes." tint>
+      <ol className="grid gap-4 md:grid-cols-3">
+        {STEPS.map(({ Icon, title, body }, i) => (
+          <li key={title} className="rounded-2xl border border-border bg-bg p-5">
+            <div className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold text-accent" aria-hidden="true">{i + 1}</span>
+              <Icon className="h-5 w-5 text-muted" />
+            </div>
+            <h3 className="mt-4 font-semibold">{title}</h3>
+            <p className="mt-1.5 text-sm text-muted">{body}</p>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  );
+}
+
+const PROMISES = [
+  { title: "Every line cites its source", body: "Each rewritten bullet names the original bullet it came from. No source, no rewrite." },
+  { title: "A separate verifier checks the result", body: "It compares the tailored resume with your original and blocks new tools, numbers, titles, employers, and inflated verbs like “helped” becoming “led”." },
+  { title: "You approve the diff", body: "You see before and after side by side and accept or reject each change. Nothing you didn't accept ends up in your file." },
+];
+
+function Honesty() {
+  return (
+    <Section id="honesty" title="The honesty guarantee"
+      intro="Recruiters notice when a resume oversells, and so do interviewers. We only use what you've actually done.">
+      <ul className="grid gap-4 md:grid-cols-3">
+        {PROMISES.map(({ title, body }) => (
+          <li key={title} className="rounded-2xl border border-border bg-surface p-5">
+            <ShieldIcon className="h-5 w-5 text-accent" />
+            <h3 className="mt-3 font-semibold">{title}</h3>
+            <p className="mt-1.5 text-sm text-muted">{body}</p>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+function Sample() {
+  return (
+    <Section id="sample" tint title="A sample before and after"
+      intro="Made-up example: a data analyst resume tailored to an analytics engineer job that asks for SQL, dashboards and dbt.">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SampleRow
+          before="Worked on dashboards for the sales team using SQL and Tableau."
+          after="Built SQL and Tableau dashboards for the sales team."
+          source="Bullet 3"
+          verdict={{ ok: true, text: "Passed: same tools, same scope, clearer wording" }}
+        />
+        <SampleRow
+          before="Cleaned up monthly reporting so it took less time."
+          after="Automated parts of monthly sales reporting, reducing manual effort."
+          source="Bullet 5"
+          verdict={{ ok: true, text: "Passed: mirrors the job's wording; no new number added" }}
+        />
+        <SampleRow
+          before="Helped migrate reports to the new data warehouse."
+          after="Led the migration of reports to the new data warehouse."
+          source="Bullet 7"
+          verdict={{ ok: false, text: "Blocked: “helped” can't become “led”" }}
+        />
+        <div className="rounded-2xl border border-border bg-bg p-5">
+          <p className="text-sm font-medium text-muted">Gap question</p>
+          <p className="mt-2 font-medium">The job asks for dbt. Have you used it?</p>
+          <p className="mt-2 text-sm text-muted">
+            Your resume doesn&apos;t mention dbt, so we ask instead of adding it. Say yes with a sentence of context and
+            it can be used, citing your answer. Say no and the mentor suggests how to close the gap.
+          </p>
+        </div>
+      </div>
+      <p className="mt-4 text-sm text-muted">Demo data for illustration. Sample ATS-style score: 58 before, 74 after.</p>
+    </Section>
+  );
+}
+
+function SampleRow({ before, after, source, verdict }: {
+  before: string;
+  after: string;
+  source: string;
+  verdict: { ok: boolean; text: string };
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-bg p-5">
+      <dl className="space-y-3 text-sm">
+        <div>
+          <dt className="font-medium text-muted">Before</dt>
+          <dd className="mt-1">{before}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-muted">After <span className="font-normal">· cites {source}</span></dt>
+          <dd className={`mt-1 ${verdict.ok ? "" : "text-muted line-through"}`}>{after}</dd>
+        </div>
+      </dl>
+      <p className={`mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium ${verdict.ok ? "bg-ok-bg text-ok" : "bg-bad-bg text-bad"}`}>
+        {verdict.ok ? <CheckIcon /> : <ErrorIcon />} {verdict.text}
+      </p>
     </div>
   );
 }
 
-function JobCard() {
-  const s = useSession();
-  const countId = useId();
-  const len = s.jdText.trim().length;
+function Pricing({ plans, inviteOnly }: { plans: Plans | null; inviteOnly: boolean }) {
+  const paid = plans?.plans ?? [];
   return (
-    <Card aria-labelledby="job-heading">
-      <h2 id="job-heading" className="text-lg font-semibold">The job</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="job-title" hint="(optional)">Job title</Label>
-          <input id="job-title" value={s.jobTitle} onChange={(e) => s.setJobInputs({ jobTitle: e.target.value })}
-            placeholder="e.g. Senior Data Analyst" className={inputClass} autoComplete="off" />
-        </div>
-        <div>
-          <Label htmlFor="company" hint="(optional)">Company</Label>
-          <input id="company" value={s.company} onChange={(e) => s.setJobInputs({ company: e.target.value })}
-            placeholder="e.g. Northwind" className={inputClass} autoComplete="off" />
-        </div>
-      </div>
-      <div className="mt-4">
-        <Label htmlFor="jd-text">Job description</Label>
-        <textarea
-          id="jd-text"
-          value={s.jdText}
-          onChange={(e) => s.setJobInputs({ jdText: e.target.value })}
-          rows={14}
-          aria-describedby={countId}
-          placeholder="Paste the full posting, including the requirements and nice-to-haves."
-          className={inputClass}
-        />
-        <p id={countId} className="mt-1 text-xs text-muted">
-          {len === 0 ? "Include the requirements section; that's what we compare against."
-            : len < MIN_JD_CHARS ? `A little more, please: that looks shorter than a full posting.`
-            : `${len.toLocaleString()} characters`}
+    <Section id="pricing" title="Pricing" intro="Start free. Pay only if you're applying to a lot of jobs.">
+      {plans ? (
+        <ul className="grid gap-4 md:grid-cols-3">
+          <li className="rounded-2xl border border-border bg-surface p-5">
+            <h3 className="font-semibold">Free</h3>
+            <p className="mt-2 text-2xl font-semibold">{plans.free_analyses_per_month} a month</p>
+            <p className="mt-1 text-sm text-muted">Tailoring runs every month, no card needed.</p>
+          </li>
+          {paid.map((p) => (
+            <li key={p.key} className="rounded-2xl border border-border bg-surface p-5">
+              <h3 className="font-semibold">{p.name}</h3>
+              <p className="mt-2 text-2xl font-semibold">{priceList(p.prices).join(" · ")}</p>
+              <p className="mt-1 text-sm text-muted">{planSummary(p)}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="max-w-2xl rounded-2xl border border-border bg-surface p-5">
+          Every account gets free tailoring runs each month. Credit packs and the Job Hunt Pass are there for when
+          you&apos;re applying to a lot of jobs.
         </p>
+      )}
+      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
+        {plans && (
+          <span>
+            {plans.prices_include_tax ? "Prices include taxes." : "Taxes are added at checkout where they apply."}{" "}
+            Payments are processed by Dodo Payments.
+          </span>
+        )}
+        <Link href="/pricing" className="font-medium text-accent underline">See full pricing</Link>
+        {!inviteOnly && <Link href="/signup" className="font-medium text-accent underline">Create an account</Link>}
       </div>
-    </Card>
+    </Section>
+  );
+}
+
+function planSummary(p: Plans["plans"][number]): string {
+  if (p.kind === "credit_pack") return `${p.credits} credits. One credit tailors one resume to one job.`;
+  if (p.kind === "pass") return `${p.pass_days} days of tailoring${p.fair_use_cap ? `, fair use up to ${p.fair_use_cap} runs` : ""}.`;
+  return `Billed every ${p.interval ?? "month"}${p.fair_use_cap ? `, fair use up to ${p.fair_use_cap} runs` : ""}. Cancel any time.`;
+}
+
+function Faq({ items }: { items: { q: string; a: string }[] }) {
+  return (
+    <Section id="faq" title="Questions" tint>
+      <div className="max-w-3xl divide-y divide-border rounded-2xl border border-border bg-bg">
+        {items.map(({ q, a }) => (
+          <details key={q} className="group p-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
+              {q}
+              <span aria-hidden="true" className="text-muted transition-transform group-open:rotate-45">+</span>
+            </summary>
+            <p className="mt-3 text-sm text-muted">{a}</p>
+          </details>
+        ))}
+      </div>
+    </Section>
   );
 }

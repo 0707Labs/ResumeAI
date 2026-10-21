@@ -1,6 +1,6 @@
 """The invite gate's last step: one transaction creates the account.
 
-complete_signup consumes one invite use, creates the user and their first
+complete_signup consumes one invite use (none needed when RT_INVITE_ONLY is off), creates the user and their first
 login method, records the redemption and consent, and drops the pending
 identity, all or nothing. Before it commits no user row exists, so nobody gets
 an account without a redeemed invite and the required consent."""
@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import ip_ref, subject_ref
+from app.config import get_settings
 from app.db.models import (
     Account,
     ConsentNotice,
@@ -68,7 +69,7 @@ async def complete_signup(
     rolling back) on any failure. The caller confirmed 18+ and Terms consent."""
     if pending.kind != "signup" or not pending.verified_email:
         raise SignupError("email_unverified")
-    if pending.invite_id is None:
+    if pending.invite_id is None and get_settings().invite_only:
         raise SignupError("invite_required")
     pending_id, email, invite_id = pending.id, pending.verified_email, pending.invite_id
 
@@ -80,25 +81,27 @@ async def complete_signup(
 
     # Consume one use. The row lock serializes concurrent redeemers, and Postgres
     # re-checks the WHERE on the updated row, so the loser sees uses = max_uses.
+    # Open signup (RT_INVITE_ONLY off) may arrive with no invite at all.
     now = datetime.now(UTC)
-    consumed = (await db.execute(
-        update(Invite)
-        .where(
-            Invite.id == invite_id,
-            Invite.revoked_at.is_(None),
-            or_(Invite.expires_at.is_(None), Invite.expires_at > now),
-            Invite.uses < Invite.max_uses,
-            or_(Invite.email.is_(None), Invite.email == email),
-        )
-        .values(uses=Invite.uses + 1)
-        .returning(Invite.id)
-    )).scalar_one_or_none()
-    if consumed is None:
-        await db.rollback()
-        # Send them back to the invite step.
-        await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id).values(invite_id=None))
-        await db.commit()
-        raise SignupError("invite_unavailable")
+    if invite_id is not None:
+        consumed = (await db.execute(
+            update(Invite)
+            .where(
+                Invite.id == invite_id,
+                Invite.revoked_at.is_(None),
+                or_(Invite.expires_at.is_(None), Invite.expires_at > now),
+                Invite.uses < Invite.max_uses,
+                or_(Invite.email.is_(None), Invite.email == email),
+            )
+            .values(uses=Invite.uses + 1)
+            .returning(Invite.id)
+        )).scalar_one_or_none()
+        if consumed is None:
+            await db.rollback()
+            # Send them back to the invite step.
+            await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id).values(invite_id=None))
+            await db.commit()
+            raise SignupError("invite_unavailable")
 
     user = User(
         email=email,
@@ -115,7 +118,8 @@ async def complete_signup(
             user_id=user.id, provider=pending.provider,
             provider_account_id=pending.provider_account_id, email_at_link=email,
         ))
-        db.add(InviteRedemption(invite_id=invite_id, user_id=user.id))
+        if invite_id is not None:
+            db.add(InviteRedemption(invite_id=invite_id, user_id=user.id))
         await db.flush()
     except IntegrityError:
         # The email or this provider identity got an account meanwhile (another tab, a race).

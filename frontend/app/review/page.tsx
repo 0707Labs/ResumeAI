@@ -46,7 +46,7 @@ export default function ReviewPage() {
 
   if (!hydrated) return null;
   if (!s.analysis || !s.resume || !s.jd) {
-    return <Alert tone="info" title="Nothing to review yet">Start on the <Link href="/" className="font-medium text-accent underline">first step</Link>.</Alert>;
+    return <Alert tone="info" title="Nothing to review yet">Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link>.</Alert>;
   }
   if (!s.tailored && !questionsDone) {
     return (

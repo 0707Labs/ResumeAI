@@ -32,7 +32,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   expect(health.llm_configured, "backend must run without ANTHROPIC_API_KEY").toBe(false);
 
   // 1. Input
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "No resume handy? Try a sample" }).click();
   await expect(page.getByText("Up to date")).toBeVisible();
   await page.getByRole("button", { name: "Analyze" }).click();

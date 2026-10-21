@@ -17,9 +17,11 @@ import { Button } from "./ui";
 /** Sign-in, account and billing pages: no tailoring progress bar there. */
 const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing", "/admin"];
 const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+/** The landing page and legal pages bring their own header and footer (components/site). */
+const isMarketingPath = (path: string) => path === "/" || path === "/legal" || path.startsWith("/legal/");
 
 const STEPS = [
-  { href: "/", label: "Your details" },
+  { href: "/app", label: "Your details" },
   { href: "/analysis", label: "Gaps" },
   { href: "/review", label: "Review" },
   { href: "/score", label: "Score" },
@@ -47,6 +49,7 @@ export function useHydrated() {
 export function AppShell({ children, initialTheme }: { children: React.ReactNode; initialTheme: Theme }) {
   useHydrated();
   const pathname = usePathname();
+  if (isMarketingPath(pathname)) return <>{children}</>;
   return (
     <>
       <a href="#main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
@@ -102,7 +105,7 @@ function StepNav() {
     .filter((i) => i.status === "missing" && i.question)
     .every((i) => isResolved(s.answers[i.question!.id]));
   const reachable: Record<string, boolean> = {
-    "/": true,
+    "/app": true,
     "/analysis": !!s.analysis,
     "/review": !!s.tailored || questionsDone,
     "/score": !!s.tailored,
@@ -141,7 +144,7 @@ function StepNav() {
   );
 }
 
-function ThemeToggle({ initial }: { initial: Theme }) {
+export function ThemeToggle({ initial }: { initial: Theme }) {
   const [theme, setTheme] = useState<Theme>(initial);
   const apply = (next: Theme) => {
     setTheme(next);
@@ -186,7 +189,7 @@ function ClearAll() {
     return (
       <div role="group" aria-label="Confirm clearing your data" className="flex items-center gap-1.5">
         <span className="hidden text-sm text-muted sm:inline">Remove everything from this tab?</span>
-        <Button variant="danger" className="min-h-9 px-3" onClick={() => { clearAll(); setConfirming(false); setCleared(true); router.replace("/"); }}>
+        <Button variant="danger" className="min-h-9 px-3" onClick={() => { clearAll(); setConfirming(false); setCleared(true); router.replace("/app"); }}>
           Yes, clear
         </Button>
         <Button variant="ghost" className="min-h-9 px-3" onClick={() => setConfirming(false)} autoFocus>Cancel</Button>

@@ -28,7 +28,7 @@ export default function ConsentPage() {
     authApi.notices().then((list) => setNotices(Object.fromEntries(list.map((n) => [n.purpose, n])))).catch(setError);
   useEffect(() => { void loadNotices(); }, []);
 
-  const needsInvite = pending && !pending.invite_accepted;
+  const needsInvite = pending && pending.invite_required && !pending.invite_accepted;
   useEffect(() => { if (needsInvite) router.replace("/signup/invite"); }, [needsInvite, router]);
 
   if (pending === undefined || needsInvite) return null;
@@ -57,7 +57,7 @@ export default function ConsentPage() {
           ...(research && notices.research ? { research: notices.research.id } : {}),
         },
       });
-      router.replace("/");
+      router.replace("/app");
     } catch (err) {
       setError(err);
       setBusy(false);

@@ -293,10 +293,14 @@ export const ProviderAvailability = z.object({ google: z.boolean(), github: z.bo
 /** Where the auth flow goes next (backend AuthStep). */
 export const AuthStep = z.object({ next: z.enum(["signed_in", "invite", "consent", "verify_email", "linked"]) });
 export const Accepted = z.object({ status: z.literal("ok") });
+/** Flags the signed-out pages need (GET /api/auth/config). */
+export const PublicConfig = z.object({ invite_only: z.boolean() });
 export const PendingSignIn = z.object({
   kind: z.enum(["signup", "needs_email"]),
   provider: Provider,
   email: z.string().nullable(),
+  /** False when signup is open (RT_INVITE_ONLY off): the invite step is skipped. */
+  invite_required: z.boolean(),
   invite_accepted: z.boolean(),
   has_bound_invite: z.boolean(),
 });
@@ -462,6 +466,7 @@ export type Me = z.infer<typeof Me>;
 export type ProviderAvailability = z.infer<typeof ProviderAvailability>;
 export type AuthStep = z.infer<typeof AuthStep>;
 export type PendingSignIn = z.infer<typeof PendingSignIn>;
+export type PublicConfig = z.infer<typeof PublicConfig>;
 export type Notice = z.infer<typeof Notice>;
 export type LinkedAccount = z.infer<typeof LinkedAccount>;
 export type AccountProviders = z.infer<typeof AccountProviders>;

@@ -42,7 +42,7 @@ export default function ScorePage() {
 
   if (!hydrated) return null;
   if (!resume || !jd) {
-    return <Alert tone="info" title="No score yet">Start on the <Link href="/" className="font-medium text-accent underline">first step</Link>.</Alert>;
+    return <Alert tone="info" title="No score yet">Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link>.</Alert>;
   }
 
   const approved = tailored ? counts(tailored, decisions).approved : 0;

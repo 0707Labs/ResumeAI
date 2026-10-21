@@ -56,7 +56,7 @@ export async function call<T extends z.ZodType>(
 
 /** The page for each step the backend sends us to. */
 export const NEXT_PAGE: Record<S.AuthStep["next"], string> = {
-  signed_in: "/",
+  signed_in: "/app",
   invite: "/signup/invite",
   consent: "/signup/consent",
   verify_email: "/signup/verify-email",

@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, api } from "@/lib/api";
 import { STORAGE_KEY, useSession } from "@/lib/store";
-import InputPage from "@/app/page";
+import InputPage from "@/app/app/page";
 
 import { JD_TEXT, analysis, jd, resume } from "./fixtures";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
-  usePathname: () => "/",
+  usePathname: () => "/app",
 }));
 
 beforeEach(() => {

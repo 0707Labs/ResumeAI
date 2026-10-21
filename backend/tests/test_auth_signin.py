@@ -131,7 +131,7 @@ def test_new_user_without_invite_gets_no_account(client, outbox, notices, pg_eng
     assert count(pg_engine, "users") == 0
 
     pending = client.get("/api/auth/pending").json()
-    assert pending == {"kind": "signup", "provider": "email", "email": NEW,
+    assert pending == {"kind": "signup", "provider": "email", "email": NEW, "invite_required": True,
                        "invite_accepted": False, "has_bound_invite": False}
 
     bad = post(client, "/api/auth/signup/invite", {"code": "NOPE-NOPE-NOPE"})
@@ -140,6 +140,38 @@ def test_new_user_without_invite_gets_no_account(client, outbox, notices, pg_eng
     skipped = post(client, "/api/auth/signup/complete", consent(notices))
     assert skipped.status_code == 400 and skipped.json()["detail"] == "invite_required"
     assert count(pg_engine, "users") == 0 and count(pg_engine, "accounts") == 0
+
+
+def test_invite_only_is_on_unless_switched_off(client, monkeypatch):
+    assert client.get("/api/auth/config").json() == {"invite_only": True}
+    monkeypatch.setenv("RT_INVITE_ONLY", "0")
+    assert client.get("/api/auth/config").json() == {"invite_only": False}
+
+
+def test_open_signup_skips_the_invite_step(client, outbox, notices, monkeypatch, pg_engine):
+    monkeypatch.setenv("RT_INVITE_ONLY", "off")
+    assert magic_link(client, outbox).json() == {"next": "consent"}
+    assert client.get("/api/auth/pending").json()["invite_required"] is False
+    assert post(client, "/api/auth/signup/complete", consent(notices)).json() == {"next": "signed_in"}
+    assert client.get("/api/me").json()["email"] == NEW
+    assert count(pg_engine, "users") == 1 and count(pg_engine, "invite_redemptions") == 0
+
+
+def test_open_signup_still_uses_up_an_invite_that_was_entered(client, outbox, notices, make_invite, monkeypatch,
+                                                              pg_engine):
+    monkeypatch.setenv("RT_INVITE_ONLY", "0")
+    code = make_invite()
+    magic_link(client, outbox)
+    assert post(client, "/api/auth/signup/invite", {"code": code}).json() == {"next": "consent"}
+    assert post(client, "/api/auth/signup/complete", consent(notices)).json() == {"next": "signed_in"}
+    assert count(pg_engine, "invite_redemptions") == 1 and scalar(pg_engine, "SELECT uses FROM invites") == 1
+
+
+def test_open_signup_via_unverified_identity_goes_to_consent_after_verifying(client, outbox, monkeypatch):
+    monkeypatch.setenv("RT_INVITE_ONLY", "0")
+    assert github_without_email(client).json() == {"next": "verify_email"}
+    assert post(client, "/api/auth/pending/email", {"email": NEW}).status_code == 202
+    assert post(client, "/api/auth/email/verify", {"token": outbox.last_token()}).json() == {"next": "consent"}
 
 
 def test_no_invite_can_join_the_waitlist_with_the_pending_email(client, outbox, notices, pg_engine):

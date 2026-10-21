@@ -28,6 +28,11 @@ class Settings:
     public_url: str = field(
         default_factory=lambda: os.environ.get("RT_PUBLIC_URL", "http://localhost:3000").rstrip("/")
     )
+    # Invite-only mode: new accounts need an invite (on by default). Off = open signup;
+    # an invite typed anyway is still checked and used up.
+    invite_only: bool = field(
+        default_factory=lambda: os.environ.get("RT_INVITE_ONLY", "1").strip().lower() not in {"0", "false", "off", "no"}
+    )
     # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only).
     mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox"))
     # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.

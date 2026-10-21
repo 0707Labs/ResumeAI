@@ -41,7 +41,7 @@ export default function MentorPage() {
 
   if (!hydrated) return null;
   if (!analysis || !resume || !jd) {
-    return <Alert tone="info" title="Nothing to talk through yet">Start on the <Link href="/" className="font-medium text-accent underline">first step</Link>.</Alert>;
+    return <Alert tone="info" title="Nothing to talk through yet">Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link>.</Alert>;
   }
   if (!mentor) {
     return (

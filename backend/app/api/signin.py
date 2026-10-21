@@ -32,6 +32,7 @@ from app.auth.ratelimit import limiter, rate_limit
 from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
+from app.config import get_settings
 from app.db.models import EmailToken, PendingAuth, Waitlist
 from app.db.session import get_db
 
@@ -72,8 +73,15 @@ class PendingView(BaseModel):
     kind: Literal["signup", "needs_email"]
     provider: Literal["google", "github", "email"]
     email: str | None
+    invite_required: bool
     invite_accepted: bool
     has_bound_invite: bool
+
+
+class PublicConfig(BaseModel):
+    """Flags the signed-out pages need (the landing page renders from these)."""
+
+    invite_only: bool
 
 
 class InviteIn(BaseModel):
@@ -106,6 +114,11 @@ def _fail(status: int, code: str) -> HTTPException:
 
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def after_verified_email() -> Literal["invite", "consent"]:
+    """A new, verified identity goes to the invite step, or straight to consent when signup is open."""
+    return "invite" if get_settings().invite_only else "consent"
 
 
 def per_key_limit(key: str, limit: int, window: int) -> None:
@@ -143,7 +156,7 @@ async def sign_in_or_gate(
         return AuthStep(next="signed_in")
     await create_pending(db, request, response, provider=provider,
                          provider_account_id=provider_account_id, verified_email=verified_email)
-    return AuthStep(next="invite" if verified_email else "verify_email")
+    return AuthStep(next=after_verified_email() if verified_email else "verify_email")
 
 
 # --- magic link ------------------------------------------------------------------------------
@@ -222,7 +235,7 @@ async def email_verify(body: TokenIn, request: Request, response: Response,
     await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id)
                      .values(kind="signup", verified_email=email))
     await db.commit()
-    return AuthStep(next="invite")
+    return AuthStep(next=after_verified_email())
 
 
 async def _finish_email_link(db: AsyncSession, request: Request, response: Response,
@@ -247,6 +260,11 @@ async def _finish_email_link(db: AsyncSession, request: Request, response: Respo
 # --- invite gate -------------------------------------------------------------------------------
 
 
+@router.get("/auth/config")
+async def public_config() -> PublicConfig:
+    return PublicConfig(invite_only=get_settings().invite_only)
+
+
 @router.get("/auth/pending")
 async def get_pending(request: Request, db: AsyncSession = Depends(get_db)) -> PendingView:
     """The sign-in in progress, for the invite / consent / waitlist pages."""
@@ -255,6 +273,7 @@ async def get_pending(request: Request, db: AsyncSession = Depends(get_db)) -> P
         raise _fail(404, "pending_expired")
     bound = bool(pending.verified_email) and await find_bound(db, pending.verified_email) is not None
     return PendingView(kind=pending.kind, provider=pending.provider, email=pending.verified_email,
+                       invite_required=get_settings().invite_only,
                        invite_accepted=pending.invite_id is not None, has_bound_invite=bound)
 
 

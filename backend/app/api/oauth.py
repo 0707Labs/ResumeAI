@@ -27,7 +27,7 @@ from app.db.session import get_db
 
 router = APIRouter(prefix="/api/auth")
 
-NEXT_STEP = {"invite": "/signup/invite", "verify_email": "/signup/verify-email"}
+NEXT_STEP = {"invite": "/signup/invite", "consent": "/signup/consent", "verify_email": "/signup/verify-email"}
 
 
 def _failed(provider: str, code: str, intent: str = "login") -> RedirectResponse:

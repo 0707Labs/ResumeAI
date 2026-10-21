@@ -40,7 +40,10 @@ const bodyOf = (fetchMock: ReturnType<typeof routes>, key: string) => {
   return JSON.parse(String(call?.[1]?.body));
 };
 
-const PENDING = { kind: "signup", provider: "github", email: "ada@example.com", invite_accepted: false, has_bound_invite: false };
+const PENDING = {
+  kind: "signup", provider: "github", email: "ada@example.com",
+  invite_required: true, invite_accepted: false, has_bound_invite: false,
+};
 const NOTICES = [
   { id: "11111111-1111-4111-8111-111111111111", purpose: "service", version: "2026-11-v1", body_url: "/legal/terms" },
   { id: "22222222-2222-4222-8222-222222222222", purpose: "age_18_plus", version: "2026-11-v1", body_url: "/legal/age" },
@@ -207,7 +210,7 @@ describe("consent", () => {
     expect(screen.getByRole("link", { name: "Terms of Service and Privacy Policy" })).toHaveAttribute("href", "/legal/terms");
 
     await userEvent.click(create);
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app"));
     expect(bodyOf(fetchMock, "POST /api/auth/signup/complete")).toEqual({
       age_18_plus: true, accept_terms: true, research_opt_in: false,
       notice_ids: { service: NOTICES[0].id, age_18_plus: NOTICES[1].id },
@@ -235,6 +238,13 @@ describe("consent", () => {
     routes({ "GET /api/auth/pending": PENDING, "GET /api/auth/notices": NOTICES });
     render(<ConsentPage />);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/signup/invite"));
+  });
+
+  it("stays on consent when signup is open and no invite is needed", async () => {
+    routes({ "GET /api/auth/pending": { ...PENDING, invite_required: false }, "GET /api/auth/notices": NOTICES });
+    render(<ConsentPage />);
+    expect(await screen.findByRole("button", { name: "Create my account" })).toBeInTheDocument();
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });
 

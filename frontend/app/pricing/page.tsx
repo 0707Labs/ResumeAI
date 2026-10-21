@@ -52,7 +52,7 @@ export default function PricingPage() {
                   <span>No card needed</span>
                 </li>
               </ul>
-              <Link href="/" className="mt-6 inline-flex min-h-10 items-center justify-center rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-fg hover:bg-surface-2">
+              <Link href="/app" className="mt-6 inline-flex min-h-10 items-center justify-center rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-fg hover:bg-surface-2">
                 Start tailoring
               </Link>
             </Card>

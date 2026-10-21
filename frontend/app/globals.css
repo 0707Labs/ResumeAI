@@ -153,3 +153,8 @@ ins {
   border-radius: 3px;
   padding: 0 1px;
 }
+
+/* The pre-payment preview isn't for printing: the clean file is what you download. */
+@media print {
+  .preview-protected { display: none !important; }
+}

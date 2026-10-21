@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useHydrated } from "@/components/AppShell";
 import { ExportPanel, type Format } from "@/components/ExportPanel";
-import { ResumeDocument } from "@/components/ResumeDocument";
+import { PreviewPages } from "@/components/PreviewPages";
 import { Alert, Card, Spinner } from "@/components/ui";
 import { ApiError, api, messageFor } from "@/lib/api";
 import { takePendingDownload } from "@/lib/billing";
@@ -32,11 +32,11 @@ export default function ExportPage() {
     if (!resume || !payload) return;
     const controller = new AbortController();
     setPreviewError(null);
-    api.exportPreview(resume, payload, analysis, jd?.raw_text ?? "", controller.signal)
+    api.exportPreview(resume, payload, analysis, jd?.raw_text ?? "", { markChanges, signal: controller.signal })
       .then(setPreview)
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) setPreviewError(messageFor(e)); });
     return () => controller.abort();
-  }, [resume, payload, analysis, jd]);
+  }, [resume, payload, analysis, jd, markChanges]);
 
   const check = tailored ? exportCheck(tailored, decisions) : null;
 
@@ -91,7 +91,7 @@ export default function ExportPage() {
       <div className="max-w-2xl">
         <h1 className="text-2xl font-semibold tracking-tight">Preview and download</h1>
         <p className="mt-2 text-muted">
-          This is exactly what the file will contain: your approved changes, and everything else as you wrote it.
+          This is what the file will contain: your approved changes, and everything else as you wrote it.
         </p>
       </div>
 
@@ -106,8 +106,13 @@ export default function ExportPage() {
           </div>
           {previewError && <Alert tone="bad" role="alert" title="Couldn't load the preview">{previewError}</Alert>}
           {preview ? (
-            <div className="overflow-x-auto rounded-xl bg-surface-2 p-3 sm:p-6">
-              <ResumeDocument resume={preview.resume} changed={new Set(preview.changed_lines)} markChanges={markChanges} />
+            <div className="space-y-3 rounded-xl bg-surface-2 p-3 sm:p-6">
+              <p className="text-sm text-muted">
+                A watermarked, lower-resolution preview{preview.masked.length > 0 && <>, with {preview.masked.join(" and ")} blurred</>}.
+                {" "}{preview.changed_count === 1 ? "1 line is" : `${preview.changed_count} lines are`} changed
+                {markChanges && preview.changed_marked > 0 && " (tinted)"}. Your download is the clean file, without any of this.
+              </p>
+              <PreviewPages preview={preview} />
             </div>
           ) : !previewError && (
             <Card><p role="status" className="flex items-center gap-3 text-muted"><Spinner /> Building the preview…</p></Card>

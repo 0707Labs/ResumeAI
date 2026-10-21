@@ -269,9 +269,17 @@ export const MentorAdvice = z.object({
   notes: z.array(z.string()),
 });
 
+/** POST /api/export/preview: the download, before paying, as watermarked low-res page
+ * images rendered on the server (no resume text). */
 export const ExportPreview = z.object({
-  resume: Resume, // exactly what the downloaded file will contain
-  changed_lines: z.array(z.string()),
+  pages: z.array(z.object({
+    image: z.string().startsWith("data:image/png;base64,"),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  })),
+  masked: z.array(z.string()),
+  changed_count: z.number().int(),
+  changed_marked: z.number().int(),
 });
 
 export const Health = z.object({ status: z.string(), llm_configured: z.boolean() });

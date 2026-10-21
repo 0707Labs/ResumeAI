@@ -28,7 +28,8 @@ describe.runIf(process.env.CONTRACT === "1")("backend contract", () => {
     const score = await api.score(resume, jd, tailored, analysis, { approvedOnly: true });
     const mentor = await api.mentor(resume, jd, analysis, score.before, false);
     const preview = await api.exportPreview(resume, tailored, analysis, jd.raw_text);
-    expect(preview.resume.name).toBe(resume.name);
+    expect(preview.pages.length).toBeGreaterThan(0);
+    expect(JSON.stringify(preview)).not.toContain(resume.name ?? "\u0000");
     // Downloading needs sign-in (it's what pays); Node has no cookie jar, so we're signed out.
     const out = await api.requestDownload("pdf", resume, jd, tailored, analysis).catch((e: ApiError) => e);
     expect(resume.sections.length).toBeGreaterThan(0);

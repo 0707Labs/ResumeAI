@@ -43,6 +43,12 @@ export default function PrivacyPage() {
                 final resume behind that download for the re-download period. [Retention period to be decided.]
               </p>
               <p>
+                Each file you download carries a reference number in its document properties (for example
+                &ldquo;rt-dl-&hellip;&rdquo;). It contains no personal data, but lets us link a copy of the file back to
+                the download, and so to your account, if it&apos;s shared publicly without permission. The preview before
+                payment is a watermarked image built on our servers.
+              </p>
+              <p>
                 When AI features are on, this text is sent to Anthropic, which provides the Claude models we use, to
                 generate suggestions. Anthropic processes it on our behalf and doesn&apos;t use it to train its models.
               </p>

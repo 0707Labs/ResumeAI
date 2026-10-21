@@ -1,10 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ExportPage from "@/app/app/export/page";
 import { ApiError, api } from "@/lib/api";
-import type { ExportPreview, Resume } from "@/lib/schemas";
+import type { ExportPreview } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
 
 import { analysis, jd, resume } from "./fixtures";
@@ -20,14 +20,11 @@ const link = (paid_with: "credit" | "window" | "pass" | "pro", credits_balance =
   url: "/api/downloads/file/abc.def", expires_at: "2026-10-22T00:00:00Z", paid_with, credits_balance,
 });
 
-const finalResume: Resume = {
-  ...resume,
-  sections: [{ ...resume.sections[0], entries: [{ ...resume.sections[0].entries[0], bullets: [
-    { id: "exp1.b1", text: verified.text },
-    { id: "exp1.b2", text: "Partnered with product managers on A/B test readouts" },
-  ] }] }],
+const PNG = "data:image/png;base64,iVBORw0KGgo=";
+const preview: ExportPreview = {
+  pages: [{ image: PNG, width: 510, height: 660 }], masked: ["contact details", "the Skills section"],
+  changed_count: 1, changed_marked: 1,
 };
-const preview: ExportPreview = { resume: finalResume, changed_lines: [verified.text] };
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -57,24 +54,29 @@ describe("Step 6: export", () => {
     expect(downloadButton("DOCX")).toHaveAccessibleDescription(/still need your decision/i);
     expect(requestDownload).not.toHaveBeenCalled();
     // The preview is still available while you decide.
-    expect(await screen.findByTestId("resume-document")).toBeInTheDocument();
+    expect(await screen.findByTestId("preview-pages")).toBeInTheDocument();
   });
 
-  it("previews exactly what downloads, with changed lines marked (and unmarkable)", async () => {
+  it("previews as server-rendered images only, with light deterrents", async () => {
     const user = userEvent.setup();
     const previewSpy = vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
     render(<ExportPage />);
-    const doc = await screen.findByTestId("resume-document");
-    expect(within(doc).getByText(verified.text)).toBeInTheDocument();
-    expect(within(doc).getByText(verified.text).closest("[data-changed]")).toHaveTextContent(`Changed line: ${verified.text}`);
-    expect(doc.querySelectorAll("[data-changed]")).toHaveLength(1);
+    const pages = await screen.findByTestId("preview-pages");
+    const img = within(pages).getByRole("img", { name: /Preview of page 1 of 1, watermarked/ });
+    expect(img).toHaveAttribute("src", PNG);
+    expect(img).toHaveAttribute("draggable", "false");
+    expect(pages).toHaveClass("select-none", "preview-protected"); // preview-protected: hidden in print CSS
+    expect(pages.textContent).toBe(""); // no resume text in the page
+    expect(fireEvent.contextMenu(img)).toBe(false); // right-click menu suppressed
+    expect(screen.getByText(/contact details and the Skills section blurred/)).toBeInTheDocument();
+    expect(screen.getByText(/1 line is changed/)).toBeInTheDocument();
 
-    await user.click(screen.getByLabelText(/mark changed lines/i));
-    expect(doc.querySelectorAll("[data-changed]")).toHaveLength(0);
-
-    // The preview request carries your decisions.
-    const sent = previewSpy.mock.calls[0][1];
+    // The preview request carries your decisions, and the tint toggle asks the server again.
+    const [, sent, , , opts] = previewSpy.mock.calls[0];
     expect(sent.bullets.map((b) => b.review)).toEqual(["approved", "pending", "pending", "pending"]);
+    expect(opts?.markChanges).toBe(true);
+    await user.click(screen.getByLabelText(/mark changed lines/i));
+    await waitFor(() => expect(previewSpy.mock.calls.at(-1)?.[4]?.markChanges).toBe(false));
   });
 
   it("downloads once resolved, using only approved changes", async () => {
@@ -127,7 +129,7 @@ describe("Step 6: export", () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify(preview)));
     vi.stubGlobal("fetch", fetchMock);
     render(<ExportPage />);
-    await screen.findByTestId("resume-document");
+    await screen.findByTestId("preview-pages");
     expect(fetchMock).toHaveBeenCalled();
     expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith("/api/"))).toBe(true);
     vi.unstubAllGlobals();

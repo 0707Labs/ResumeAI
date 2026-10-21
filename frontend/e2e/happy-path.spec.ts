@@ -101,12 +101,16 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await expect(task).toBeChecked();
   await expect(page.getByText(/^1 of \d+$/)).toBeVisible();
 
-  // 6. Export: preview marks only the approved line; DOCX downloads as a zip.
+  // 6. Export: an image-only preview; the paid DOCX downloads as a zip.
   await page.getByRole("link", { name: "Export your resume" }).click();
   await expect(page).toHaveURL(/\/app\/export$/);
-  const changed = page.getByTestId("resume-document").locator('[data-changed="true"]');
-  await expect(changed).toHaveCount(1);
-  await expect(changed).toContainText(CITED);
+  // The preview is server-rendered images (watermarked, contact and last section blurred):
+  // none of the resume's text is on the page.
+  const preview = page.getByTestId("preview-pages");
+  await expect(preview.getByRole("img", { name: /Preview of page 1 of \d+, watermarked/ })).toBeVisible();
+  await expect(page.getByText(/1 line is changed \(tinted\)/)).toBeVisible();
+  expect(await preview.textContent()).toBe("");
+  await expect(page.getByText(CITED)).toHaveCount(0);
 
   // No credits yet: the pricing dialog, and no file.
   let downloads = 0;

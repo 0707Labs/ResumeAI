@@ -37,9 +37,10 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What happens to my resume?",
-    a: "Your resume and the job description are sent to our service to produce the analysis, and your work in " +
-      "progress stays in your browser tab. We don't use analytics or tracking. The Privacy Policy has the details, " +
-      "including how AI processing works and how long anything is kept.",
+    a: "Your resume and the job description are sent to our service to produce the analysis, and kept with that " +
+      "tailoring on our servers so the download matches exactly what you reviewed. Your work in progress stays in " +
+      "your browser tab. We don't use analytics or tracking. The Privacy Policy has the details, including how AI " +
+      "processing works and how long anything is kept.",
   },
   {
     q: "What does a credit get me?",

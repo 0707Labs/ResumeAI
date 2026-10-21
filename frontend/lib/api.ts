@@ -262,10 +262,13 @@ export const api = {
   mentor: (resume: S.Resume, jd: S.JobDescription, analysis: S.GapAnalysis, ats: S.ATSReport | null = null, useLLM = true) =>
     request(S.MentorAdvice, "/api/mentor", json({ resume, jd, analysis, ats, use_llm: useLLM })),
 
-  /** What the download will contain, after the same server-side checks. */
+  /** What the download will contain, after the same server-side checks, as watermarked,
+   * partly masked page images (the clean file is only sent after paying). */
   exportPreview: (resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string,
-    signal?: AbortSignal) =>
-    request(S.ExportPreview, "/api/export/preview", { ...json({ resume, tailored, analysis, jd_text: jdText }), signal }),
+    { markChanges = true, signal }: { markChanges?: boolean; signal?: AbortSignal } = {}) =>
+    request(S.ExportPreview, "/api/export/preview", {
+      ...json({ resume, tailored, analysis, jd_text: jdText, mark_changes: markChanges }), signal,
+    }),
 
   /** Pay for a clean download and get its short-lived signed link (the file is built on
    * the server only after the entitlement check). Re-downloading the same tailored resume

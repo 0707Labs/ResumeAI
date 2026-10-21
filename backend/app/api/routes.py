@@ -23,6 +23,7 @@ from app.billing.costs import parse_analysis_id
 from app.config import get_settings
 from app.db.models import Analysis, Download, User
 from app.db.session import get_db
+from app.export.preview import render_preview
 from app.export.render import to_docx, to_pdf
 from app.llm.client import LLM, get_llm
 from app.mentor import build_advice, polish
@@ -272,21 +273,38 @@ _MEDIA = {
 }
 
 
+class PreviewIn(ExportRequest):
+    mark_changes: bool = True  # tint the changed lines on the images
+
+
+class PreviewPageOut(BaseModel):
+    image: str  # data:image/png;base64,... (low resolution, watermarked, partly masked)
+    width: int
+    height: int
+
+
 class PreviewResponse(BaseModel):
-    resume: Resume  # exactly what the DOCX/PDF will contain
-    changed_lines: list[str]  # final texts that differ from the original resume
+    """The download, before paying for it: page images only, never its text."""
+
+    pages: list[PreviewPageOut]
+    masked: list[str]  # what's blurred, in words ("contact details", "the Skills section")
+    changed_count: int  # final lines that differ from the original resume
+    changed_marked: int  # of those, lines tinted on the images
 
 
-@router.post("/api/export/preview")
-def export_preview(body: ExportRequest) -> PreviewResponse:
-    """The resume the download will contain, after the same server-side checks."""
-    checked = reverify(body.tailored, body.resume, body.analysis, body.jd_text)
-    final = apply_tailoring(body.resume, checked, approved_only=True)
+@router.post("/api/export/preview", dependencies=[Depends(rate_limit("preview", 30, 60))])
+async def export_preview(body: PreviewIn) -> PreviewResponse:
+    """What the download will contain, after the same server-side checks, rendered on the
+    server as low-resolution PNGs with a diagonal watermark and the contact details and
+    last section blurred. No text of the resume is sent back."""
+    final = _final(body.resume, body.tailored, body.analysis, body.jd_text)
     original = {b.text for b in body.resume.bullets()}
     changed = [b.text for b in final.bullets() if b.text not in original]
     if final.summary and final.summary != body.resume.summary:
         changed.append(final.summary)
-    return PreviewResponse(resume=final, changed_lines=changed)
+    shown = await run_in_threadpool(render_preview, final, changed, mark_changes=body.mark_changes)
+    return PreviewResponse(pages=[PreviewPageOut(image=p.data_url(), width=p.width, height=p.height) for p in shown.pages],
+                           masked=shown.masked, changed_count=len(changed), changed_marked=shown.changed_marked)
 
 
 def _final(resume: Resume, tailored: TailoredResume, analysis: GapAnalysis | None, jd_text: str) -> Resume:
@@ -295,8 +313,8 @@ def _final(resume: Resume, tailored: TailoredResume, analysis: GapAnalysis | Non
     return apply_tailoring(resume, reverify(tailored, resume, analysis, jd_text), approved_only=True)
 
 
-def _render(fmt: str, final: Resume) -> tuple[bytes, str]:
-    data = to_docx(final) if fmt == "docx" else to_pdf(final)
+def _render(fmt: str, final: Resume, mark: str | None = None) -> tuple[bytes, str]:
+    data = to_docx(final, mark=mark) if fmt == "docx" else to_pdf(final, mark=mark)
     stem = re.sub(r"[^A-Za-z0-9]+", "_", final.name or "resume").strip("_") or "resume"
     return data, f"{stem}_tailored.{fmt}"
 
@@ -309,6 +327,11 @@ class DownloadLink(BaseModel):
 
 
 _LINK = "download"
+
+
+def download_ref(download_id: uuid.UUID) -> str:
+    """The identifier written into a downloaded file's metadata."""
+    return f"rt-dl-{download_id.hex}"
 
 
 @router.post("/api/downloads/{fmt}", dependencies=[Depends(rate_limit("download", 20, 60)), Depends(require_csrf)])
@@ -370,7 +393,10 @@ async def download_file(token: str, user: User = Depends(current_user),
     row = await db.scalar(select(Download).where(Download.id == download_id, Download.user_id == user.id))
     if row is None:
         raise HTTPException(status_code=404, detail="link_invalid")
-    data, filename = await run_in_threadpool(_render, row.format, Resume.model_validate(row.final_resume))
+    # A quiet reference in the file's metadata ties a leaked copy to this download (and so
+    # to its buyer, via our database). Disclosed in the Privacy Policy.
+    data, filename = await run_in_threadpool(_render, row.format, Resume.model_validate(row.final_resume),
+                                             download_ref(row.id))
     row.served_at = func.now()
     await db.commit()
     return Response(content=data, media_type=_MEDIA[row.format], headers={

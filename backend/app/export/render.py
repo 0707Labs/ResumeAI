@@ -48,8 +48,11 @@ def _sections(resume: Resume):
     return out
 
 
-def to_docx(resume: Resume) -> bytes:
+def to_docx(resume: Resume, mark: str | None = None) -> bytes:
+    """mark: an opaque reference stored in the document's core properties (identifier)."""
     doc = Document()
+    if mark:
+        doc.core_properties.identifier = mark
     normal = doc.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(10.5)
@@ -95,7 +98,8 @@ def _safe(text: str) -> str:
     return escape("".join(out))
 
 
-def to_pdf(resume: Resume) -> bytes:
+def to_pdf(resume: Resume, mark: str | None = None) -> bytes:
+    """mark: an opaque reference stored in the PDF's Keywords metadata."""
     styles = {
         "name": ParagraphStyle("name", fontName="Helvetica-Bold", fontSize=18, leading=22,
                                alignment=TA_CENTER),
@@ -127,5 +131,5 @@ def to_pdf(resume: Resume) -> bytes:
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=0.7 * inch, rightMargin=0.7 * inch,
                       topMargin=0.6 * inch, bottomMargin=0.6 * inch,
-                      title=f"{resume.name or 'Resume'}").build(story)
+                      title=f"{resume.name or 'Resume'}", keywords=mark or "").build(story)
     return buf.getvalue()

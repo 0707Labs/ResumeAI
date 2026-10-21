@@ -1,9 +1,11 @@
+import base64
 import io
 
 import pdfplumber
 import pytest
 from docx import Document
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.main import app
 from app.models import ParseWarningCode
@@ -116,19 +118,72 @@ def test_sample_endpoint():
     assert "ASHA RAO" in s["resume_text"] and "Senior Data Analyst" in s["jd_text"]
 
 
-def test_preview_matches_what_downloads(payload, export):
+def test_preview_is_images_only_never_the_text(payload):
     res = client.post("/api/export/preview", json=payload)
     assert res.status_code == 200
     body = res.json()
-    texts = [b["text"] for s in body["resume"]["sections"] for e in s["entries"] for b in e["bullets"]]
-    assert HONEST in texts  # approved + verified
-    assert not any("Snowflake" in t for t in texts)  # forged "verified" bullet re-checked out
-    assert "Built 12 recurring reports for regional operations leads" in texts  # pending -> original
-    assert body["changed_lines"] == [HONEST, body["resume"]["summary"]]
-    docx = docx_text(export("docx", payload).content)
-    for t in texts:
-        assert t in docx
+    assert body["changed_count"] == 2  # the approved bullet and the approved summary
+    assert body["changed_marked"] >= 1
+    assert body["masked"][0] == "contact details" and body["masked"][1].endswith("section")
+    raw = res.text
+    for secret in (HONEST, "Nina Kapoor", "nina@example.com", "Snowflake", "Built 12 recurring reports"):
+        assert secret not in raw
+    for page in body["pages"]:
+        assert page["image"].startswith("data:image/png;base64,")
+        img = Image.open(io.BytesIO(base64.b64decode(page["image"].split(",", 1)[1])))
+        assert img.format == "PNG" and img.width <= 600  # low resolution on purpose
+        assert (img.width, img.height) == (page["width"], page["height"])
+
+
+def test_preview_is_watermarked_and_masked(payload):
+    from app.export.preview import PREVIEW_DPI, render_preview
+    from app.export.render import to_pdf
+    from app.models import Resume
+
+    final = Resume.model_validate(payload["resume"])
+    shown = Image.open(io.BytesIO(render_preview(final).pages[0].png)).convert("L")
+    with pdfplumber.open(io.BytesIO(to_pdf(final))) as doc:
+        page = doc.pages[0]
+        clean = page.to_image(resolution=PREVIEW_DPI).original.convert("L")
+        lines = page.extract_text_lines()
+    scale = PREVIEW_DPI / 72
+
+    def band(img, line):
+        return img.crop((0, int(line["top"] * scale), img.width, int(line["bottom"] * scale) + 1))
+
+    def ink(img):  # dark pixels: crisp text has many, blurred text almost none
+        return sum(1 for v in img.get_flattened_data() if v < 90)
+
+    contact = next(ln for ln in lines if "nina@example.com" in ln["text"])
+    assert ink(band(clean, contact)) > 30 and ink(band(shown, contact)) < ink(band(clean, contact)) // 5
+    last = lines[-1]  # the last section's text
+    assert ink(band(shown, last)) < max(1, ink(band(clean, last)) // 5)
+    # The watermark reaches the empty bottom of the page.
+    bottom = (0, shown.height - 80, shown.width, shown.height)
+    assert set(clean.crop(bottom).get_flattened_data()) == {255}
+    assert min(shown.crop(bottom).get_flattened_data()) < 240
+
+
+def test_downloads_carry_a_quiet_reference_to_the_download(payload, export):
+    docx = Document(io.BytesIO(export("docx", payload).content))
+    assert docx.core_properties.identifier.startswith("rt-dl-")
+    pdf = export("pdf", payload).content
+    with pdfplumber.open(io.BytesIO(pdf)) as doc:
+        assert doc.metadata["Keywords"].startswith("rt-dl-")
 
 
 def test_preview_route_is_not_a_format(payload):
     assert client.post("/api/export/preview", json=payload).status_code == 200
+
+
+def test_concurrent_previews_all_render(payload):
+    """PDFium isn't thread-safe; previews rasterize one at a time instead of crashing."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.export.preview import render_preview
+    from app.models import Resume
+
+    final = Resume.model_validate(payload["resume"])
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(lambda _: len(render_preview(final).pages), range(12)))
+    assert results == [results[0]] * 12 and results[0] >= 1

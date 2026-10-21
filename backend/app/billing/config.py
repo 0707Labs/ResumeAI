@@ -63,14 +63,21 @@ class Product(_Strict):
 
 
 class Free(_Strict):
+    # Tailorings a month (calendar month, UTC) that need no pass or credits. Downloading
+    # the clean file is paid regardless.
     analyses_per_month: Annotated[int, Field(ge=0)]
 
 
 class Analyses(_Strict):
-    credits_per_analysis: PositiveInt = 1
-    # How long a started analysis may use Claude. A credit not committed by then (tailoring
-    # never finished) is refunded, and the run stops counting against any allowance.
+    # How long a started tailoring may use Claude. One never finished by then stops counting
+    # against the free allowance or a fair-use cap.
     usable_hours: PositiveInt = 24
+
+
+class Downloads(_Strict):
+    # Credits one clean download spends. Past the free allowance, starting a tailoring
+    # needs at least this balance (it spends nothing; the download does).
+    credits_per_download: PositiveInt = 1
 
 
 class Display(_Strict):
@@ -116,6 +123,7 @@ class BillingConfig(_Strict):
     display: Display
     free: Free
     analyses: Analyses = Analyses()
+    downloads: Downloads = Downloads()
     signup: Signup
     products: dict[str, Product]
     fees: Fees

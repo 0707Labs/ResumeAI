@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { useHydrated } from "@/components/AppShell";
 import { ArrowRightIcon, ShieldIcon } from "@/components/icons";
+import { AllowanceNote } from "@/components/AllowanceNote";
 import { ResumePreview } from "@/components/ResumePreview";
 import { Alert, Button, Card, Label, inputClass } from "@/components/ui";
 import { UploadDropzone } from "@/components/UploadDropzone";
@@ -33,6 +34,7 @@ export default function InputPage() {
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [allowanceTick, setAllowanceTick] = useState(0); // re-read what's left after each Analyze
 
   // Restore the paste tab after a refresh.
   useEffect(() => {
@@ -115,11 +117,12 @@ export default function InputPage() {
       setStage("gaps");
       const analysis = await api.analyze(resume, jd);
       s.setAnalyzed(jd, analysis);
-      router.push("/analysis");
+      router.push("/app/analysis");
     } catch (e) {
       setAnalyzeError(messageFor(e));
     } finally {
       setStage(null);
+      setAllowanceTick((t) => t + 1);
     }
   }
 
@@ -130,10 +133,11 @@ export default function InputPage() {
   return (
     <div className="space-y-6">
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Let&apos;s look at this job together</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Tailor a resume</h1>
         <p className="mt-2 text-muted">
           Share your resume and the job description. We&apos;ll show what already matches, ask about anything that
-          seems missing, and suggest honest edits for you to review.
+          seems missing, and suggest honest edits for you to review. Tailoring and review are free to try; you only
+          pay when you download the clean file.
         </p>
       </div>
 
@@ -211,6 +215,7 @@ export default function InputPage() {
             </ul>
           )}
           {analyzeError && <Alert tone="bad" role="alert" title="Analysis didn't finish">{analyzeError}</Alert>}
+          <AllowanceNote refresh={allowanceTick} />
         </div>
         <Button
           onClick={analyze}

@@ -3,7 +3,7 @@
  * and tests. The real check is server-side: app/app/layout.tsx asks the backend,
  * and every API call is authorized by FastAPI regardless of what the UI shows.
  */
-export const PROTECTED_PREFIXES = ["/app", "/analysis", "/review", "/score", "/mentor", "/export"];
+export const PROTECTED_PREFIXES = ["/app"];
 
 export const isProtected = (path: string) =>
   PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));

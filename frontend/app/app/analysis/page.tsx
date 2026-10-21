@@ -57,7 +57,7 @@ export default function AnalysisPage() {
       );
       const updated = await api.submitAnswers(analysis, payload);
       setAnswered(updated);
-      router.push("/review");
+      router.push("/app/review");
     } catch (e) {
       setError(messageFor(e));
     } finally {

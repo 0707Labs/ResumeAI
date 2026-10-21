@@ -57,7 +57,7 @@ GITHUB_API = "https://api.github.com"
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 
 # Where a signed-in user may be sent back to. Relative paths only.
-NEXT_PREFIXES = ("/app", "/account", "/analysis", "/review", "/score", "/mentor", "/export", "/pricing", "/billing")
+NEXT_PREFIXES = ("/app", "/account", "/pricing", "/billing")
 DEFAULT_NEXT = "/app"  # the tailoring workspace
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9/_-]*$")
 

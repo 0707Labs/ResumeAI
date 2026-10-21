@@ -151,7 +151,7 @@ async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(b
     if billed is not None:
         if llm is None or any(n.startswith(RULES_FALLBACK) for n in result.notes):
             await analyses.release(db, billed.id, billed.user_id, reason="llm_degraded", degraded=True)
-            result.notes.append("This run fell back to rules only, so it wasn't charged.")
+            result.notes.append("This run fell back to rules only, so it doesn't count toward your tailorings.")
         else:
             await analyses.finish(db, billed.id, billed.user_id)
         await db.commit()

@@ -164,7 +164,7 @@ def test_pkce_verifier_is_sent_and_matches_the_challenge(client, mock):
 
 
 @pytest.mark.parametrize("next_path,expected", [
-    ("/review", "/review"), ("/account/linked", "/account/linked"), ("/app", "/app"), ("/", "/"),
+    ("/app/review", "/app/review"), ("/review", "/app"), ("/account/linked", "/account/linked"), ("/app", "/app"), ("/", "/"),
     (None, "/app"), ("//evil.example", "/app"), ("https://evil.example", "/app"), ("/\\evil.example", "/app"),
     ("/signin", "/app"), ("/../admin", "/app"), ("/appx", "/app"),
 ])
@@ -197,7 +197,7 @@ def test_new_oauth_user_with_invite_is_created_once_and_invite_cannot_be_reused(
     assert count(pg_engine, "accounts", "provider = 'google' AND provider_account_id = 'g-123'") == 1
 
     # Signing in again goes straight in: no second user.
-    assert where(google(first, mock, next_path="/review")) == "/review"
+    assert where(google(first, mock, next_path="/app/review")) == "/app/review"
     assert count(pg_engine, "users") == 1
 
     other = new_browser()

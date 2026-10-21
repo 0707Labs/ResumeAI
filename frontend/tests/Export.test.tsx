@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ExportPage from "@/app/export/page";
+import ExportPage from "@/app/app/export/page";
 import { ApiError, api } from "@/lib/api";
 import type { ExportPreview, Resume } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
@@ -12,7 +12,7 @@ import { tailored, verified } from "./reviewFixtures";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => "/export",
+  usePathname: () => "/app/export",
 }));
 const saveBlob = vi.fn();
 vi.mock("@/lib/download", () => ({ saveBlob: (...a: unknown[]) => saveBlob(...a) }));
@@ -48,7 +48,7 @@ describe("Step 6: export", () => {
     const panel = screen.getByTestId("export-panel");
     expect(within(panel).getByText(/flagged changes still need your decision/i)).toBeInTheDocument();
     expect(within(panel).getByText(/Led a churn dashboard/)).toBeInTheDocument();
-    expect(within(panel).getByRole("link", { name: /resolve them on the review page/i })).toHaveAttribute("href", "/review");
+    expect(within(panel).getByRole("link", { name: /resolve them on the review page/i })).toHaveAttribute("href", "/app/review");
     expect(downloadButton("DOCX")).toBeDisabled();
     expect(downloadButton("PDF")).toBeDisabled();
     expect(downloadButton("DOCX")).toHaveAccessibleDescription(/still need your decision/i);

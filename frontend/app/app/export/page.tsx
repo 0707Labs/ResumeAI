@@ -39,7 +39,7 @@ export default function ExportPage() {
   if (!resume || !tailored || !payload) {
     return (
       <Alert tone="info" title="Nothing to export yet">
-        Review your tailored bullets on the <Link href="/review" className="font-medium text-accent underline">review page</Link> first.
+        Review your tailored bullets on the <Link href="/app/review" className="font-medium text-accent underline">review page</Link> first.
       </Alert>
     );
   }

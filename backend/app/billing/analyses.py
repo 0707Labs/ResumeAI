@@ -1,5 +1,7 @@
-"""Analyses as the unit of billing: start (decide who pays, reserve a credit), finish
-(commit the credit), release (refund it once), and the sweep for abandoned runs.
+"""Tailorings ("analyses"): start (decide what allows it), finish, release (a failed run
+stops counting), and the sweep for abandoned runs. Starting never spends a credit; the
+clean download does. Rows from before that change may still hold a reserved credit, so
+release still refunds one exactly once.
 
 Every function runs inside the caller's transaction and never commits. Each one locks
 the user's row first (the same lock app.billing.ledger takes), so for one user, starts,
@@ -20,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing import ledger
 from app.billing.config import BillingConfig
-from app.billing.entitlements import CapUsage, Decision, Snapshot, can_user_run
+from app.billing.entitlements import CapUsage, Decision, Snapshot, can_start_tailoring
 from app.db.models import Analysis, Pass, Subscription, User
 
 log = logging.getLogger("app.billing")
@@ -41,7 +43,7 @@ class Started:
     replay: bool
 
 
-def _month_start(now: datetime) -> datetime:
+def month_start(now: datetime) -> datetime:
     return now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -89,16 +91,16 @@ async def snapshot(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, 
         pro = CapUsage(sub.id, used, product.fair_use_cap)
 
     free_used = await _count(db, Analysis.user_id == user_id, Analysis.entitlement == "free",
-                             Analysis.created_at >= _month_start(now))
+                             Analysis.created_at >= month_start(now))
     return Snapshot(credits=balance, passes=tuple(passes), pro=pro, free_used=free_used,
                     free_allowance=config.free.analyses_per_month,
-                    credits_per_analysis=config.analyses.credits_per_analysis)
+                    credits_per_download=config.downloads.credits_per_download)
 
 
 async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, *,
                          idempotency_key: str, now: datetime | None = None) -> Started:
-    """Decide what pays and, for a credit, charge it ('reserved'). The same key returns
-    the same analysis without charging again. Raises NoEntitlement when nothing pays."""
+    """Decide what allows this tailoring (nothing is charged). The same key returns the
+    same analysis. Raises NoEntitlement when nothing does."""
     now = now or datetime.now(UTC)
     balance = await _lock_user(db, user_id)
     if await _sweep_user(db, user_id, now):
@@ -108,20 +110,17 @@ async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.
     if existing is not None:
         return Started(existing, None, replay=True)
 
-    decision = can_user_run(await snapshot(db, config, user_id, balance, now))
+    decision = can_start_tailoring(await snapshot(db, config, user_id, balance, now))
     if not decision.allowed:
         raise NoEntitlement(decision)
     row = Analysis(
         id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, status="pending",
-        entitlement=decision.pays_with, billing_state="reserved" if decision.pays_with == "credit" else "none",
-        credits=decision.credits, pass_id=decision.pass_id, subscription_id=decision.subscription_id,
+        entitlement=decision.pays_with, billing_state="none",
+        credits=0, pass_id=decision.pass_id, subscription_id=decision.subscription_id,
         usable_until=now + timedelta(hours=config.analyses.usable_hours), created_at=now,
     )
     db.add(row)
     await db.flush()
-    if decision.pays_with == "credit":
-        await ledger.charge(db, user_id, decision.credits, reason="analysis_charge",
-                            idempotency_key=f"charge:{row.id}", reference_id=str(row.id))
     return Started(row, decision, replay=False)
 
 
@@ -137,8 +136,8 @@ async def usable(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID,
 
 async def finish(db: AsyncSession, analysis_id: uuid.UUID, user_id: uuid.UUID, *,
                  now: datetime | None = None) -> bool:
-    """Tailoring succeeded with Claude: commit the credit. True only the first time;
-    False also for a run already refunded (late success keeps its result, no new charge)."""
+    """Tailoring succeeded with Claude: the run counts. True only the first time; False
+    also for a run already released (a late success keeps its result)."""
     await _lock_user(db, user_id)
     result = await db.execute(
         update(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.status == "pending")
@@ -152,7 +151,7 @@ async def finish(db: AsyncSession, analysis_id: uuid.UUID, user_id: uuid.UUID, *
 
 async def release(db: AsyncSession, analysis_id: uuid.UUID, user_id: uuid.UUID | None, *, reason: str,
                   degraded: bool = False, now: datetime | None = None) -> bool:
-    """Mark a pending analysis failed and refund its credit, exactly once.
+    """Mark a pending analysis failed (it stops counting) and refund a legacy reserved credit, exactly once.
     reason: 'llm_degraded' (fell back to rules only), 'error', 'abandoned'."""
     if user_id is not None:
         await _lock_user(db, user_id)

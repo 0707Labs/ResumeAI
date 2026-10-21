@@ -145,8 +145,8 @@ function Mentor({ advice, onRefresh, refreshing, error }: {
       {advice.notes.length > 0 && <p className="text-xs text-muted">{advice.notes.join(" ")}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/score" className="text-sm text-accent underline-offset-2 hover:underline">Back to score</Link>
-        <Link href="/export" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
+        <Link href="/app/score" className="text-sm text-accent underline-offset-2 hover:underline">Back to score</Link>
+        <Link href="/app/export" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
           Export your resume <ArrowRightIcon />
         </Link>
       </div>

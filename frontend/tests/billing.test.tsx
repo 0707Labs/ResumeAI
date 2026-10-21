@@ -209,7 +209,7 @@ describe("out-of-credits dialog", () => {
     render(<OutOfCreditsModal />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     act(() => announceOutOfCredits());
-    const dialog = await screen.findByRole("dialog", { name: "You're out of credits" });
+    const dialog = await screen.findByRole("dialog", { name: "You've used this month's free tailorings" });
     expect(await within(dialog).findByRole("button", { name: "Buy Credit pack" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Buy Job Hunt Pass" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");

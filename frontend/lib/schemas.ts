@@ -289,6 +289,14 @@ export const Me = z.object({
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
 /** POST /api/analyses: a started (billed) analysis. */
+/** GET /api/analyses/allowance: free tailorings left this month and what the next run uses. */
+export const Allowance = z.object({
+  free_allowance: z.number().int(),
+  free_used: z.number().int(),
+  resets_at: z.string(),
+  next_uses: z.enum(["pass", "pro", "credit", "free"]).nullable(),
+  credits_balance: z.number().int(),
+});
 export const AnalysisStarted = z.object({
   analysis_id: z.uuid(),
   pays_with: z.enum(["pass", "pro", "credit", "free"]),
@@ -474,6 +482,7 @@ export type Me = z.infer<typeof Me>;
 export type ProviderAvailability = z.infer<typeof ProviderAvailability>;
 export type AuthStep = z.infer<typeof AuthStep>;
 export type PendingSignIn = z.infer<typeof PendingSignIn>;
+export type Allowance = z.infer<typeof Allowance>;
 export type PublicConfig = z.infer<typeof PublicConfig>;
 export type Notice = z.infer<typeof Notice>;
 export type LinkedAccount = z.infer<typeof LinkedAccount>;

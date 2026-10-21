@@ -41,7 +41,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await page.getByRole("button", { name: "No resume handy? Try a sample" }).click();
   await expect(page.getByText("Up to date")).toBeVisible();
   await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page).toHaveURL(/\/analysis$/);
+  await expect(page).toHaveURL(/\/app\/analysis$/);
 
   // 2. Gaps and questions: first missing question Yes, second No, third Skip.
   const questions = page.locator('section[aria-labelledby="group-missing"] fieldset');
@@ -54,7 +54,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await skip.locator("label", { hasText: "Skip" }).click();
   await expect(page.locator("#questions-progress")).toContainText("3 of 3");
   await page.getByRole("button", { name: "Continue to tailoring" }).click();
-  await expect(page).toHaveURL(/\/review$/);
+  await expect(page).toHaveURL(/\/app\/review$/);
 
   // 3. Review: cite the confirmed answer in an unchanged bullet; it verifies.
   await expect(page.getByRole("heading", { name: "Review each change" })).toBeVisible();
@@ -81,7 +81,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 4. Score: the approved, answer-backed edit raises the estimate.
   await page.getByRole("link", { name: "See your score" }).click();
-  await expect(page).toHaveURL(/\/score$/);
+  await expect(page).toHaveURL(/\/app\/score$/);
   await expect(page.getByText("Estimate only. Real ATS systems vary.")).toBeVisible();
   const afterRing = /^With your 1 approved change:/;
   await expect(page.getByRole("img", { name: afterRing })).toBeVisible();
@@ -92,7 +92,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 5. Mentor: verdict renders; tick one plan task.
   await page.getByRole("link", { name: "Talk it through with the mentor" }).click();
-  await expect(page).toHaveURL(/\/mentor$/);
+  await expect(page).toHaveURL(/\/app\/mentor$/);
   await expect(page.getByTestId("verdict")).toContainText("Should you apply?");
   const task = page.locator('input[type="checkbox"][id^="plan-"]').first();
   await task.check();
@@ -101,7 +101,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 6. Export: preview marks only the approved line; DOCX downloads as a zip.
   await page.getByRole("link", { name: "Export your resume" }).click();
-  await expect(page).toHaveURL(/\/export$/);
+  await expect(page).toHaveURL(/\/app\/export$/);
   const changed = page.getByTestId("resume-document").locator('[data-changed="true"]');
   await expect(changed).toHaveCount(1);
   await expect(changed).toContainText(CITED);
@@ -114,4 +114,19 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   const file = await readFile(await download.path());
   expect(file.subarray(0, 4).toString("latin1")).toBe("PK\x03\x04");
   expect(file.includes("word/document.xml")).toBe(true);
+
+  // 7. Free allowance: a rules-only run doesn't count, and nothing was charged. Two more
+  // starts use this month's two free tailorings; the third opens the pricing dialog.
+  await page.goto("/app");
+  const allowance = page.getByTestId("allowance");
+  await expect(allowance).toContainText("2 of 2 free tailorings left this month");
+  for (const left of ["1 of 2", "0 of 2"]) {
+    await page.getByRole("button", { name: "Analyze" }).click();
+    await expect(page).toHaveURL(/\/app\/analysis$/);
+    await page.goto("/app");
+    await expect(allowance).toContainText(left === "0 of 2" ? "used this month's 2 free tailorings" : left);
+  }
+  await page.getByRole("button", { name: "Analyze" }).click();
+  await expect(page.getByRole("dialog", { name: "You've used this month's free tailorings" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app$/);
 });

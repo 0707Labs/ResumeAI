@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import MentorPage from "@/app/mentor/page";
+import MentorPage from "@/app/app/mentor/page";
 import { VERDICT, VerdictCard } from "@/components/MentorCard";
 import { ApiError, api } from "@/lib/api";
 import type { MentorAdvice } from "@/lib/schemas";
@@ -12,7 +12,7 @@ import { analysis, jd, resume } from "./fixtures";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => "/mentor",
+  usePathname: () => "/app/mentor",
 }));
 
 const advice: MentorAdvice = {
@@ -129,7 +129,7 @@ describe("Step 5: mentor page", () => {
     const actions = await screen.findByRole("region", { name: /action plan/i });
     await user.click(within(actions).getByRole("checkbox", { name: /answer question q1/i }));
     expect(useSession.getState().checked["action:a1"]).toBe(true);
-    expect(within(actions).getByRole("link", { name: /go to questions/i })).toHaveAttribute("href", "/analysis");
+    expect(within(actions).getByRole("link", { name: /go to questions/i })).toHaveAttribute("href", "/app/analysis");
   });
 
   it("shows a friendly error with a retry", async () => {

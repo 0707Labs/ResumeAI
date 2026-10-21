@@ -50,9 +50,10 @@ export function OutOfCreditsModal() {
       onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="ooc-title" tabIndex={-1}
         className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-lg outline-none sm:p-6">
-        <h2 id="ooc-title" className="text-lg font-semibold">You&apos;re out of credits</h2>
+        <h2 id="ooc-title" className="text-lg font-semibold">You&apos;ve used this month&apos;s free tailorings</h2>
         <p className="mt-1 text-sm text-muted">
-          To keep tailoring, pick one of these. Both are one-time payments; nothing renews.
+          To keep tailoring, pick one of these. Credits are only spent when you download a clean file. Both are
+          one-time payments; nothing renews.
         </p>
         <div className="mt-4 space-y-3">
           <BillingAlert error={error} />

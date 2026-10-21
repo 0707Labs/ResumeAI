@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import AnalysisPage from "@/app/analysis/page";
+import AnalysisPage from "@/app/app/analysis/page";
 import { GapCard } from "@/components/GapCard";
 import { QuestionCard, isResolved, promptText } from "@/components/QuestionCard";
 import { ApiError, api } from "@/lib/api";
@@ -14,7 +14,7 @@ import { jd, resume } from "./fixtures";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
-  usePathname: () => "/analysis",
+  usePathname: () => "/app/analysis",
 }));
 
 const q = (id: string, req: string, text: string) => ({
@@ -165,7 +165,7 @@ describe("Step 2: question flow", () => {
     await user.type(within(question("q1")).getByLabelText(/where and how/i), "t-tests");
 
     await user.click(continueButton());
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/review"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/review"));
     expect(submit.mock.calls[0][1]).toEqual({
       q1: { choice: "skip", text: "" },
       q2: { choice: "yes", text: "Ran a side-project API on minikube." },

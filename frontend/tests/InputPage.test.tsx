@@ -52,7 +52,7 @@ describe("Step 1: input screen", () => {
     await fillJD(user);
     await user.click(screen.getByRole("button", { name: /analyze/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/analysis"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/analysis"));
     // The user's title overrides the parser's guess.
     expect(analyze.mock.calls[0][1].title).toBe("Senior Data Analyst");
     expect(useSession.getState().analysis).toEqual(analysis);
@@ -71,7 +71,7 @@ describe("Step 1: input screen", () => {
     await fillJD(user);
     await user.click(screen.getByRole("button", { name: /analyze/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/analysis"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/analysis"));
     expect(parseText).toHaveBeenCalledWith("Asha Rao\nExperience\n• Did things");
   });
 

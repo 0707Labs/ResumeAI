@@ -52,8 +52,9 @@ backend/
   alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
-  app/             routes: / (landing), /app (input), /analysis, /review, /score, /mentor, /export,
-                   /signin, /signup/*, /legal/*; proxy.ts + app/app/layout.tsx guard the workspace
+  app/             routes: / (landing), /app workspace (input, /app/analysis, /app/review, /app/score,
+                   /app/mentor, /app/export), /signin, /signup/*, /legal/*; proxy.ts + app/app/layout.tsx
+                   guard /app; next.config.ts redirects /login and the old step paths
   components/      AppShell, UploadDropzone, ResumePreview, ui, icons (+ later steps)
   lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
                    store.ts (zustand, sessionStorage), theme.ts, diff.ts
@@ -85,6 +86,7 @@ frontend/
   RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites and notices with the admin CLI and reads
   magic links from backend/.dev-outbox. A run sends 5 magic links, exactly the 5-per-15-min per-IP
   limit, which a reused backend keeps in memory: restart it (or wait) between runs.
+  Point RT_DATABASE_URL at a separate migrated database when other branches share the dev one.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
   `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.
 
@@ -113,6 +115,8 @@ frontend/
 - Workspace routes (lib/workspace.ts) need a session: proxy.ts redirects cookieless visitors to
   /signin?next=<path>, app/app/layout.tsx re-checks /api/me server-side, the API enforces regardless.
   `next` is allowlisted on both sides (oauth.safe_next, lib/auth safeNext); default after sign-in is /app.
+- Tailoring is free to try (monthly free allowance, then a pass, Pro or a credit balance allows a run;
+  nothing is spent); the clean download spends the credit. See docs/billing.md section 9.
 - RT_INVITE_ONLY (default on) gates new accounts; off skips the invite step (an entered invite is still used).
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.

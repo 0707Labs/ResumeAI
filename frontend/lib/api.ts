@@ -37,7 +37,7 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   invalid_input: "Something in the input didn't look right.",
   bad_response: "The service sent back something we didn't expect. Please try again.",
   out_of_credits:
-    "You're out of analyses for now. You can get more, or wait for your free analyses to reset at the start of next month.",
+    "You've used this month's free tailorings. Get credits or a pass to keep going, or wait for them to reset at the start of next month.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -127,9 +127,9 @@ function setAnalysisId(id: string | null): void {
   }
 }
 
-/** Start a billed analysis: a pass, Pro, a credit or a free run pays, in that order.
- * Signed out (401): no analysis, rules-only. 402: nothing left to pay with, so the
- * out-of-credits dialog opens and this throws. */
+/** Start a tailoring: a free run, a pass, Pro, or a credit balance allows it, in that
+ * order; nothing is spent (the download is what's paid). Signed out (401): no analysis,
+ * rules-only. 402: nothing allows another run, so the pricing dialog opens and this throws. */
 async function startAnalysis(): Promise<void> {
   setAnalysisId(null);
   const res = await authPost("/api/analyses", undefined, { "Idempotency-Key": crypto.randomUUID() });
@@ -190,6 +190,16 @@ export const api = {
   async me(): Promise<S.Me | null> {
     try {
       return await request(S.Me, "/api/me", { credentials: "same-origin" });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return null;
+      throw e;
+    }
+  },
+
+  /** Free tailorings left this month and what the next one uses; null when signed out. */
+  async allowance(): Promise<S.Allowance | null> {
+    try {
+      return await request(S.Allowance, "/api/analyses/allowance", { credentials: "same-origin" });
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return null;
       throw e;

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SignInPage from "@/app/signin/page";
 import SignupPage from "@/app/signup/page";
+import { AllowanceNote } from "@/components/AllowanceNote";
 import { rememberNext, safeNext, takeNext } from "@/lib/auth";
 import { proxy } from "@/proxy";
 
@@ -44,7 +45,7 @@ describe("proxy", () => {
     proxy(new NextRequest(`http://localhost:3000${path}`, { headers: cookie ? { cookie } : {} }));
 
   it("sends signed-out visitors of the workspace to /signin with where they were going", () => {
-    for (const path of ["/app", "/app/history", "/review", "/export"]) {
+    for (const path of ["/app", "/app/history", "/app/review", "/app/export"]) {
       const res = visit(path);
       expect(res.status).toBe(307);
       expect(res.headers.get("location")).toBe(`http://localhost:3000/signin?next=${encodeURIComponent(path)}`);
@@ -66,7 +67,7 @@ describe("proxy", () => {
 
 describe("post-sign-in destination", () => {
   it("accepts only our own workspace and account paths", () => {
-    expect(safeNext("/review")).toBe("/review");
+    expect(safeNext("/app/review")).toBe("/app/review");
     expect(safeNext("/app")).toBe("/app");
     expect(safeNext("/account/billing")).toBe("/account/billing");
     for (const bad of [undefined, null, "", "//evil.example", "https://evil.example", "/\\evil", "/signin", "/appx", "/admin"]) {
@@ -75,12 +76,12 @@ describe("post-sign-in destination", () => {
   });
 
   it("remembers the destination for an emailed link, once, for 30 minutes", () => {
-    rememberNext("/review");
-    expect(takeNext()).toBe("/review");
+    rememberNext("/app/review");
+    expect(takeNext()).toBe("/app/review");
     expect(takeNext()).toBe("/app");
 
     vi.useFakeTimers();
-    rememberNext("/score");
+    rememberNext("/app/score");
     vi.advanceTimersByTime(31 * 60 * 1000);
     expect(takeNext()).toBe("/app");
 
@@ -91,10 +92,10 @@ describe("post-sign-in destination", () => {
 
 describe("sign-in screens", () => {
   it("a signed-in visitor skips /signin and goes where they were headed", async () => {
-    search = new URLSearchParams("next=/review");
+    search = new URLSearchParams("next=/app/review");
     stubFetch({ ...PROVIDERS, "GET /api/me": () => json(ME), "GET /api/auth/config": () => json({ invite_only: true }) });
     render(<SignInPage />);
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/review"));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/review"));
   });
 
   it("an unsafe next sends a signed-in visitor to the workspace instead", async () => {
@@ -105,7 +106,7 @@ describe("sign-in screens", () => {
   });
 
   it("asking for an email link on /signin?next=… remembers the destination", async () => {
-    search = new URLSearchParams("next=/review");
+    search = new URLSearchParams("next=/app/review");
     stubFetch({
       ...PROVIDERS, ...SIGNED_OUT,
       "GET /api/auth/config": () => json({ invite_only: true }),
@@ -117,7 +118,7 @@ describe("sign-in screens", () => {
     await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
     await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
     await screen.findByRole("status");
-    expect(takeNext()).toBe("/review");
+    expect(takeNext()).toBe("/app/review");
   });
 
   it("signup lists the invite step only in invite-only mode, and links Terms and Privacy", async () => {
@@ -134,5 +135,33 @@ describe("sign-in screens", () => {
     render(<SignupPage />);
     expect(await screen.findByText("Enter your invite code.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join the waitlist" })).toHaveAttribute("href", "/waitlist");
+  });
+});
+
+describe("allowance note on /app", () => {
+  const allowance = (over: Record<string, unknown>) => ({
+    free_allowance: 2, free_used: 0, resets_at: "2026-11-01T00:00:00+00:00", next_uses: "free", credits_balance: 0, ...over,
+  });
+
+  it.each([
+    [{}, "2 of 2 free tailorings left this month (resets 1 November)."],
+    [{ free_used: 2, next_uses: "pass" }, "This tailoring is covered by your Job Hunt Pass."],
+    [{ free_used: 2, next_uses: "credit", credits_balance: 3 }, /keep tailoring with your 3 credits; nothing is spent until you download/],
+    [{ free_used: 2, next_uses: null }, /used this month's 2 free tailorings \(they reset 1 November\)/],
+  ])("says what the next tailoring uses (%o)", async (over, text) => {
+    stubFetch({ "GET /api/analyses/allowance": () => json(allowance(over)) });
+    render(<AllowanceNote />);
+    expect(await screen.findByTestId("allowance")).toHaveTextContent(text);
+  });
+
+  it("links to pricing when nothing is left, and shows nothing signed out", async () => {
+    stubFetch({ "GET /api/analyses/allowance": () => json(allowance({ free_used: 2, next_uses: null })) });
+    const { unmount } = render(<AllowanceNote />);
+    expect(await screen.findByRole("link", { name: "Get credits or a pass" })).toHaveAttribute("href", "/pricing");
+    unmount();
+    stubFetch({ "GET /api/analyses/allowance": () => json({ detail: "not_signed_in" }, 401) });
+    const { container } = render(<AllowanceNote />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(container).toBeEmptyDOMElement();
   });
 });

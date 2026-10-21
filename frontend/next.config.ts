@@ -8,7 +8,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // /signin is the sign-in page; old /login links (bookmarks, emails) keep working.
   async redirects() {
-    return [{ source: "/login", destination: "/signin", permanent: false }];
+    return [
+      { source: "/login", destination: "/signin", permanent: false },
+      // The tailoring steps moved under the workspace.
+      ...["analysis", "review", "score", "mentor", "export"].map((step) => (
+        { source: `/${step}`, destination: `/app/${step}`, permanent: false })),
+    ];
   },
   async rewrites() {
     return [

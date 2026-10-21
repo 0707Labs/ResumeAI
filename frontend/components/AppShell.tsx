@@ -22,11 +22,11 @@ const isMarketingPath = (path: string) => path === "/" || path === "/legal" || p
 
 const STEPS = [
   { href: "/app", label: "Your details" },
-  { href: "/analysis", label: "Gaps" },
-  { href: "/review", label: "Review" },
-  { href: "/score", label: "Score" },
-  { href: "/mentor", label: "Mentor" },
-  { href: "/export", label: "Export" },
+  { href: "/app/analysis", label: "Gaps" },
+  { href: "/app/review", label: "Review" },
+  { href: "/app/score", label: "Score" },
+  { href: "/app/mentor", label: "Mentor" },
+  { href: "/app/export", label: "Export" },
 ] as const;
 
 /** Restore the session from sessionStorage once, on the client. During server
@@ -106,11 +106,11 @@ function StepNav() {
     .every((i) => isResolved(s.answers[i.question!.id]));
   const reachable: Record<string, boolean> = {
     "/app": true,
-    "/analysis": !!s.analysis,
-    "/review": !!s.tailored || questionsDone,
-    "/score": !!s.tailored,
-    "/mentor": !!s.analysis,
-    "/export": !!s.tailored,
+    "/app/analysis": !!s.analysis,
+    "/app/review": !!s.tailored || questionsDone,
+    "/app/score": !!s.tailored,
+    "/app/mentor": !!s.analysis,
+    "/app/export": !!s.tailored,
   };
   return (
     <nav aria-label="Progress" className="mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6">

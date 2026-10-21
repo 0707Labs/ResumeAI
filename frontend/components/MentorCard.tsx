@@ -74,8 +74,8 @@ export function GapRow({ gap }: { gap: Gap }) {
 }
 
 const ACTION_KIND: Record<Action["kind"], { label: string; href?: string; cta?: string }> = {
-  answer_question: { label: "Answer a question", href: "/analysis", cta: "Go to questions" },
-  resume_edit: { label: "Resume edit", href: "/review", cta: "Open review" },
+  answer_question: { label: "Answer a question", href: "/app/analysis", cta: "Go to questions" },
+  resume_edit: { label: "Resume edit", href: "/app/review", cta: "Open review" },
   learn: { label: "Learn" },
   apply_strategy: { label: "When you apply" },
 };

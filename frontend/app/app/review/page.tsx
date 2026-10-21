@@ -51,7 +51,7 @@ export default function ReviewPage() {
   if (!s.tailored && !questionsDone) {
     return (
       <Alert tone="info" title="A couple of questions first">
-        Answer or skip the open questions on the <Link href="/analysis" className="font-medium text-accent underline">gaps page</Link>, then come back.
+        Answer or skip the open questions on the <Link href="/app/analysis" className="font-medium text-accent underline">gaps page</Link>, then come back.
       </Alert>
     );
   }
@@ -178,7 +178,7 @@ function Review({ onRetailor, retailoring, retailorError }: { onRetailor: () => 
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Button variant="ghost" onClick={onRetailor} busy={retailoring}>Start over with fresh drafts</Button>
-        <Link href="/score" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
+        <Link href="/app/score" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
           See your score <ArrowRightIcon />
         </Link>
       </div>

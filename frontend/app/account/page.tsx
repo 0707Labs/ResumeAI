@@ -57,6 +57,13 @@ function Account() {
         <Alert tone="ok" title={`${NAME[linked]} connected`} role="status">You can now sign in with it.</Alert>
       )}
       <AuthErrorAlert error={error} />
+      <Card>
+        <h2 className="text-lg font-semibold">Billing</h2>
+        <p className="mt-1 text-sm text-muted">Credits, passes, purchases and receipts.</p>
+        <Link href="/account/billing" className="mt-3 inline-block text-sm font-medium text-accent underline">
+          Go to billing
+        </Link>
+      </Card>
       {providers && <SignInMethods providers={providers} onChange={reload} onError={setError} />}
       <SignOut />
       <DeleteAccount />

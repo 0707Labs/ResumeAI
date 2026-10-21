@@ -11,6 +11,11 @@
 
 version = 1
 
+[display]
+# True when every Dodo product's price is set to tax-inclusive (see docs/billing.md), so the
+# price shown is the price paid. The pricing page words its tax note from this.
+prices_include_tax = true
+
 [free]
 analyses_per_month = 2        # calendar month, UTC
 

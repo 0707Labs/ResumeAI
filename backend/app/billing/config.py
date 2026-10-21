@@ -66,6 +66,10 @@ class Free(_Strict):
     analyses_per_month: Annotated[int, Field(ge=0)]
 
 
+class Display(_Strict):
+    prices_include_tax: bool
+
+
 class Signup(_Strict):
     bonus_credits: Annotated[int, Field(ge=0)] = 0
 
@@ -87,6 +91,7 @@ class Fees(_Strict):
 
 class BillingConfig(_Strict):
     version: PositiveInt
+    display: Display
     free: Free
     signup: Signup
     products: dict[str, Product]

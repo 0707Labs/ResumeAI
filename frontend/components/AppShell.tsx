@@ -9,12 +9,13 @@ import type { Me } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
+import { OutOfCreditsModal } from "./billing/OutOfCreditsModal";
 import { MonitorIcon, MoonIcon, SunIcon, TrashIcon, UserIcon } from "./icons";
 import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
-/** Sign-in and account pages: no tailoring progress bar there. */
-const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account"];
+/** Sign-in, account and billing pages: no tailoring progress bar there. */
+const AUTH_PATHS = ["/login", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing"];
 const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 
 const STEPS = [
@@ -55,6 +56,9 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link href="/" className="text-base font-semibold text-fg">Resume Tailor</Link>
           <div className="flex items-center gap-2">
+            <Link href="/pricing" className="flex min-h-9 items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg">
+              Pricing
+            </Link>
             <ThemeToggle initial={initialTheme} />
             <ClearAll />
             <AccountLink pathname={pathname} />
@@ -63,6 +67,7 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
         {!isAuthPath(pathname) && <StepNav />}
       </header>
       <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      <OutOfCreditsModal />
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-muted sm:px-6">
         Your resume stays in this browser tab and is only sent to the Resume Tailor service. No analytics, no tracking.
       </footer>

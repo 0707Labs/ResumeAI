@@ -6,7 +6,7 @@
  */
 import type { z } from "zod";
 
-import { API_URL, csrfToken } from "./api";
+import { API_URL, announceOutOfCredits, csrfToken } from "./api";
 import * as S from "./schemas";
 
 export class AuthError extends Error {
@@ -16,12 +16,14 @@ export class AuthError extends Error {
   }
 }
 
-async function call<T extends z.ZodType>(
+export async function call<T extends z.ZodType>(
   schema: T | null,
   path: string,
-  { method = "GET", body }: { method?: "GET" | "POST" | "DELETE"; body?: unknown } = {},
+  { method = "GET", body, headers: extra }: {
+    method?: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string>;
+  } = {},
 ): Promise<z.infer<T>> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extra };
   if (method !== "GET") headers["X-CSRF-Token"] = await csrfToken();
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
@@ -36,6 +38,7 @@ async function call<T extends z.ZodType>(
     throw new AuthError("backend_down", 0);
   }
   if (!res.ok) {
+    if (res.status === 402) announceOutOfCredits();
     let code = res.status === 422 ? "invalid_input" : res.status === 429 ? "rate_limited" : "server";
     try {
       const detail = (await res.json())?.detail;

@@ -70,6 +70,11 @@ export function classify(status: number, detail?: string): ApiErrorKind {
   return "server";
 }
 
+/** 402 from any call: show the out-of-credits dialog (mounted once in AppShell). */
+export function announceOutOfCredits() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("rt:out-of-credits"));
+}
+
 async function request<T extends z.ZodType>(schema: T, path: string, init?: RequestInit): Promise<z.infer<T>> {
   let res: Response;
   try {
@@ -80,6 +85,7 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
     throw new ApiError("backend_down", 0);
   }
   if (!res.ok) {
+    if (res.status === 402) announceOutOfCredits();
     const detail = await readDetail(res);
     throw new ApiError(classify(res.status, detail), res.status, detail);
   }

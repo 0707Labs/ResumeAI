@@ -314,6 +314,73 @@ export const AccountProviders = z.object({
   available: z.object({ google: z.boolean(), github: z.boolean(), email: z.boolean() }),
 });
 
+// --- billing (backend app/api/billing.py) ---------------------------------------------------------------
+
+const Money = z.record(z.string(), z.number().int().positive());
+export const Plan = z.object({
+  key: z.string(),
+  kind: z.enum(["credit_pack", "pass", "subscription"]),
+  name: z.string(),
+  prices: Money,
+  credits: z.number().int().nullable(),
+  pass_days: z.number().int().nullable(),
+  fair_use_cap: z.number().int().nullable(),
+  interval: z.string().nullable(),
+  available: z.boolean(),
+});
+export const Plans = z.object({
+  free_analyses_per_month: z.number().int(),
+  prices_include_tax: z.boolean(),
+  plans: z.array(Plan),
+});
+export const CheckoutStarted = z.object({ payment_id: z.uuid(), checkout_url: z.url({ protocol: /^https$/ }) });
+export const PaymentStatus = z.object({
+  id: z.uuid(),
+  product_key: z.string(),
+  kind: z.string(),
+  status: z.enum(["created", "checkout_failed", "pending", "paid", "failed", "cancelled",
+    "partially_refunded", "refunded", "disputed"]),
+  credits_balance: z.number().int(),
+});
+export const BillingSummary = z.object({
+  credits_balance: z.number().int(),
+  passes: z.array(z.object({
+    product_key: z.string(),
+    starts_at: z.string(),
+    expires_at: z.string(),
+    days_remaining: z.number().int(),
+    analyses_cap: z.number().int(),
+  })),
+  subscription: z.object({
+    product_key: z.string(),
+    status: z.string(),
+    current_period_end: z.string().nullable(),
+    cancel_at_period_end: z.boolean(),
+  }).nullable(),
+  purchases: z.array(z.object({
+    id: z.uuid(),
+    product_key: z.string(),
+    name: z.string(),
+    status: z.string(),
+    amount_minor: z.number().int().nullable(),
+    currency: z.string().nullable(),
+    created_at: z.string(),
+    paid_at: z.string().nullable(),
+  })),
+  portal_available: z.boolean(),
+});
+export const LedgerPage = z.object({
+  entries: z.array(z.object({
+    id: z.number().int(),
+    delta: z.number().int(),
+    reason: z.string(),
+    balance_after: z.number().int(),
+    created_at: z.string(),
+  })),
+  next_before: z.number().int().nullable(),
+});
+export const PortalLink = z.object({ url: z.url({ protocol: /^https$/ }) });
+
 // --- inferred types ------------------------------------------------------------------------------------
 
 export type Resume = z.infer<typeof Resume>;
@@ -342,3 +409,8 @@ export type PendingSignIn = z.infer<typeof PendingSignIn>;
 export type Notice = z.infer<typeof Notice>;
 export type LinkedAccount = z.infer<typeof LinkedAccount>;
 export type AccountProviders = z.infer<typeof AccountProviders>;
+export type Plan = z.infer<typeof Plan>;
+export type Plans = z.infer<typeof Plans>;
+export type PaymentStatus = z.infer<typeof PaymentStatus>;
+export type BillingSummary = z.infer<typeof BillingSummary>;
+export type LedgerPage = z.infer<typeof LedgerPage>;

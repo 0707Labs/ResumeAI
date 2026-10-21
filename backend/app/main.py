@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.account import router as account_router
 from app.api.auth import router as auth_router
+from app.api.billing import router as billing_router
 from app.api.oauth import router as oauth_router
 from app.api.routes import router
 from app.api.signin import router as signin_router
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(signin_router)
     app.include_router(oauth_router)
     app.include_router(account_router)
+    app.include_router(billing_router)
     return app
 
 

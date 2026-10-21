@@ -37,7 +37,8 @@ BACKEND = Path(__file__).parent.parent
 ADMIN_URL = os.environ.get("RT_TEST_ADMIN_DATABASE_URL", "postgresql+psycopg:///postgres")
 ORIGIN = "http://localhost:3000"  # the default RT_PUBLIC_URL
 TABLES = ("users, accounts, auth_sessions, pending_auth, email_tokens, invites, invite_redemptions,"
-          " waitlist, consent_records, consent_notices, credit_transactions, passes")
+          " waitlist, consent_records, consent_notices, credit_transactions, passes,"
+          " payments, billing_customers")
 
 
 def fixture_text(name: str) -> str:

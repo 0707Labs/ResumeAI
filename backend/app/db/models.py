@@ -26,7 +26,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING = {
@@ -38,6 +38,10 @@ NAMING = {
 }
 
 PROVIDERS = ("google", "github", "email")
+PAYMENT_STATUSES = (
+    "created", "checkout_failed", "pending", "paid", "failed", "cancelled",
+    "partially_refunded", "refunded", "disputed",
+)
 LEDGER_REASONS = (
     "signup_bonus", "purchase", "pass_grant", "analysis_charge", "refund",
     "referral", "admin_adjust", "purchase_reversal",
@@ -363,4 +367,62 @@ class Pass(Base):
         CheckConstraint("expires_at > starts_at", name="period"),
         CheckConstraint("analyses_cap > 0", name="analyses_cap"),
         Index("ix_passes_user_expires", "user_id", "expires_at"),
+    )
+
+
+class BillingCustomer(Base):
+    """A user's customer id at a payment provider, learned from their first payment."""
+
+    __tablename__ = "billing_customers"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider_customer_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_customer_id"),
+        CheckConstraint(_in("provider", ("dodo",)), name="provider"),
+    )
+
+
+class Payment(Base):
+    """One purchase attempt, created before the provider's checkout. Its id goes into
+    the return URL; webhooks find it by provider_checkout_id. `snapshot` keeps what
+    was promised (credits, pass days, caps, displayed prices, catalog version) so later
+    catalog edits never change a past purchase. Only verified webhooks move it to paid."""
+
+    __tablename__ = "payments"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(Text, nullable=False)
+    product_key: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="created")
+    provider_checkout_id: Mapped[str | None] = mapped_column(Text)
+    checkout_url: Mapped[str | None] = mapped_column(Text)
+    checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_payment_id: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        UniqueConstraint("provider", "provider_checkout_id"),
+        UniqueConstraint("provider", "provider_payment_id"),
+        CheckConstraint(_in("provider", ("dodo",)), name="provider"),
+        CheckConstraint(_in("mode", ("test", "live")), name="mode"),
+        CheckConstraint(_in("kind", ("credit_pack", "pass", "subscription")), name="kind"),
+        CheckConstraint(_in("status", PAYMENT_STATUSES), name="status"),
+        Index("ix_payments_user_created", "user_id", "created_at"),
     )

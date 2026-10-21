@@ -288,11 +288,9 @@ export const Me = z.object({
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
-/** POST /api/analyses: a started (billed) analysis. */
+/** POST /api/analyses: a started analysis (free; the first download pays). */
 export const AnalysisStarted = z.object({
   analysis_id: z.uuid(),
-  pays_with: z.enum(["pass", "pro", "credit", "free"]),
-  remaining: z.number().int().nullable(),
   usable_until: z.string(),
 });
 

@@ -2,9 +2,13 @@ import { readFile } from "node:fs/promises";
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
+import { signUp } from "./helpers";
+
 // One full pass through the app against the real backend in rules-only mode
 // (no ANTHROPIC_API_KEY), so every tailored bullet starts out unchanged and the
-// only edits are the two made here by hand.
+// only edits are the two made here by hand. Downloading needs an account (it's what
+// pays), so this signs up first; the download uses the month's first free download.
+// Needs Postgres, like auth.spec.ts.
 
 const ANSWER = "At Acme Retail I built dbt models that feed the weekly SQL extracts.";
 const CITED = "Cut weekly reporting time by 30% by automating SQL extracts with dbt models";
@@ -30,6 +34,9 @@ async function ringValue(page: Page, label: RegExp): Promise<number> {
 test("sample resume: answer, review, score, mentor, export", async ({ page, request }) => {
   const health = await (await request.get("http://localhost:8000/health")).json();
   expect(health.llm_configured, "backend must run without ANTHROPIC_API_KEY").toBe(false);
+
+  // 0. A new account, signed in.
+  await signUp(page, request, "happy");
 
   // 1. Input
   await page.goto("/");

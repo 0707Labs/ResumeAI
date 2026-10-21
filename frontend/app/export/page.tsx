@@ -7,7 +7,7 @@ import { useHydrated } from "@/components/AppShell";
 import { ExportPanel, type Format } from "@/components/ExportPanel";
 import { ResumeDocument } from "@/components/ResumeDocument";
 import { Alert, Card, Spinner } from "@/components/ui";
-import { api, messageFor } from "@/lib/api";
+import { ApiError, api, messageFor } from "@/lib/api";
 import { saveBlob } from "@/lib/download";
 import { counts, exportCheck, withDecisions } from "@/lib/review";
 import type { ExportPreview } from "@/lib/schemas";
@@ -21,6 +21,7 @@ export default function ExportPage() {
   const [markChanges, setMarkChanges] = useState(true);
   const [busy, setBusy] = useState<Format | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [downloaded, setDownloaded] = useState<string | null>(null);
 
   const payload = useMemo(() => (tailored ? withDecisions(tailored, decisions) : null), [tailored, decisions]);
@@ -36,7 +37,7 @@ export default function ExportPage() {
   }, [resume, payload, analysis, jd]);
 
   if (!hydrated) return null;
-  if (!resume || !tailored || !payload) {
+  if (!resume || !jd || !tailored || !payload) {
     return (
       <Alert tone="info" title="Nothing to export yet">
         Review your tailored bullets on the <Link href="/review" className="font-medium text-accent underline">review page</Link> first.
@@ -49,16 +50,19 @@ export default function ExportPage() {
   const approved = counts(tailored, decisions).approved;
 
   async function download(fmt: Format) {
-    if (!check.ok || !resume || !payload) return;
+    if (!check.ok || !resume || !jd || !payload) return;
     setBusy(fmt);
     setError(null);
+    setNeedsSignIn(false);
     setDownloaded(null);
     try {
-      const { blob, filename } = await api.exportFile(fmt, resume, payload, analysis, jd?.raw_text ?? "");
+      const { blob, filename } = await api.exportFile(fmt, resume, jd, payload, analysis);
       saveBlob(blob, filename);
       setDownloaded(filename);
     } catch (e) {
-      setError(messageFor(e));
+      const signIn = e instanceof ApiError && e.kind === "sign_in_required";
+      setNeedsSignIn(signIn);
+      setError(signIn ? null : messageFor(e));
     } finally {
       setBusy(null);
     }
@@ -92,7 +96,14 @@ export default function ExportPage() {
           )}
         </div>
 
-        <div className="lg:sticky lg:top-4">
+        <div className="space-y-4 lg:sticky lg:top-4">
+          {needsSignIn && (
+            <Alert tone="info" title="Sign in to download">
+              Tailoring and the preview are free; downloading needs an account.{" "}
+              <Link href="/login?next=/export" className="font-medium text-accent underline">Sign in</Link> and
+              come back here: your work stays in this tab.
+            </Alert>
+          )}
           <ExportPanel
             unresolved={unresolved}
             summaryUnresolved={check.summaryUnresolved}

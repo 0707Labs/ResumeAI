@@ -17,13 +17,14 @@ version = 1
 prices_include_tax = true
 
 [free]
-analyses_per_month = 2        # calendar month, UTC
+analyses_per_month = 2        # free downloads per calendar month, UTC
 
-# What starting a resume + job analysis costs. Order of payment: an active pass under its
-# fair-use cap, then Pro under its cap, then credits, then the free allowance.
+# Tailoring is free; downloading the tailored resume pays, once per analysis (re-exports
+# are free). Order of payment: an active pass under its fair-use cap, then Pro under its
+# cap, then credits, then the free downloads above.
 [analyses]
 credits_per_analysis = 1
-usable_hours = 24             # Claude may be used this long; an unfinished credit run is refunded after
+usable_hours = 24             # how long a started analysis may use Claude
 
 [signup]
 bonus_credits = 0

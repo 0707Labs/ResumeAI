@@ -24,6 +24,7 @@ export type ApiErrorKind =
   | "invalid_input"
   | "bad_response"
   | "out_of_credits"
+  | "sign_in_required"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -37,7 +38,8 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   invalid_input: "Something in the input didn't look right.",
   bad_response: "The service sent back something we didn't expect. Please try again.",
   out_of_credits:
-    "You're out of analyses for now. You can get more, or wait for your free analyses to reset at the start of next month.",
+    "Downloading needs a credit or a pass now: you've used this month's free downloads. Tailoring and the preview stay free.",
+  sign_in_required: "Sign in to download your tailored resume. Your work here stays in this tab.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -105,9 +107,9 @@ async function request<T extends z.ZodType>(schema: T, path: string, init?: Requ
   return parsed.data;
 }
 
-/** The server-side analysis later pipeline calls are billed to, sent as X-Analysis-Id.
- * The backend uses Claude only for the caller's own live analysis; without one (signed out)
- * the pipeline runs rules-only. Kept for the tab's session. */
+/** The server-side analysis for this resume + job, sent as X-Analysis-Id. The backend uses
+ * Claude only for the caller's own analysis (signed out: rules-only), and the download is
+ * charged to it once. Kept for the tab's session. */
 const ANALYSIS_KEY = "rt_analysis_id";
 
 export function currentAnalysisId(): string | null {
@@ -127,17 +129,15 @@ function setAnalysisId(id: string | null): void {
   }
 }
 
-/** Start a billed analysis: a pass, Pro, a credit or a free run pays, in that order.
- * Signed out (401): no analysis, rules-only. 402: nothing left to pay with, so the
- * out-of-credits dialog opens and this throws. */
-async function startAnalysis(): Promise<void> {
+/** Start an analysis (free): the server pins this resume and job description to it.
+ * Signed out (401): no analysis, and the pipeline runs rules-only. */
+async function startAnalysis(resume: S.Resume, jd: S.JobDescription): Promise<void> {
   setAnalysisId(null);
-  const res = await authPost("/api/analyses", undefined, { "Idempotency-Key": crypto.randomUUID() });
+  const res = await authPost("/api/analyses", { resume, jd }, { "Idempotency-Key": crypto.randomUUID() });
   if (res.status === 401) return;
   if (!res.ok) {
-    if (res.status === 402) announceOutOfCredits();
     const detail = await readDetail(res);
-    throw new ApiError(res.status === 402 ? "out_of_credits" : classify(res.status, detail), res.status, detail);
+    throw new ApiError(classify(res.status, detail), res.status, detail);
   }
   let body: unknown;
   try {
@@ -215,9 +215,9 @@ export const api = {
 
   parseJD: (text: string) => request(S.JobDescription, "/api/jd/parse", json({ text })),
 
-  /** Starts a new analysis (billed when signed in; see startAnalysis), then runs the gap step. */
+  /** Starts a new analysis (when signed in; see startAnalysis), then runs the gap step. */
   analyze: async (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
-    await startAnalysis();
+    await startAnalysis(resume, jd);
     return request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
   },
 
@@ -248,16 +248,24 @@ export const api = {
     signal?: AbortSignal) =>
     request(S.ExportPreview, "/api/export/preview", { ...json({ resume, tailored, analysis, jd_text: jdText }), signal }),
 
-  async exportFile(fmt: "docx" | "pdf", resume: S.Resume, tailored: S.TailoredResume, analysis: S.GapAnalysis | null, jdText: string) {
+  /** The download pays (once per analysis; re-downloads are free). Needs sign-in: someone
+   * who signed in after analyzing gets an analysis started here. 402 opens the
+   * out-of-credits dialog. */
+  async exportFile(fmt: "docx" | "pdf", resume: S.Resume, jd: S.JobDescription, tailored: S.TailoredResume,
+    analysis: S.GapAnalysis | null) {
+    if (!currentAnalysisId()) await startAnalysis(resume, jd);
+    if (!currentAnalysisId()) throw new ApiError("sign_in_required", 401);
     let res: Response;
     try {
-      res = await fetch(`${API_URL}/api/export/${fmt}`, json({ resume, tailored, analysis, jd_text: jdText }));
+      res = await fetch(`${API_URL}/api/export/${fmt}`, json({ resume, tailored, analysis, jd_text: jd.raw_text }));
     } catch {
       throw new ApiError("backend_down", 0);
     }
     if (!res.ok) {
+      if (res.status === 402) announceOutOfCredits();
       const detail = await readDetail(res);
-      throw new ApiError(classify(res.status, detail), res.status, detail);
+      const kind = res.status === 402 ? "out_of_credits" : res.status === 401 ? "sign_in_required" : classify(res.status, detail);
+      throw new ApiError(kind, res.status, detail);
     }
     const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `resume.${fmt}`;
     return { blob: await res.blob(), filename };

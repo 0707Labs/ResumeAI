@@ -87,7 +87,7 @@ describe("Step 6: export", () => {
     await user.click(downloadButton("DOCX"));
 
     await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(blob, "Asha_Rao_tailored.docx"));
-    const [fmt, , sent] = exportFile.mock.calls[0];
+    const [fmt, , , sent] = exportFile.mock.calls[0];
     expect(fmt).toBe("docx");
     expect(sent.bullets.map((b) => [b.id, b.review])).toEqual([
       ["t1", "approved"], ["t2", "rejected"], ["t3", "rejected"], ["t4", "pending"],
@@ -104,6 +104,20 @@ describe("Step 6: export", () => {
     render(<ExportPage />);
     await user.click(downloadButton("PDF"));
     expect(await screen.findByRole("alert")).toHaveTextContent(/can't reach the analysis service/i);
+    expect(saveBlob).not.toHaveBeenCalled();
+  });
+
+  it("signed out: asks to sign in to download, and comes back here after", async () => {
+    const user = userEvent.setup();
+    useSession.getState().decide("t2", "approved");
+    useSession.getState().decide("t3", "rejected");
+    vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
+    vi.spyOn(api, "exportFile").mockRejectedValue(new ApiError("sign_in_required", 401));
+    render(<ExportPage />);
+    await user.click(downloadButton("DOCX"));
+    expect(await screen.findByText("Sign in to download")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login?next=/export");
+    expect(screen.queryByText("Download didn't finish")).not.toBeInTheDocument();
     expect(saveBlob).not.toHaveBeenCalled();
   });
 

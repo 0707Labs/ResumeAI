@@ -79,6 +79,7 @@ frontend/
   Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
   reusing servers already running there; a backend with a real key fails the spec's rules-only check.
   Specs live in e2e/; Vitest only picks up tests/.
+  Both specs need Postgres: the happy path signs up first, because downloading is paid.
   e2e/auth.spec.ts also needs Postgres (the backend's RT_DATABASE_URL, migrated): it seeds an
   invite and any missing notices with the admin CLI and reads magic links from backend/.dev-outbox.
   Each run sends 2 magic links; a reused backend keeps the 5-per-15-min per-IP limit in memory.

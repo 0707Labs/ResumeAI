@@ -304,30 +304,30 @@ cost per analysis from `llm_usage` (priced from `[llm_prices]`).
 
 ---
 
-## 9. Spending: analyses and entitlements
+## 9. Spending: the download pays
 
-A purchase is only worth something because starting an analysis spends it.
+A purchase is only worth something because downloading spends it. Tailoring is free.
 
-- **Analyze** (signed in) calls `POST /api/analyses`. Holding the user's row lock, the
-  backend picks what pays, in this order: an **active pass** under its fair-use cap,
-  then **Pro** (an `active` subscription) under its per-period cap, then **one credit**
-  (`[analyses].credits_per_analysis`), then the **free allowance**
+- **Analyze** (signed in) calls `POST /api/analyses`, which is free. It pins the parsed
+  resume and job description on the server (`analyses.resume`, `.jd`, `.inputs_sha256`).
+- **Claude is used only for the caller's own analysis and its pinned inputs.** Signed
+  out, or with an unknown, someone else's or expired (`[analyses].usable_hours`)
+  analysis, or with a resume or job description other than the pinned ones, every stage
+  runs rules-only. Claude tailors once per analysis; the first result is stored on it
+  (`tailored`, `llm_tailored`). `llm_usage.analysis_id` is the checked server-side id,
+  never the raw header.
+- **Downloading** (`POST /api/export/{docx,pdf}`) needs sign-in and the analysis
+  (`X-Analysis-Id`). The file is built from the pinned resume and job description; the
+  browser's approved and edited bullets are re-verified against that resume. The
+  **first** download of an analysis is charged, holding the user's row lock, to: an
+  **active pass** under its fair-use cap, then **Pro** (an `active` subscription) under
+  its per-period cap, then **one credit** (`[analyses].credits_per_analysis`, ledger key
+  `charge:{analysis_id}`, reason `analysis_charge`), then a **free download**
   (`[free].analyses_per_month`, calendar month in UTC). Nothing left: **402
-  `no_credits`**, and the app opens the out-of-credits dialog.
-- A credit is charged at start (ledger key `charge:{analysis_id}`, reason
-  `analysis_charge`) and the analysis is `reserved`.
-- `POST /api/tailor` with that `X-Analysis-Id` settles it once:
-  - Claude tailored it: **committed** (the credit is kept; pass, Pro and free runs count).
-  - Claude failed and it fell back to rules only, or tailoring crashed: **refunded**
-    (`refund:{analysis_id}`, reason `refund`), and the run counts against nothing.
-  - Never tailored within `[analyses].usable_hours`: refunded as `abandoned` by
-    `python -m app.billing.cli sweep-analyses` (run it from cron, hourly) or on the
-    user's next start.
-  A second refund or charge for one analysis is impossible: the conditional update on
-  the analysis, the ledger keys and two partial unique indexes all prevent it.
-- **Claude is used only for the caller's own live analysis.** Signed out, or with an
-  unknown, someone else's, failed or expired analysis id, every stage runs rules-only
-  (no Claude calls, so nothing to pay for). Claude tailors once per analysis; gap,
-  score and mentor may use it until `usable_until`. `llm_usage.analysis_id` is the
-  checked server-side id, never the raw header.
-- Free runs currently get the full pipeline (mentor and export included).
+  `no_credits`**, and the app opens the out-of-credits dialog. Rules-only tailorings
+  are charged like any other download.
+- Re-downloads of a paid analysis are free. Charging and rendering share one
+  transaction, so a failed export charges nothing; a second charge for one analysis is
+  impossible (row lock, ledger key, and a partial unique index).
+- Signed out: tailoring, score, mentor and the preview work (rules-only); the download
+  asks you to sign in, then starts an analysis for this resume and job.

@@ -63,13 +63,14 @@ class Product(_Strict):
 
 
 class Free(_Strict):
+    # Analyses a user may download free each calendar month (UTC).
     analyses_per_month: Annotated[int, Field(ge=0)]
 
 
 class Analyses(_Strict):
+    # Credits the first download of an analysis costs, when no pass or Pro covers it.
     credits_per_analysis: PositiveInt = 1
-    # How long a started analysis may use Claude. A credit not committed by then (tailoring
-    # never finished) is refunded, and the run stops counting against any allowance.
+    # How long a started analysis may use Claude.
     usable_hours: PositiveInt = 24
 
 

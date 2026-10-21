@@ -2,16 +2,20 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
-from app.api.analyses import billed_analysis
+from app.api.analyses import billed_analysis, pinned_to
+from app.auth.deps import current_user
 from app.billing import analyses
+from app.billing.config import BillingConfig, get_billing_config
+from app.billing.costs import parse_analysis_id
 from app.config import get_settings
-from app.db.models import Analysis
+from app.db.models import Analysis, User
 from app.db.session import get_db
 from app.export.render import to_docx, to_pdf
 from app.llm.client import LLM, get_llm
@@ -47,8 +51,9 @@ NO_ANALYSIS = "Rules only (sign in and start an analysis to use Claude)."
 
 
 def claude_for(use_llm: bool, analysis: Analysis | None) -> tuple[LLM | None, str | None]:
-    """Claude only for a request billed to the caller's own live analysis; otherwise
-    rules-only, with a note saying why (None when the caller asked for rules only)."""
+    """Claude only for the caller's own live analysis, with this request's resume and
+    job description pinned on it (see pinned_to); otherwise rules-only, with a note
+    saying why (None when the caller asked for rules only)."""
     if not use_llm:
         return None, None
     llm = get_llm()
@@ -102,7 +107,7 @@ class GapRequest(BaseModel):
 @router.post("/api/gap/analyze")
 def gap_analyze(body: GapRequest, billed: Analysis | None = Depends(billed_analysis)) -> GapAnalysis:
     analysis = analyze(body.resume, body.jd)
-    llm, why = claude_for(body.use_llm, billed)
+    llm, why = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
     if llm is None:
         return analysis.model_copy(update={"notes": [why or "Rules only."]})
     analysis, note = refine_with_llm(analysis, body.resume, llm)
@@ -133,27 +138,19 @@ class TailorRequest(BaseModel):
 @router.post("/api/tailor")
 async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(billed_analysis),
                         db: AsyncSession = Depends(get_db)) -> TailoredResume:
-    """Tailoring settles a billed analysis: a Claude tailoring commits its credit (or
-    counts its pass, Pro or free run); an error or a rules-only fallback refunds it.
-    Claude tailors once per analysis; a later call is rules-only."""
-    if billed is not None and billed.status != "pending":
+    """Free. For a signed-in analysis Claude tailors once (a repeat is rules-only), and
+    the first result is kept on the analysis."""
+    billed = pinned_to(billed, body.resume, body.jd)
+    if billed is not None and billed.tailored is not None:
         billed = None
     llm, why = claude_for(body.use_llm, billed)
-    try:
-        result = await run_in_threadpool(tailor, body.resume, body.jd, body.analysis, llm)
-    except Exception:
-        if billed is not None:
-            await analyses.release(db, billed.id, billed.user_id, reason="error")
-            await db.commit()
-        raise
+    result = await run_in_threadpool(tailor, body.resume, body.jd, body.analysis, llm)
     if why:
         result.notes.insert(0, why)
     if billed is not None:
-        if llm is None or any(n.startswith(RULES_FALLBACK) for n in result.notes):
-            await analyses.release(db, billed.id, billed.user_id, reason="llm_degraded", degraded=True)
-            result.notes.append("This run fell back to rules only, so it wasn't charged.")
-        else:
-            await analyses.finish(db, billed.id, billed.user_id)
+        billed.tailored = result.model_dump(mode="json")
+        billed.llm_tailored = llm is not None and not any(n.startswith(RULES_FALLBACK) for n in result.notes)
+        billed.tailored_at = func.now()
         await db.commit()
     return result
 
@@ -219,7 +216,7 @@ class ScoreResponse(BaseModel):
 
 @router.post("/api/ats/score")
 def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis)) -> ScoreResponse:
-    llm, _ = claude_for(body.use_llm, billed)
+    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
     before = score(body.resume, body.jd, llm=llm)
     if body.tailored is None:
         return ScoreResponse(before=before)
@@ -242,7 +239,7 @@ def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysi
     analysis = body.analysis or analyze(body.resume, body.jd)
     ats = body.ats or score(body.resume, body.jd)
     advice = build_advice(body.resume, body.jd, analysis, ats)
-    llm, _ = claude_for(body.use_llm, billed)
+    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
     return polish(advice, llm) if llm is not None else advice
 
 
@@ -286,13 +283,50 @@ def export_preview(body: ExportRequest) -> PreviewResponse:
     return PreviewResponse(resume=final, changed_lines=changed)
 
 
-@router.post("/api/export/{fmt}")
-def export(fmt: Literal["docx", "pdf"], body: ExportRequest) -> Response:
-    """Only bullets that pass verification now AND were approved by the user use
-    tailored text; everything else exports in its original wording."""
-    checked = reverify(body.tailored, body.resume, body.analysis, body.jd_text)
-    final = apply_tailoring(body.resume, checked, approved_only=True)
+def _render(fmt: str, resume: Resume, tailored: TailoredResume, analysis: GapAnalysis | None,
+            jd_text: str) -> tuple[bytes, str]:
+    checked = reverify(tailored, resume, analysis, jd_text)
+    final = apply_tailoring(resume, checked, approved_only=True)
     data = to_docx(final) if fmt == "docx" else to_pdf(final)
     stem = re.sub(r"[^A-Za-z0-9]+", "_", final.name or "resume").strip("_") or "resume"
-    return Response(content=data, media_type=_MEDIA[fmt], headers={
-        "Content-Disposition": f'attachment; filename="{stem}_tailored.{fmt}"'})
+    return data, f"{stem}_tailored.{fmt}"
+
+
+@router.post("/api/export/{fmt}")
+async def export(
+    fmt: Literal["docx", "pdf"],
+    body: ExportRequest,
+    x_analysis_id: str | None = Header(default=None),
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+    config: BillingConfig = Depends(get_billing_config),
+) -> Response:
+    """The download is what pays. Needs sign-in and the analysis (X-Analysis-Id); the
+    file is built from the resume and job description pinned on it (body.resume and
+    body.jd_text are ignored). The first download of an analysis is charged to a pass,
+    Pro, a credit or a free download, in that order (402 no_credits when none can);
+    re-downloads are free. Charge and render share a transaction, so a failed export
+    charges nothing.
+
+    Only bullets that pass verification now AND were approved by the user use tailored
+    text; everything else exports in its original wording."""
+    analysis_id = parse_analysis_id(x_analysis_id)
+    if analysis_id is None:
+        raise HTTPException(status_code=409, detail="analysis_required")
+    try:
+        paid = await analyses.pay_for_download(db, config, user.id, analysis_id)
+    except analyses.UnknownAnalysis:
+        raise HTTPException(status_code=404, detail="analysis_not_found") from None
+    except analyses.NoEntitlement as exc:
+        await db.rollback()
+        raise HTTPException(status_code=402, detail=exc.decision.reason) from None
+    row = paid.analysis
+    try:
+        data, filename = await run_in_threadpool(_render, fmt, Resume.model_validate(row.resume), body.tailored,
+                                                 body.analysis, row.jd.get("raw_text", ""))
+    except Exception:
+        await db.rollback()
+        raise
+    await db.commit()
+    return Response(content=data, media_type=_MEDIA[fmt],
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})

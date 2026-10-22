@@ -53,6 +53,7 @@ def test_plans_are_public_and_come_from_the_catalog(client, api_app, monkeypatch
     pack = body["plans"][0]
     assert (pack["credits"], pack["prices"]["INR"], pack["available"]) == (5, 49900, False)
     assert body["prices_include_tax"] is True and body["free_analyses_per_month"] == 2
+    assert body["redownload_free_days"] == 7
 
 
 def test_plans_show_pro_when_flagged_on_and_available_when_configured(client, api_app, monkeypatch):

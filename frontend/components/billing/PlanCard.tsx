@@ -5,37 +5,12 @@ import { useState } from "react";
 
 import { CheckIcon } from "@/components/icons";
 import { Button, Card } from "@/components/ui";
-import { billingApi, goTo, priceList } from "@/lib/billing";
+import { billingApi, goTo, planPoints, planPrice, priceList } from "@/lib/billing";
 import type { Plan } from "@/lib/schemas";
 
+export { planPoints, planPrice };
+
 /** What a plan gets you, in plain words. Every number comes from the backend catalog. */
-export function planPoints(plan: Plan): string[] {
-  switch (plan.kind) {
-    case "credit_pack":
-      return [
-        `${plan.credits} credits; one credit tailors one resume to one job`,
-        "One-time payment. Nothing renews.",
-      ];
-    case "pass":
-      return [
-        `Tailor as often as you need for ${plan.pass_days} days`,
-        `Fair use: up to ${plan.fair_use_cap} tailoring runs per pass`,
-        "One-time payment. Nothing renews.",
-        `Buying another adds ${plan.pass_days} days after the current pass ends.`,
-      ];
-    case "subscription":
-      return [
-        `Tailor as often as you need, up to ${plan.fair_use_cap} runs per ${plan.interval}`,
-        `Renews every ${plan.interval} until you cancel. Cancel anytime from the payment portal.`,
-      ];
-  }
-}
-
-export function planPrice(plan: Plan): string {
-  const prices = priceList(plan.prices).join(" · ");
-  return plan.kind === "subscription" ? `${prices} per ${plan.interval}` : prices;
-}
-
 /** Starts checkout for one plan: only the product key goes to our backend; the browser
  * then leaves for the provider's hosted payment page. A new key per click, so a double
  * click opens one checkout, never two. */
@@ -79,17 +54,18 @@ export function BuyButton({ plan, signedIn, onError, className = "", beforeCheck
   );
 }
 
-export function PlanCard({ plan, signedIn, onError }: {
+export function PlanCard({ plan, signedIn, onError, redownloadDays }: {
   plan: Plan;
   signedIn: boolean;
   onError: (e: unknown) => void;
+  redownloadDays?: number;
 }) {
   return (
     <Card as="div" className="flex flex-col" aria-labelledby={`plan-${plan.key}`}>
       <h2 id={`plan-${plan.key}`} className="text-lg font-semibold">{plan.name}</h2>
       <p className="mt-2 text-2xl font-semibold tracking-tight">{planPrice(plan)}</p>
       <ul className="mt-4 flex-1 space-y-2 text-sm">
-        {planPoints(plan).map((point) => (
+        {planPoints(plan, redownloadDays).map((point) => (
           <li key={point} className="flex gap-2">
             <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
             <span>{point}</span>

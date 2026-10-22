@@ -121,3 +121,46 @@ export const LEDGER_REASON: Record<string, string> = {
   admin_adjust: "Adjustment by support",
   purchase_reversal: "Payment refunded",
 };
+
+/** What each plan gives, in plain words. Tailoring is free to try; these pay for the clean
+ * DOCX/PDF downloads (and, past the monthly free tailorings, let you keep tailoring). */
+export function planPoints(plan: S.Plan, redownloadDays = 7): string[] {
+  const window = `Re-download the same resume free for ${redownloadDays === 7 ? "a week" : `${redownloadDays} days`}`;
+  switch (plan.kind) {
+    case "credit_pack":
+      return [
+        `${plan.credits} clean downloads (DOCX or PDF), one credit each`,
+        window,
+        "Keep tailoring after your free ones run out",
+        "One-time payment. Nothing renews.",
+      ];
+    case "pass":
+      return [
+        `${plan.pass_days} days: tailor as often as you need`,
+        `Up to ${plan.fair_use_cap} clean downloads (fair use)`,
+        window,
+        "One-time payment. Nothing renews.",
+      ];
+    case "subscription":
+      return [
+        `Tailor as often as you need, up to ${plan.fair_use_cap} downloads per ${plan.interval}`,
+        `Renews every ${plan.interval} until you cancel. Cancel anytime from the payment portal.`,
+      ];
+  }
+}
+
+export function planPrice(plan: S.Plan): string {
+  const prices = priceList(plan.prices).join(" · ");
+  return plan.kind === "subscription" ? `${prices} per ${plan.interval}` : prices;
+}
+
+
+/** The free tier, in the same words as planPoints. */
+export function freePoints(tailoringsPerMonth: number): string[] {
+  return [
+    `${tailoringsPerMonth} tailorings a month`,
+    "Gap questions, change review, ATS score and mentor advice",
+    "Watermarked preview; the clean file needs a credit or a pass",
+    "No card needed",
+  ];
+}

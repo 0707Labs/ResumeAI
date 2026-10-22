@@ -366,6 +366,7 @@ export const Plan = z.object({
 });
 export const Plans = z.object({
   free_analyses_per_month: z.number().int(),
+  redownload_free_days: z.number().int().default(7),
   prices_include_tax: z.boolean(),
   plans: z.array(Plan),
 });

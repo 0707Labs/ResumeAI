@@ -67,9 +67,11 @@ describe("pricing page", () => {
     const pack = await screen.findByRole("heading", { name: "Credit pack" });
     const card = pack.parentElement!;
     expect(within(card).getByText("₹499 · $6")).toBeInTheDocument();
-    expect(within(card).getByText(/5 credits/)).toBeInTheDocument();
-    expect(screen.getByText("2 tailoring runs a month")).toBeInTheDocument();
-    expect(screen.getByText(/Fair use: up to 40 tailoring runs/)).toBeInTheDocument();
+    expect(within(card).getByText(/5 clean downloads \(DOCX or PDF\), one credit each/)).toBeInTheDocument();
+    expect(within(card).getByText("Re-download the same resume free for a week")).toBeInTheDocument();
+    expect(screen.getByText("2 tailorings a month")).toBeInTheDocument();
+    expect(screen.getByText(/Watermarked preview; the clean file needs a credit or a pass/)).toBeInTheDocument();
+    expect(screen.getByText("Up to 40 clean downloads (fair use)")).toBeInTheDocument();
     expect(screen.getByText(/Prices include taxes/)).toBeInTheDocument();
     expect(screen.getByText(/merchant of record/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pro" })).not.toBeInTheDocument();

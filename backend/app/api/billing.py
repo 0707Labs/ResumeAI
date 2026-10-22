@@ -61,7 +61,8 @@ class PlanOut(BaseModel):
 
 
 class PlansOut(BaseModel):
-    free_analyses_per_month: int
+    free_analyses_per_month: int  # free tailorings; downloads are always paid
+    redownload_free_days: int  # re-downloading the same tailored resume is free this long
     prices_include_tax: bool
     plans: list[PlanOut]
 
@@ -75,6 +76,7 @@ def plans(config: BillingConfig = Depends(billing_config)) -> PlansOut:
         mode = None
     return PlansOut(
         free_analyses_per_month=config.free.analyses_per_month,
+        redownload_free_days=config.downloads.redownload_free_days,
         prices_include_tax=config.display.prices_include_tax,
         plans=[
             PlanOut(key=p.key, kind=p.kind, name=p.name, prices=dict(p.prices), credits=p.credits,

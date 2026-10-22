@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, ErrorIcon, FileIcon, ShieldIcon, UploadIcon } from "@/components/icons";
 import { PublicPage } from "@/components/site/PublicPage";
 import { SignUpButton } from "@/components/site/SignUpButton";
-import { priceList } from "@/lib/billing";
+import { freePoints, planPoints, priceList } from "@/lib/billing";
 import type { Plans } from "@/lib/schemas";
 import { COMPANY, SITE_URL, getPlans, getPublicConfig } from "@/lib/site";
 
@@ -44,9 +44,9 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What does a credit get me?",
-    a: "One credit covers one resume tailored to one job. You start with a free monthly allowance; credit packs " +
-      "and the Job Hunt Pass are for when you're applying to a lot of roles. There's no subscription unless you " +
-      "choose one.",
+    a: "One credit is one clean download (DOCX or PDF) of a tailored resume, and re-downloading that same resume " +
+      "is free for a week. Tailoring, review and the watermarked preview are free within a monthly allowance. " +
+      "The Job Hunt Pass covers downloads for 30 days. There's no subscription unless you choose one.",
   },
   {
     q: "Can I get a refund?",
@@ -250,48 +250,83 @@ function SampleRow({ before, after, source, verdict }: {
 }
 
 function Pricing({ plans, inviteOnly }: { plans: Plans | null; inviteOnly: boolean }) {
-  const paid = plans?.plans ?? [];
+  const paid = (plans?.plans ?? []).filter((p) => p.kind !== "subscription" || p.available);
+  const start = inviteOnly
+    ? { href: "/waitlist", label: "Request an invite" }
+    : { href: "/signup", label: "Start free" };
   return (
-    <Section id="pricing" title="Pricing" intro="Start free. Pay only if you're applying to a lot of jobs.">
+    <Section id="pricing" title="Pricing"
+      intro="Tailor and review for free. Pay only for the clean file you send to employers.">
       {plans ? (
-        <ul className="grid gap-4 md:grid-cols-3">
-          <li className="rounded-2xl border border-border bg-surface p-5">
-            <h3 className="font-semibold">Free</h3>
-            <p className="mt-2 text-2xl font-semibold">{plans.free_analyses_per_month} a month</p>
-            <p className="mt-1 text-sm text-muted">Tailoring runs every month, no card needed.</p>
-          </li>
-          {paid.map((p) => (
-            <li key={p.key} className="rounded-2xl border border-border bg-surface p-5">
-              <h3 className="font-semibold">{p.name}</h3>
-              <p className="mt-2 text-2xl font-semibold">{priceList(p.prices).join(" · ")}</p>
-              <p className="mt-1 text-sm text-muted">{planSummary(p)}</p>
-            </li>
-          ))}
+        <ul className="grid items-stretch gap-x-4 gap-y-8 md:grid-cols-3 md:gap-y-4">
+          <PriceCard name="Free" tagline="Try it on a real job" amount="₹0" detail="Every month"
+            points={freePoints(plans.free_analyses_per_month)} cta={start} />
+          {paid.map((p) => {
+            const [main, ...other] = priceList(p.prices);
+            return (
+              <PriceCard key={p.key} name={p.name} featured={p.kind === "pass"}
+                tagline={p.kind === "pass" ? "For an active job hunt" : p.kind === "credit_pack" ? "For a few applications" : "For ongoing use"}
+                amount={main}
+                detail={[other.length ? `or ${other.join(" / ")}` : "", p.kind === "subscription" ? `per ${p.interval}` : "one-time"]
+                  .filter(Boolean).join(" · ")}
+                points={planPoints(p, plans.redownload_free_days)}
+                cta={{ href: "/pricing", label: p.kind === "pass" ? "Get the pass" : `Get the ${p.name.toLowerCase()}` }} />
+            );
+          })}
         </ul>
       ) : (
         <p className="max-w-2xl rounded-2xl border border-border bg-surface p-5">
-          Every account gets free tailoring runs each month. Credit packs and the Job Hunt Pass are there for when
-          you&apos;re applying to a lot of jobs.
+          Every account gets free tailorings each month. Credit packs and the Job Hunt Pass pay for the clean
+          downloads when you&apos;re applying to a lot of jobs.
         </p>
       )}
-      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
-        {plans && (
-          <span>
-            {plans.prices_include_tax ? "Prices include taxes." : "Taxes are added at checkout where they apply."}{" "}
-            Payments are processed by Dodo Payments.
-          </span>
-        )}
-        <Link href="/pricing" className="font-medium text-accent underline">See full pricing</Link>
-        {!inviteOnly && <Link href="/signup" className="font-medium text-accent underline">Create an account</Link>}
-      </div>
+      <p className="mt-6 text-sm text-muted">
+        {plans && (plans.prices_include_tax ? "Prices include taxes. " : "Taxes are added at checkout where they apply. ")}
+        Payments are handled by Dodo Payments, our merchant of record.{" "}
+        <Link href="/pricing" className="font-medium text-accent underline">Compare plans in detail</Link>
+      </p>
     </Section>
   );
 }
 
-function planSummary(p: Plans["plans"][number]): string {
-  if (p.kind === "credit_pack") return `${p.credits} credits. One credit tailors one resume to one job.`;
-  if (p.kind === "pass") return `${p.pass_days} days of tailoring${p.fair_use_cap ? `, fair use up to ${p.fair_use_cap} runs` : ""}.`;
-  return `Billed every ${p.interval ?? "month"}${p.fair_use_cap ? `, fair use up to ${p.fair_use_cap} runs` : ""}. Cancel any time.`;
+function PriceCard({ name, tagline, amount, detail, points, cta, featured = false }: {
+  name: string;
+  tagline: string;
+  amount: string;
+  detail: string;
+  points: string[];
+  cta: { href: string; label: string };
+  featured?: boolean;
+}) {
+  const id = `plan-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  return (
+    <li aria-labelledby={id} className={`relative flex flex-col rounded-2xl border bg-surface p-6 ${
+      featured ? "border-accent ring-1 ring-accent" : "border-border"}`}>
+      {featured && (
+        <p className="absolute -top-3 left-6 rounded-full bg-accent px-3 py-0.5 text-xs font-semibold text-accent-fg">
+          Best value
+        </p>
+      )}
+      <h3 id={id} className="text-lg font-semibold">{name}</h3>
+      <p className="mt-0.5 text-sm text-muted">{tagline}</p>
+      <p className="mt-5 flex items-baseline gap-2">
+        <span className="text-4xl font-semibold tracking-tight">{amount}</span>
+      </p>
+      <p className="mt-1 text-sm text-muted">{detail}</p>
+      <ul className="mt-5 flex-1 space-y-2.5 border-t border-border pt-5 text-sm">
+        {points.map((point) => (
+          <li key={point} className="flex gap-2">
+            <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
+            <span>{point}</span>
+          </li>
+        ))}
+      </ul>
+      <Link href={cta.href} className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium ${
+        featured ? "bg-accent text-accent-fg hover:bg-accent-hover" : "border border-border-strong text-fg hover:bg-surface-2"}`}>
+        {cta.label}
+      </Link>
+    </li>
+  );
 }
 
 function Faq({ items }: { items: { q: string; a: string }[] }) {

@@ -9,7 +9,7 @@ import { PlanCard } from "@/components/billing/PlanCard";
 import { CheckIcon } from "@/components/icons";
 import { Card } from "@/components/ui";
 import { api } from "@/lib/api";
-import { billingApi } from "@/lib/billing";
+import { billingApi, freePoints } from "@/lib/billing";
 import type { Plans } from "@/lib/schemas";
 
 export default function PricingPage() {
@@ -43,21 +43,20 @@ export default function PricingPage() {
               <h2 id="plan-free" className="text-lg font-semibold">Free</h2>
               <p className="mt-2 text-2xl font-semibold tracking-tight">No charge</p>
               <ul className="mt-4 flex-1 space-y-2 text-sm">
-                <li className="flex gap-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
-                  <span>{plans.free_analyses_per_month} tailoring runs a month</span>
-                </li>
-                <li className="flex gap-2">
-                  <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
-                  <span>No card needed</span>
-                </li>
+                {freePoints(plans.free_analyses_per_month).map((point) => (
+                  <li key={point} className="flex gap-2">
+                    <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
+                    <span>{point}</span>
+                  </li>
+                ))}
               </ul>
               <Link href="/app" className="mt-6 inline-flex min-h-10 items-center justify-center rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-fg hover:bg-surface-2">
                 Start tailoring
               </Link>
             </Card>
             {plans.plans.map((plan) => (
-              <PlanCard key={plan.key} plan={plan} signedIn={signedIn} onError={setBuyError} />
+              <PlanCard key={plan.key} plan={plan} signedIn={signedIn} onError={setBuyError}
+                redownloadDays={plans.redownload_free_days} />
             ))}
           </div>
 

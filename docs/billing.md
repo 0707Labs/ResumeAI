@@ -487,6 +487,15 @@ migration `0015_costs_revenue`.
   refund needs the product's Dodo id in `billing.toml`. Disputes have no API: answer
   them in Dodo's dashboard.
 
+- **Admin pages:** `/admin/revenue` (billing.read; refunds need billing.write) shows
+  gross, refunds, fees and net, a daily trend, product and currency splits,
+  subscriptions, referral liability and the payments list. `/admin/costs` (costs.read)
+  shows budget meters, spend by day/week/month, by step, model and plan, per-analysis
+  average and p95, margin, top users and the price table. Budget fields, the kill switch
+  and the manual pause are editable there by a superadmin. Both pages say when the rollup
+  last ran and warn if it never has. Charts use the `--series-1/2` tokens, and each one
+  has a table view.
+
 Cron (same environment as the app):
 
 ```

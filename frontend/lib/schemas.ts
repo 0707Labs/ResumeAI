@@ -828,10 +828,61 @@ export const AdminSettings = z.object({
     invite_only: z.boolean(), analyses_paused: z.boolean(), maintenance_banner: z.string().nullable(),
     invites_per_user: z.number().int(), signup_bonus_credits: z.number().int(), referrals_enabled: z.boolean(),
     referral_trigger: z.enum(["on_verified_signup", "on_first_tailoring"]), referral_reward_credits: z.number().int(),
-    referral_monthly_cap: z.number().int(),
+    referral_monthly_cap: z.number().int(), daily_budget_usd: z.number(), monthly_budget_usd: z.number(),
+    budget_kill_switch: z.boolean(),
   }),
   overridden: z.array(z.string()),
   defaults: z.record(z.string(), z.unknown()),
 });
 export type AdminSettings = z.infer<typeof AdminSettings>;
 export type SettingKey = keyof AdminSettings["values"];
+
+// --- Admin revenue and costs (app/api/admin_money.py) ---
+
+export const AdminRevenue = z.object({
+  as_of: z.string().nullable(), days: z.number().int(),
+  totals: z.object({
+    gross_usd: z.number(), refunds_usd: z.number(), fees_usd: z.number(), net_usd: z.number(), net_after_fees_usd: z.number(),
+    payments: z.number().int(), disputes: z.number().int(), unsettled: z.number().int(),
+  }),
+  fees_are_estimates: z.boolean(),
+  by_product: z.array(z.object({ product_key: z.string(), kind: z.string(), payments: z.number().int(), gross_usd: z.number(),
+    refunds_usd: z.number(), fees_usd: z.number(), net_usd: z.number() })),
+  by_currency: z.array(z.object({ currency: z.string(), payments: z.number().int(), gross_minor: z.number().int(),
+    refunded_minor: z.number().int() })),
+  daily: z.array(z.object({ day: z.string(), gross_usd: z.number(), net_usd: z.number() })),
+  subscriptions: z.object({ active: z.number().int(), by_status: z.record(z.string(), z.number().int()),
+    cancelled_in_window: z.number().int(), churn_rate: z.number().nullable(), renewals_due_7d: z.number().int() }),
+  referral_liability: z.object({ credits_granted_in_window: z.number().int(), credits_granted_total: z.number().int(),
+    est_value_usd: z.number(), per_credit_usd: z.number() }),
+});
+export type AdminRevenue = z.infer<typeof AdminRevenue>;
+
+export const AdminPaymentRow = z.object({
+  id: z.uuid(), user_id: z.uuid().nullable(), user_email: z.string().nullable(), product_key: z.string(), kind: z.string(),
+  status: z.string(), mode: z.string(), currency: z.string().nullable(), amount_minor: z.number().int().nullable(),
+  refunded_amount_minor: z.number().int(), provider_payment_id: z.string().nullable(), disputed: z.boolean(),
+  created_at: z.string(), paid_at: z.string().nullable(),
+});
+export type AdminPaymentRow = z.infer<typeof AdminPaymentRow>;
+export const AdminPaymentPage = page(AdminPaymentRow);
+export const RefundResult = z.object({ provider_refund_id: z.string().nullable(), status: z.string().nullable() });
+
+const CostGroup = z.array(z.object({ key: z.string(), cost_usd: z.number(), calls: z.number().int() }));
+export const AdminCosts = z.object({
+  as_of: z.string().nullable(), days: z.number().int(), granularity: z.enum(["day", "week", "month"]),
+  total_usd: z.number(), calls: z.number().int(), failed_calls: z.number().int(), error_rate: z.number().nullable(),
+  wasted_usd: z.number(), unpriced_calls: z.number().int(), free_tier_usd: z.number(),
+  series: z.array(z.object({ period: z.string(), cost_usd: z.number(), calls: z.number().int() })),
+  by_step: CostGroup, by_model: CostGroup, by_plan: CostGroup,
+  per_analysis: z.object({ analyses: z.number().int(), avg_usd: z.number().nullable(), p95_usd: z.number().nullable() }),
+  top_users: z.array(z.object({ user_id: z.uuid(), email: z.string(), cost_usd: z.number(), calls: z.number().int() })),
+  margin: z.object({ net_revenue_usd: z.number(), analyses: z.number().int(), cost_usd: z.number(),
+    revenue_per_analysis_usd: z.number().nullable(), cost_per_analysis_usd: z.number().nullable() }),
+  budget: z.object({ today_usd: z.number(), month_usd: z.number(), daily_budget_usd: z.number(), monthly_budget_usd: z.number(),
+    kill_switch: z.boolean(), paused: z.enum(["manual", "daily_budget", "monthly_budget"]).nullable(), analyses_paused: z.boolean() }),
+  per_user_daily_caps: z.object({ free: z.number().int().nullable(), paid: z.number().int().nullable() }),
+  prices: z.array(z.object({ model: z.string(), input: z.number(), output: z.number(), cache_read: z.number().nullable(),
+    cache_write: z.number().nullable() })),
+});
+export type AdminCosts = z.infer<typeof AdminCosts>;

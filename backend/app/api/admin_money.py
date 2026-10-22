@@ -74,7 +74,9 @@ async def revenue(days: int = Days, _: User = Depends(require("billing.read")), 
     fees = sum(r.fees_usd_cents for r in rows)
     by_product: dict[str, dict] = {}
     by_currency: dict[str, dict] = {}
-    daily: dict[str, dict] = {}
+    # Every day in the window, so a quiet day reads as zero rather than being skipped.
+    daily: dict[str, dict] = {(first + timedelta(days=i)).isoformat(): {"day": (first + timedelta(days=i)).isoformat(),
+                                                                        "gross_usd": 0, "net_usd": 0} for i in range(days)}
     for r in rows:
         p = by_product.setdefault(r.product_key, {"product_key": r.product_key, "kind": r.kind, "payments": 0,
                                                   "gross_usd": 0, "refunds_usd": 0, "fees_usd": 0, "net_usd": 0})
@@ -86,7 +88,7 @@ async def revenue(days: int = Days, _: User = Depends(require("billing.read")), 
         c["payments"] += r.payments
         c["gross_minor"] += r.gross_minor
         c["refunded_minor"] += r.refunded_minor
-        d = daily.setdefault(r.day.isoformat(), {"day": r.day.isoformat(), "gross_usd": 0, "net_usd": 0})
+        d = daily[r.day.isoformat()]
         d["gross_usd"] += r.settled_usd_cents
         d["net_usd"] += r.settled_usd_cents - r.refunded_usd_cents - r.fees_usd_cents
     for p in by_product.values():
@@ -228,7 +230,7 @@ async def costs(days: int = Days, granularity: Literal["day", "week", "month"] =
     since_dt = datetime(first.year, first.month, first.day, tzinfo=UTC)
     rows = list(await db.scalars(select(DailyLlmCost).where(DailyLlmCost.day >= first)))
     total = sum((r.cost_usd for r in rows), Decimal(0))
-    series: dict[str, list] = defaultdict(lambda: [Decimal(0), 0])
+    series: dict[str, list] = {_bucket(first + timedelta(days=i), granularity): [Decimal(0), 0] for i in range(days)}
     groups: dict[str, dict[str, list]] = {"stage": defaultdict(lambda: [Decimal(0), 0]),
                                           "model": defaultdict(lambda: [Decimal(0), 0]),
                                           "entitlement": defaultdict(lambda: [Decimal(0), 0])}

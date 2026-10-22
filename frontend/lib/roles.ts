@@ -41,8 +41,12 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     description: "Flagged referrals to approve or reject, paid ones to reverse, and the rules." },
   { href: "/admin/support", label: "Support", needs: "tickets.read",
     description: "Messages from the contact form: reply, note, assign, close." },
+  { href: "/admin/revenue", label: "Revenue", needs: "billing.read",
+    description: "Gross, refunds, fees and net by product and currency; subscriptions; payments and refunds." },
+  { href: "/admin/costs", label: "Costs", needs: "costs.read",
+    description: "Claude spend by step, model and plan; budgets, the kill switch and margin." },
   { href: "/admin/billing", label: "Billing", needs: "billing.read",
-    description: "Revenue, LLM cost, margin, billing reviews and webhook failures." },
+    description: "Billing reviews, webhook failures and the credit ledger." },
 ];
 
 export const sectionsFor = (me: Pick<Me, "capabilities">) => ADMIN_SECTIONS.filter((s) => can(me, s.needs));

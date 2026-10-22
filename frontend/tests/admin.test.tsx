@@ -32,7 +32,7 @@ describe("roles", () => {
 
   it("shows each role only the sections it can open", () => {
     expect(sectionsFor(SUPPORT).map((s) => s.href)).toEqual(["/admin", "/admin/users", "/admin/support"]);
-    expect(sectionsFor(ADMIN).map((s) => s.href)).toEqual(["/admin", "/admin/users", "/admin/referrals", "/admin/billing"]);
+    expect(sectionsFor(ADMIN).map((s) => s.href)).toEqual(["/admin", "/admin/users", "/admin/referrals", "/admin/revenue", "/admin/billing"]);
     expect(sectionsFor(USER)).toEqual([]);
   });
 
@@ -53,6 +53,8 @@ describe("admin protection", () => {
   it("tells step-up and forbidden apart from other errors", () => {
     expect(classify(401, "reauth_required")).toBe("reauth_required");
     expect(classify(403, "forbidden")).toBe("forbidden");
+    expect(classify(503, "analyses_paused")).toBe("analyses_paused");  // budget kill switch or a manual pause
+    expect(classify(503)).toBe("server");
     expect(classify(401, "not_signed_in")).toBe("invalid_input");
     expect(reauthUrl("/admin/settings")).toBe("/signin?next=%2Fadmin%2Fsettings&reauth=1");
   });
@@ -74,7 +76,7 @@ describe("AdminShell", () => {
     render(<AdminShell me={ADMIN} initialTheme="system"><p>content</p></AdminShell>);
     const [mobile, desktop] = screen.getAllByRole("navigation", { name: "Admin sections" });
     for (const nav of [mobile, desktop]) {
-      expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Users", "Referrals", "Billing"]);
+      expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Users", "Referrals", "Revenue", "Billing"]);
       expect(within(nav).getByRole("link", { name: "Billing" })).toHaveAttribute("aria-current", "page");
       expect(within(nav).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
     }

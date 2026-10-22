@@ -51,6 +51,14 @@ export const adminApi = {
   updateTicket: (id: string, body: { status?: string; assignee_id?: string; unassign?: boolean }) =>
     call(S.AdminTicketRow, `/api/admin/support/${id}`, { method: "PATCH", body }),
 
+  revenue: (days: number) => call(S.AdminRevenue, `/api/admin/revenue?days=${days}`),
+  payments: (f: { status?: string; product_key?: string; q?: string; page?: number }) =>
+    call(S.AdminPaymentPage, `/api/admin/revenue/payments${qs({ ...f, page_size: 25 })}`),
+  refund: (id: string, reason: string, amount_minor?: number) =>
+    call(S.RefundResult, `/api/admin/revenue/payments/${id}/refund`, { method: "POST", body: { reason, ...(amount_minor ? { amount_minor } : {}) } }),
+  costs: (days: number, granularity: "day" | "week" | "month") =>
+    call(S.AdminCosts, `/api/admin/costs${qs({ days, granularity })}`),
+
   settings: () => call(S.AdminSettings, "/api/admin/settings"),
   setSetting: (key: S.SettingKey, value: unknown, reason: string) =>
     call(S.AdminSettings, `/api/admin/settings/${key}`, { method: "PUT", body: { value, reason } }),
@@ -71,6 +79,10 @@ export function adminError(err: unknown, path = typeof window === "undefined" ? 
     already_revoked: "That invite is already revoked.", revoked: "That invite is revoked.", no_pass_product: "No pass product is configured.",
     rate_limited: "Too many changes at once. Wait a minute.", invalid_input: "Check the fields: something isn't valid.",
     not_found: "That isn't there any more.", delta_zero: "Enter a non-zero number of credits.",
+    not_refundable: "That payment can't be refunded (not paid, or already refunded in full).",
+    more_than_paid: "That's more than is left to refund.",
+    partial_needs_product_id: "A partial refund needs this product's Dodo product ID in billing.toml. Refund in full, or use Dodo's dashboard.",
+    refund_failed: "Dodo didn't accept the refund. Nothing changed here; check Dodo's dashboard.",
   };
   return words[code] ?? "Something went wrong. Try again.";
 }

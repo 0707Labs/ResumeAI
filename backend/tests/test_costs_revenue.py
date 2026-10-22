@@ -285,6 +285,7 @@ def test_revenue_view(new_browser, pg_engine):
     run(pg_engine, lambda db: aggregates.refresh(db, load_billing_config(), days=3))
     assert support.get("/api/admin/revenue").status_code == 403
     out = admin.get("/api/admin/revenue").json()
+    assert len(out["daily"]) == 30 and out["daily"][0]["gross_usd"] == 0  # every day, quiet ones as zero
     t = out["totals"]
     assert (t["payments"], t["gross_usd"], t["refunds_usd"]) == (2, 11.2, 5.6)
     assert t["net_after_fees_usd"] == round(t["net_usd"] - t["fees_usd"], 2) and out["as_of"]
@@ -350,7 +351,10 @@ def test_costs_view(new_browser, pg_engine):
     assert support.get("/api/admin/costs").status_code == 403
     out = admin.get("/api/admin/costs", params={"granularity": "month"}).json()
     assert out["total_usd"] == 4.5 and out["calls"] == 3 and out["failed_calls"] == 1 and out["wasted_usd"] == 0.5
-    assert out["free_tier_usd"] == 1.5 and len(out["series"]) == 1
+    assert out["free_tier_usd"] == 1.5 and sum(x["cost_usd"] for x in out["series"]) == 4.5
+    assert len(out["series"]) in (1, 2) and out["series"][-1]["period"] == f"{datetime.now(UTC):%Y-%m}"  # every month in the window
+    daily = admin.get("/api/admin/costs", params={"days": 7}).json()["series"]
+    assert len(daily) == 7 and sum(x["calls"] for x in daily) == 3  # quiet days are zero, not missing
     assert {s["key"]: s["cost_usd"] for s in out["by_step"]} == {"tailor": 4.0, "mentor": 0.5}
     assert {m["key"] for m in out["by_model"]} == {"claude-opus-5-5", "claude-sonnet-5-5"}
     assert out["per_analysis"] == {"analyses": 2, "avg_usd": 2.25, "p95_usd": pytest.approx(2.925, abs=1e-3)}

@@ -43,7 +43,12 @@ export default function PrivacyPage() {
                 progress is kept in your browser tab (session storage) and cleared when you close it or choose Clear all.
                 When you start a tailoring, we keep the parsed resume and job description with it on our servers, so AI
                 use and the downloaded file are tied to exactly what you submitted. When you download, we keep the
-                final resume behind that download for the re-download period. [Retention period to be decided.]
+                final resume behind that download for the 7-day free re-download period. We delete the final resume 7
+                days after the download, and the parsed resume, job description and tailoring 30 days after your last
+                download of that tailoring (or 30 days after you started it, if you never downloaded). After that we
+                keep only a record that the tailoring and download happened, what paid for them, and a one-way
+                fingerprint of what you submitted that can&apos;t be turned back into your resume; we need these for
+                billing and fair-use limits.
               </p>
               <p>
                 Each file you download carries a reference number in its document properties (for example
@@ -75,7 +80,7 @@ export default function PrivacyPage() {
         },
         {
           heading: "How long we keep data",
-          body: <p>Account data is kept while your account is open. When you delete your account, we remove your sign-in methods and personal details. We keep payment and consent records for as long as tax and other laws require.</p>,
+          body: <p>Account data is kept while your account is open. When you delete your account, we remove your sign-in methods and personal details. We keep payment and consent records for as long as tax and other laws require. Resume and job description text is deleted on the schedule above (7 days for downloaded files, 30 days for tailorings), whether or not your account is still open.</p>,
         },
         {
           heading: "Your rights",

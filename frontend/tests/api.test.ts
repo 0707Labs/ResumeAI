@@ -165,6 +165,16 @@ describe("analysis id and the download paywall", () => {
     expect((opened.mock.calls[0][0] as CustomEvent).detail).toEqual({ reason: "download", fmt: "docx" });
   });
 
+  it("410 analysis_expired: says the window has passed and forgets the purged analysis", async () => {
+    sessionStorage.setItem("rt_analysis_id", ids[0]);
+    backend(() => new Response("{}"), () => new Response(JSON.stringify({ detail: "analysis_expired" }), { status: 410 }));
+    const err = await api.requestDownload("pdf", {} as never, { raw_text: "J" } as never, {} as never, null)
+      .catch((e: ApiError) => e);
+    expect((err as ApiError).kind).toBe("analysis_expired");
+    expect((err as ApiError).message).toMatch(/re-download period .* has passed.*Tailor it again/);
+    expect(sessionStorage.getItem("rt_analysis_id")).toBeNull();
+  });
+
   it("402 on analyze: past the free tailorings, the pricing dialog opens for tailoring", async () => {
     const opened = vi.fn();
     window.addEventListener("rt:out-of-credits", opened);

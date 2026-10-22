@@ -35,7 +35,9 @@ break accessibility and annoy honest users.
   (forwarding, uploading to a job site) but not "Save as" into a new document, export to
   another format, or a metadata scrubber. It traces careless leaks, not determined ones.
 - **The paying user.** Once paid, the file is theirs to use; re-downloading the same
-  resume is free for `[downloads].redownload_free_days` (7).
+  resume is free for `[downloads].redownload_free_days` (7). After the retention purge
+  (`[retention]`, see docs/billing.md section 11) the server no longer has the text, so a
+  later re-download answers 410 `analysis_expired` and the user tailors again.
 - **Browser extensions and developer tools** can switch off the CSS deterrents (selection,
   context menu, print). The images under them are still watermarked and masked.
 
@@ -47,7 +49,11 @@ break accessibility and annoy honest users.
 - What's masked: `render_preview()` blurs the contact line and everything from the last
   section's heading on. `BLUR_RADIUS` sets the strength.
 - Link lifetime and the re-download window: `[downloads]` in `backend/billing.toml`.
+- How long the text behind downloads is kept: `[retention]` (final resume 7 days,
+  analysis text 30 days after the last download), cleared by
+  `python -m app.billing.cli purge-expired`. The Privacy Policy quotes these.
 
 Tests: `backend/tests/test_export.py` (no text in the preview response, low resolution,
 watermark present, contact and last section blurred, metadata reference) and
-`backend/tests/test_analyses.py` (402 renders nothing, signed links, expiry, owner only).
+`backend/tests/test_analyses.py` (402 renders nothing, signed links, expiry, owner only)
+and `backend/tests/test_retention.py` (purged text, 410 after the purge).

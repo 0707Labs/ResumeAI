@@ -17,7 +17,8 @@ test("landing: server-rendered sections, invite-only sign up, footer", async ({ 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Tailor your resume to any job, without ever inventing experience",
   );
-  for (const name of ["How it works", "The honesty guarantee", "A sample before and after", "Pricing", "Questions"]) {
+  for (const name of ["From job post to tailored resume in minutes", "Only what you've actually done",
+    "A sample before and after", "Simple, one-time prices", "Good to know"]) {
     await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
   }
   // The workspace's step bar doesn't belong here.
@@ -29,7 +30,7 @@ test("landing: server-rendered sections, invite-only sign up, footer", async ({ 
     await expect(footer.getByRole("link", { name })).toBeVisible();
   }
 
-  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
+  await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
   await page.getByRole("banner").getByRole("button", { name: "Sign up" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Resume Tailor is invite-only for now" })).toBeVisible();

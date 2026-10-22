@@ -24,9 +24,12 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
 
   const navCls = "hidden min-h-9 items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg md:flex";
   return (
-    <header className="border-b border-border bg-surface">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <Link href="/" className="text-base font-semibold text-fg">Resume Tailor</Link>
+        <Link href="/" className="flex items-center gap-2 text-base font-semibold text-fg">
+          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-xs font-bold text-accent-fg">RT</span>
+          Resume Tailor
+        </Link>
         <nav aria-label="Main" className="flex flex-wrap items-center gap-2">
           <Link href="/#how-it-works" className={navCls}>How it works</Link>
           <Link href="/#pricing" className={navCls}>Pricing</Link>

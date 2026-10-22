@@ -17,6 +17,7 @@
   --accent-hover: #244a4e;
   --accent-fg: #ffffff;
   --accent-soft: #e5efef;
+  --brand: #0372f5; /* logo blue, for the wordmark */
   --ok: #1f6b45;
   --ok-bg: #e7f4ec;
   --warn: #8a5a00;
@@ -46,6 +47,7 @@
     --accent-hover: #9ccbcf;
     --accent-fg: #0f2224;
     --accent-soft: #1f3335;
+    --brand: #5aa0ff; /* logo blue, for the wordmark */
     --ok: #7fd1a2;
     --ok-bg: #16291f;
     --warn: #f0c46c;
@@ -74,6 +76,7 @@
   --accent-hover: #9ccbcf;
   --accent-fg: #0f2224;
   --accent-soft: #1f3335;
+  --brand: #5aa0ff; /* logo blue, for the wordmark */
   --ok: #7fd1a2;
   --ok-bg: #16291f;
   --warn: #f0c46c;
@@ -101,6 +104,7 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+  --color-brand: var(--brand);
   --color-ok: var(--ok);
   --color-ok-bg: var(--ok-bg);
   --color-warn: var(--warn);

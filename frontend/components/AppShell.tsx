@@ -11,6 +11,7 @@ import { useSession } from "@/lib/store";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
 import { OutOfCreditsModal } from "./billing/OutOfCreditsModal";
+import { BrandLogo } from "./BrandLogo";
 import { CreditsLive } from "./CreditsLive";
 import { MonitorIcon, MoonIcon, SunIcon, TrashIcon, UserIcon } from "./icons";
 import { isResolved } from "./QuestionCard";
@@ -61,7 +62,7 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
       </a>
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/" className="text-base font-semibold text-fg">Resume Tailor</Link>
+          <Link href="/" className="text-base font-semibold text-fg"><BrandLogo /></Link>
           <div className="flex items-center gap-2">
             <Link href="/pricing" className="flex min-h-9 items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg">
               Pricing

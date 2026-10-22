@@ -175,6 +175,8 @@ Secrets and infrastructure
 - [ ] Migrations at head (`alembic upgrade head`).
 - [ ] Cron runs `python -m app.billing.cli check-alerts` (exit 1 means alert) at least
       hourly and pages someone.
+- [ ] Cron runs `python -m app.billing.cli purge-expired` daily (section 11); the Privacy
+      Policy promises the `[retention]` periods.
 - [ ] `NEXT_PUBLIC_SUPPORT_EMAIL` set, so the checkout-success page can link to support.
 - [ ] At least one admin user: `UPDATE users SET role = 'admin' WHERE email = '...'`.
 
@@ -339,6 +341,10 @@ download is what spends a credit. Code: `app/billing/entitlements.py` (decisions
   entitlement check passes.
 - Every download is a `downloads` row (format, what paid, credits, served_at) and one
   `app.billing` log line with ids only; no resume text is logged.
+- After the retention purge (section 11) a re-download of that analysis gets **410
+  `analysis_expired`** and nothing is charged; the workspace says the re-download period
+  has passed, forgets the analysis id and asks to tailor again. A signed link whose
+  download was purged gets 410 `link_expired`.
 - **Pricing dialog for a download:** buying from it remembers the format in the tab
   (sessionStorage). `/billing/success` waits for the webhook as before, then sends the
   buyer to `/app/export?resume=download`, which starts the download once.
@@ -380,3 +386,47 @@ Code: `app/billing/referrals.py`, `/api/referrals`, `/api/admin/referrals`; conf
 - **Admin queue** (`/admin/referrals`): approve a flagged one (it pays if its trigger
   already fired), reject it with a reason, or reverse a paid one. A reversal takes the
   credits back (key `referral-reversal:{id}`), never below zero.
+
+---
+
+## 11. Data retention
+
+Resume text is kept only as long as the product needs it. Periods are `[retention]` in
+`billing.toml`, and the Privacy Policy (`frontend/app/legal/privacy/page.tsx`) quotes
+them, so change both together. Code: `app/billing/retention.py`; migration
+`0009_retention`.
+
+| What | Cleared | Default |
+|---|---|---|
+| `analyses.resume`, `.jd`, `.tailored` | `analysis_days` after the analysis's last download, or after it started if never downloaded; never while `usable_until` is ahead | 30 days |
+| `downloads.final_resume` (what the signed link renders) | `download_days` after the download; unset means `[downloads].redownload_free_days` | 7 days |
+
+- **What stays:** ids, owner, timestamps, `inputs_sha256`, `llm_tailored` and
+  `tailored_at`, `paid_with`, the pass or subscription, and `credits`. Billing, fair-use
+  caps, the monthly free tailorings and referral triggers read these, so they count the
+  same before and after a purge. A purged row has `purged_at` set; check constraints keep
+  rows either whole or fully purged.
+- **Config checks:** `analysis_days` must be at least `redownload_free_days` (a free
+  re-download always finds its analysis) and longer than `[analyses].usable_hours`.
+  Startup fails otherwise.
+- **Running it:** `cd backend && .venv/bin/python -m app.billing.cli purge-expired`.
+  It prints how many analyses and downloads it cleared and logs one `app.billing` line
+  with counts only. It is idempotent (only rows with `purged_at IS NULL` are touched)
+  and batched: each `batch_size` rows (500) commit on their own, and rows a download is
+  holding right now are skipped until the next run. Run it daily from cron:
+
+  ```
+  15 3 * * * cd /srv/resume-tailor/backend && .venv/bin/python -m app.billing.cli purge-expired >> /var/log/resume-tailor/purge.log 2>&1
+  ```
+
+  It needs the same `RT_DATABASE_URL` as the app. Missing a day only delays deletion;
+  the next run catches up.
+- **In the app:** a purged analysis can't be used for Claude or downloaded: `POST
+  /api/downloads/{fmt}` answers 410 `analysis_expired` (nothing charged), the workspace
+  asks to tailor again. The download takes a row lock on the analysis, so a purge never
+  clears one mid-download.
+- **Deleted accounts:** analyses and downloads keep `user_id = NULL`; the purge clears
+  their text on the same schedule.
+- **Not covered:** Postgres keeps old row versions until (auto)vacuum reclaims them, and
+  database backups keep text for as long as backups are retained. Keep backup retention
+  in line with the Privacy Policy.

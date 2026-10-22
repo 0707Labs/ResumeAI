@@ -353,7 +353,8 @@ async def request_download(
     rendered before the entitlement check passes: a paid download of the same analysis
     within the re-download window covers it, else a pass, Pro or a credit pays (402
     no_credits when none can). The check render shares the charge's transaction, so a
-    failed export charges nothing."""
+    failed export charges nothing. 410 analysis_expired once the retention purge has
+    cleared the analysis: the window has passed and the user tailors again."""
     analysis_id = parse_analysis_id(x_analysis_id)
     if analysis_id is None:
         raise HTTPException(status_code=409, detail="analysis_required")
@@ -361,6 +362,8 @@ async def request_download(
         row = await analyses.owned(db, user.id, analysis_id)
     except analyses.UnknownAnalysis:
         raise HTTPException(status_code=404, detail="analysis_not_found") from None
+    except analyses.AnalysisPurged:
+        raise HTTPException(status_code=410, detail="analysis_expired") from None
     final = _final(Resume.model_validate(row.resume), body.tailored, body.analysis, row.jd.get("raw_text", ""))
     try:
         paid = await analyses.pay_for_download(db, config, user.id, analysis_id, fmt=fmt,
@@ -368,6 +371,9 @@ async def request_download(
     except analyses.NoEntitlement as exc:
         await db.rollback()
         raise HTTPException(status_code=402, detail=exc.decision.reason) from None
+    except analyses.AnalysisPurged:  # purged between the read above and the lock
+        await db.rollback()
+        raise HTTPException(status_code=410, detail="analysis_expired") from None
     try:
         await run_in_threadpool(_render, fmt, final)  # entitlement passed; prove it renders before charging
     except Exception:
@@ -397,6 +403,8 @@ async def download_file(token: str, user: User = Depends(current_user),
     row = await db.scalar(select(Download).where(Download.id == download_id, Download.user_id == user.id))
     if row is None:
         raise HTTPException(status_code=404, detail="link_invalid")
+    if row.final_resume is None:  # purged (links live for minutes, the text for days)
+        raise HTTPException(status_code=410, detail="link_expired")
     # A quiet reference in the file's metadata ties a leaked copy to this download (and so
     # to its buyer, via our database). Disclosed in the Privacy Policy.
     data, filename = await run_in_threadpool(_render, row.format, Resume.model_validate(row.final_resume),

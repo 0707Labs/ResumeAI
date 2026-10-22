@@ -83,6 +83,17 @@ class Downloads(_Strict):
     url_ttl_seconds: Annotated[int, Field(ge=10, le=3600)] = 120
 
 
+class Retention(_Strict):
+    # Resume text is kept only this long; `python -m app.billing.cli purge-expired` clears it
+    # (app.billing.retention). An analysis's resume, job description and tailoring go this
+    # many days after its last download, or after it started if it was never downloaded.
+    analysis_days: PositiveInt = 30
+    # A download's final resume (what its signed link renders) goes this many days after
+    # the download. Unset: the re-download window ([downloads].redownload_free_days, at least 1).
+    download_days: PositiveInt | None = None
+    batch_size: Annotated[int, Field(ge=1, le=10_000)] = 500  # rows per purge transaction
+
+
 class Referrals(_Strict):
     enabled: bool = True
     # When the referrer earns the reward: once the friend's account exists (their email is
@@ -145,6 +156,7 @@ class BillingConfig(_Strict):
     analyses: Analyses = Analyses()
     downloads: Downloads = Downloads()
     referrals: Referrals = Referrals()
+    retention: Retention = Retention()
     signup: Signup
     products: dict[str, Product]
     fees: Fees
@@ -158,6 +170,21 @@ class BillingConfig(_Strict):
         if isinstance(products, dict):
             data = {**data, "products": {k: {"key": k, **v} for k, v in products.items()}}
         return data
+
+    @model_validator(mode="after")
+    def _retention_outlives_its_uses(self) -> "BillingConfig":
+        # A re-download in the window is rendered from the analysis, and Claude may be used
+        # until usable_until, so the analysis text must outlast both.
+        if self.retention.analysis_days < self.downloads.redownload_free_days:
+            raise ValueError("[retention].analysis_days must be at least [downloads].redownload_free_days")
+        if self.retention.analysis_days * 24 <= self.analyses.usable_hours:
+            raise ValueError("[retention].analysis_days must be longer than [analyses].usable_hours")
+        return self
+
+    @property
+    def download_retention_days(self) -> int:
+        """Days a download's final resume is kept."""
+        return self.retention.download_days or max(self.downloads.redownload_free_days, 1)
 
     def product(self, key: str) -> Product | None:
         """The product a buyer may purchase now, or None (unknown or flagged off)."""

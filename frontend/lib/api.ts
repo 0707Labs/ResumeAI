@@ -26,6 +26,7 @@ export type ApiErrorKind =
   | "out_of_credits"
   | "tailoring_limit"
   | "sign_in_required"
+  | "analysis_expired"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -43,6 +44,8 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   tailoring_limit:
     "You've used this month's free tailorings. Get credits or a pass to keep going, or wait for them to reset at the start of next month.",
   sign_in_required: "Sign in to download your tailored resume. Your work here stays in this tab.",
+  analysis_expired:
+    "The free re-download period for this resume has passed, and we've deleted our copy of it. Tailor it again to download a new file.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -273,7 +276,8 @@ export const api = {
   /** Pay for a clean download and get its short-lived signed link (the file is built on
    * the server only after the entitlement check). Re-downloading the same tailored resume
    * within the window is free. Needs sign-in: someone who signed in after analyzing gets an
-   * analysis started here. 402 opens the pricing dialog for this download. */
+   * analysis started here. 402 opens the pricing dialog for this download. 410
+   * analysis_expired: its text was deleted under the retention policy; tailor again. */
   async requestDownload(fmt: "docx" | "pdf", resume: S.Resume, jd: S.JobDescription, tailored: S.TailoredResume,
     analysis: S.GapAnalysis | null): Promise<S.DownloadLink> {
     if (!currentAnalysisId()) await startAnalysis(resume, jd);
@@ -283,6 +287,12 @@ export const api = {
     if (!res.ok) {
       if (res.status === 402) announceOutOfCredits({ reason: "download", fmt });
       const detail = await readDetail(res);
+      // 410 analysis_expired: the retention purge cleared this analysis, so forget it; the
+      // next Analyze or download starts a new one.
+      if (res.status === 410 && detail === "analysis_expired") {
+        setAnalysisId(null);
+        throw new ApiError("analysis_expired", res.status, detail);
+      }
       const kind = res.status === 402 ? "out_of_credits" : res.status === 401 ? "sign_in_required" : classify(res.status, detail);
       throw new ApiError(kind, res.status, detail);
     }

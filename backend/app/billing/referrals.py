@@ -216,5 +216,5 @@ async def reverse(db: AsyncSession, referral_id: uuid.UUID, admin_id: uuid.UUID,
 
 
 async def _referee_has_tailored(db: AsyncSession, user_id: uuid.UUID) -> bool:
-    return await db.scalar(select(Analysis.id).where(Analysis.user_id == user_id, Analysis.tailored.is_not(None))
+    return await db.scalar(select(Analysis.id).where(Analysis.user_id == user_id, Analysis.tailored_at.is_not(None))
                            .limit(1)) is not None

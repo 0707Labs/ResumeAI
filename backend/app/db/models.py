@@ -573,7 +573,9 @@ class Analysis(Base):
     download are tied to these inputs (inputs_sha256), not to whatever a browser sends.
     The monthly free tailorings count these rows, except runs that ended rules-only
     (llm_tailored false). tailored is the last tailoring result. Claude may be used until
-    usable_until. Downloads, which are what pays, are rows in downloads."""
+    usable_until. Downloads, which are what pays, are rows in downloads. The retention
+    purge (app.billing.retention) clears resume, jd and tailored and sets purged_at; the
+    rest of the row stays."""
 
     __tablename__ = "analyses"
 
@@ -582,20 +584,24 @@ class Analysis(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
-    resume: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    jd: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    resume: Mapped[dict | None] = mapped_column(JSONB)  # None once purged
+    jd: Mapped[dict | None] = mapped_column(JSONB)
     inputs_sha256: Mapped[str] = mapped_column(Text, nullable=False)
     tailored: Mapped[dict | None] = mapped_column(JSONB)
     llm_tailored: Mapped[bool | None] = mapped_column(Boolean)
     tailored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
-        CheckConstraint("(tailored IS NULL) = (tailored_at IS NULL) AND (tailored IS NULL) = (llm_tailored IS NULL)",
-                        name="tailored"),
+        CheckConstraint("(tailored_at IS NULL) = (llm_tailored IS NULL) AND (tailored IS NULL OR tailored_at IS NOT NULL)"
+                        " AND (purged_at IS NOT NULL OR (tailored IS NULL) = (tailored_at IS NULL))", name="tailored"),
+        CheckConstraint("(purged_at IS NULL) = (resume IS NOT NULL) AND (purged_at IS NULL) = (jd IS NOT NULL)"
+                        " AND (purged_at IS NULL OR tailored IS NULL)", name="purged"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
+        Index("ix_analyses_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
     )
 
 
@@ -604,7 +610,8 @@ class Download(Base):
     paid in. paid_with is what paid ('pass', 'pro', 'credit'), or 'window' when a paid
     download of the same analysis less than redownload_free_days ago covers it. A credit
     is spent through the ledger with key download:{id}. final_resume is what the signed
-    link renders (approved, verified text only); nothing here is logged."""
+    link renders (approved, verified text only); nothing here is logged. The retention
+    purge clears final_resume and sets purged_at once the re-download window has passed."""
 
     __tablename__ = "downloads"
 
@@ -620,8 +627,9 @@ class Download(Base):
     credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     pass_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("passes.id"))
     subscription_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("subscriptions.id"))
-    final_resume: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    final_resume: Mapped[dict | None] = mapped_column(JSONB)  # None once purged
     served_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (
@@ -630,7 +638,9 @@ class Download(Base):
         CheckConstraint("(paid_with = 'credit') = (credits > 0)", name="credits"),
         CheckConstraint("(paid_with = 'pass') = (pass_id IS NOT NULL)", name="pass"),
         CheckConstraint("(paid_with = 'pro') = (subscription_id IS NOT NULL)", name="pro"),
+        CheckConstraint("(purged_at IS NULL) = (final_resume IS NOT NULL)", name="purged"),
         Index("ix_downloads_analysis_created", "analysis_id", "created_at"),
+        Index("ix_downloads_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
         Index("ix_downloads_pass_id", "pass_id", postgresql_where=text("pass_id IS NOT NULL")),
         Index("ix_downloads_subscription_id", "subscription_id", postgresql_where=text("subscription_id IS NOT NULL")),
     )

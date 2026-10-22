@@ -31,6 +31,14 @@ credits_per_download = 1
 redownload_free_days = 7
 url_ttl_seconds = 120         # signed download links expire after this
 
+# How long resume text is kept (the Privacy Policy quotes these; change both together).
+# `python -m app.billing.cli purge-expired`, run daily from cron, clears it. Ids, timestamps,
+# inputs_sha256, what paid and the credits stay, so billing and caps are unaffected.
+[retention]
+analysis_days = 30            # resume, job description, tailoring: days after the last download, or after starting
+# download_days = 7           # a download's final resume; unset = [downloads].redownload_free_days
+batch_size = 500              # rows per purge transaction
+
 [signup]
 bonus_credits = 0
 

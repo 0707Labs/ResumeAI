@@ -47,6 +47,11 @@ class UnknownAnalysis(Exception):
     """Not this user's analysis (or no such analysis)."""
 
 
+class AnalysisPurged(Exception):
+    """The retention purge has cleared this analysis's resume text (app.billing.retention):
+    it can't be downloaded again; the user tailors again instead."""
+
+
 @dataclass(frozen=True)
 class Started:
     analysis: Analysis
@@ -155,13 +160,22 @@ async def usable(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID,
     unknown one or an expired one gives None."""
     now = now or datetime.now(UTC)
     return await db.scalar(select(Analysis).where(
-        Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.usable_until > now))
+        Analysis.id == analysis_id, Analysis.user_id == user_id, Analysis.usable_until > now,
+        Analysis.purged_at.is_(None)))
 
 
-async def owned(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID) -> Analysis:
-    row = await db.scalar(select(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user_id))
+async def owned(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID, *, lock: bool = False) -> Analysis:
+    """The user's analysis, with its text. UnknownAnalysis for anyone else's or an unknown
+    id; AnalysisPurged once the retention purge has cleared it. lock=True holds the row
+    (and re-reads it), so a purge running now skips it."""
+    query = select(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user_id)
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    row = await db.scalar(query)
     if row is None:
         raise UnknownAnalysis(analysis_id)
+    if row.purged_at is not None:
+        raise AnalysisPurged(analysis_id)
     return row
 
 
@@ -169,11 +183,11 @@ async def pay_for_download(db: AsyncSession, config: BillingConfig, user_id: uui
                            *, fmt: str, final_resume: dict, now: datetime | None = None) -> Paid:
     """Record a download of this analysis and pay for it: free within the re-download
     window of a paid download of the same analysis, else charged to a pass, Pro or
-    credits (key download:{id}). Raises NoEntitlement when nothing pays and
-    UnknownAnalysis for someone else's analysis."""
+    credits (key download:{id}). Raises NoEntitlement when nothing pays,
+    UnknownAnalysis for someone else's analysis and AnalysisPurged for a purged one."""
     now = now or datetime.now(UTC)
     balance = await _lock_user(db, user_id)
-    await owned(db, user_id, analysis_id)
+    await owned(db, user_id, analysis_id, lock=True)
     window = timedelta(days=config.downloads.redownload_free_days)
     last_paid = await db.scalar(select(func.max(Download.created_at)).where(
         Download.analysis_id == analysis_id, Download.user_id == user_id, PAID))

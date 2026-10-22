@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AuthErrorAlert } from "@/components/auth/AuthCard";
 import { Alert, Button, Card } from "@/components/ui";
 import { api } from "@/lib/api";
+import { can } from "@/lib/roles";
 import { REASON_TEXT, adminReferralsApi } from "@/lib/referrals";
 import type { AdminReferrals, Me } from "@/lib/schemas";
 
@@ -23,10 +24,10 @@ export default function AdminReferralsPage() {
     setError(null);
     adminReferralsApi.queue(view).then(setRows).catch(setError);
   }, [view]);
-  useEffect(() => { if (me?.role === "admin") load(); }, [me, load]);
+  useEffect(() => { if (can(me, "referrals.decide")) load(); }, [me, load]);
 
   if (me === undefined) return null;
-  if (!me || me.role !== "admin") return <Alert tone="warn" title="Admins only">This page is for the 0707Labs team.</Alert>;
+  if (!can(me, "referrals.decide")) return <Alert tone="info" title="Not available for your role">Referral decisions need an admin.</Alert>;
 
   async function act(id: string, fn: () => Promise<unknown>) {
     setBusy(id);

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BillingAlert } from "@/components/billing/BillingAlert";
 import { Alert, Button, Card } from "@/components/ui";
 import { api } from "@/lib/api";
+import { can } from "@/lib/roles";
 import { adminBillingApi, formatMoney } from "@/lib/billing";
 import type { AdminOverview, Me } from "@/lib/schemas";
 
@@ -34,15 +35,15 @@ export default function AdminBillingPage() {
     adminBillingApi.overview(d).then(setData).catch(setError);
   }, []);
   useEffect(() => {
-    api.me().then((m) => { setMe(m); if (m?.role === "admin") load(days); }).catch(() => setMe(null));
+    api.me().then((m) => { setMe(m); if (can(m, "billing.read")) load(days); }).catch(() => setMe(null));
   }, [days, load]);
 
   if (me === undefined) return null;
-  if (!me || me.role !== "admin") {
+  if (!can(me, "billing.read")) {
     return (
       <div className="mx-auto max-w-md">
-        <Alert tone="info" title="Admins only">
-          This page is for the Resume Tailor team. <Link href="/account" className="font-medium text-accent underline">Back to your account</Link>
+        <Alert tone="info" title="Not available for your role">
+          Billing needs an admin. <Link href="/admin" className="font-medium text-accent underline">Back to admin</Link>
         </Alert>
       </div>
     );

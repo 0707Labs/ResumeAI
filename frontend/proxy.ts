@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIES, isProtected, signInUrl } from "@/lib/workspace";
 
 /**
- * Optimistic gate for the workspace: no session cookie, straight to /signin.
+ * Optimistic gate for the workspace and /admin: no session cookie, straight to /signin.
  * A cookie that exists but is no longer valid is caught by app/app/layout.tsx,
  * and the backend refuses every API call without a live session anyway.
  */
@@ -16,5 +16,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*"],
+  matcher: ["/app/:path*", "/admin/:path*"],
 };

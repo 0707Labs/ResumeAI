@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active" };
+const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [] };
 
 function stubFetch(table: Record<string, () => Response>) {
   vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -70,7 +70,8 @@ describe("post-sign-in destination", () => {
     expect(safeNext("/app/review")).toBe("/app/review");
     expect(safeNext("/app")).toBe("/app");
     expect(safeNext("/account/billing")).toBe("/account/billing");
-    for (const bad of [undefined, null, "", "//evil.example", "https://evil.example", "/\\evil", "/signin", "/appx", "/admin"]) {
+    expect(safeNext("/admin/billing")).toBe("/admin/billing");  // back after a staff re-sign-in
+    for (const bad of [undefined, null, "", "//evil.example", "https://evil.example", "/\\evil", "/signin", "/appx", "/adminx"]) {
       expect(safeNext(bad)).toBe("/app");
     }
   });

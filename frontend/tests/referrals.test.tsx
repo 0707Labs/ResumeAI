@@ -130,7 +130,7 @@ describe("invite step with a friend's link", () => {
 
 describe("admin referral queue", () => {
   it("is admins only, and approves a flagged referral", async () => {
-    const ME = { id: R1, email: "admin@example.com", name: null, role: "admin", status: "active" };
+    const ME = { id: R1, email: "admin@example.com", name: null, role: "admin", status: "active", capabilities: ["staff.access", "referrals.decide"] };
     const row = { id: R2, referrer_email: "ada@example.com", referee_email: "f@example.com", status: "pending",
       reason: "same_network", needs_review: true, used_as_invite: false, same_network: 3, reward_credits: 0,
       created_at: "2026-10-21T10:00:00Z", rewarded_at: null, reversed_at: null };
@@ -147,8 +147,8 @@ describe("admin referral queue", () => {
   });
 
   it("tells non-admins it isn't for them", async () => {
-    routes({ "GET /api/me": { id: R1, email: "u@example.com", name: null, role: "user", status: "active" } });
+    routes({ "GET /api/me": { id: R1, email: "u@example.com", name: null, role: "user", status: "active", capabilities: [] } });
     render(<AdminReferralsPage />);
-    expect(await screen.findByText("Admins only")).toBeInTheDocument();
+    expect(await screen.findByText("Not available for your role")).toBeInTheDocument();
   });
 });

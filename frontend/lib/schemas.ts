@@ -291,8 +291,11 @@ export const Me = z.object({
   id: z.uuid(),
   email: z.string(),
   name: z.string().nullable(),
-  role: z.enum(["user", "admin"]),
+  role: z.enum(["user", "support", "admin", "superadmin"]),
   status: z.enum(["active", "suspended"]),
+  // What the UI may offer (app/auth/roles.py); strings, so a new backend capability can't
+  // break parsing. The API checks again on every call.
+  capabilities: z.array(z.string()),
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 

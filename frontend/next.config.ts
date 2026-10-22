@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         { source: `/${step}`, destination: `/app/${step}`, permanent: false })),
     ];
   },
+  // Staff pages stay out of search engines even if a link leaks (robots.ts disallows them too).
+  async headers() {
+    return [{ source: "/admin/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }];
+  },
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },

@@ -269,7 +269,7 @@ describe("waitlist", () => {
 });
 
 describe("account", () => {
-  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active" };
+  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [] };
   const account = (id: string, provider: string) =>
     ({ id, provider, email: "ada@example.com", linked_at: "2026-10-21T00:00:00Z" });
   const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

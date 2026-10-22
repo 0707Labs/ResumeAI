@@ -31,7 +31,7 @@ function routes(table: Record<string, Handler | unknown>) {
   return fetchMock;
 }
 
-const ME = { id: "11111111-1111-4111-8111-111111111111", email: "ada@example.com", name: "Ada", role: "user", status: "active" };
+const ME = { id: "11111111-1111-4111-8111-111111111111", email: "ada@example.com", name: "Ada", role: "user", status: "active", capabilities: [] };
 const PAYMENT_ID = "22222222-2222-4222-8222-222222222222";
 const PACK = { key: "credit_pack_5", kind: "credit_pack", name: "Credit pack", prices: { USD: 600, INR: 49900 },
   credits: 5, pass_days: null, fair_use_cap: null, interval: null, available: true };
@@ -243,13 +243,13 @@ describe("billing admin page", () => {
     routes({ "GET /api/me": ME });
     const { default: AdminPage } = await import("@/app/admin/billing/page");
     render(<AdminPage />);
-    expect(await screen.findByText("Admins only")).toBeInTheDocument();
+    expect(await screen.findByText("Not available for your role")).toBeInTheDocument();
   });
 
   it("shows alerts, margin, costs and resolves a review", async () => {
     let resolved = false;
     routes({
-      "GET /api/me": { ...ME, role: "admin" },
+      "GET /api/me": { ...ME, role: "admin", capabilities: ["staff.access", "billing.read", "billing.write"] },
       "GET /api/admin/billing/overview?days=30": () => json(resolved ? { ...OVERVIEW, reviews: [] } : OVERVIEW),
       "POST /api/admin/billing/reviews/33333333-3333-4333-8333-333333333333/resolve": () => {
         resolved = true;

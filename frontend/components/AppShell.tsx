@@ -17,10 +17,11 @@ import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
 /** Sign-in, account and billing pages: no tailoring progress bar there. */
-const AUTH_PATHS = ["/signin", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing", "/admin"];
+const AUTH_PATHS = ["/signin", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing"];
 const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
-/** The landing page and legal pages bring their own header and footer (components/site). */
+/** The landing and legal pages (components/site) and /admin (components/admin) bring their own chrome. */
 const isMarketingPath = (path: string) => path === "/" || path === "/legal" || path.startsWith("/legal/");
+const isAdminPath = (path: string) => path === "/admin" || path.startsWith("/admin/");
 
 const STEPS = [
   { href: "/app", label: "Your details" },
@@ -53,7 +54,7 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
   const pathname = usePathname();
   // A friend's link (?ref=CODE) on any page is kept for sign-up (lib/referrals.ts).
   useEffect(() => { captureReferral(window.location.search); }, [pathname]);
-  if (isMarketingPath(pathname)) return <>{children}</>;
+  if (isMarketingPath(pathname) || isAdminPath(pathname)) return <>{children}</>;
   return (
     <>
       <a href="#main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">

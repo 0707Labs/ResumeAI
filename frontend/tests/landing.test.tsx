@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true };
+const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true, avatar_url: null };
 
 function stubFetch(table: Record<string, () => Response>) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {

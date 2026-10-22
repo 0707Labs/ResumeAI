@@ -297,6 +297,7 @@ export const Me = z.object({
   // break parsing. The API checks again on every call.
   capabilities: z.array(z.string()),
   onboarded: z.boolean(),
+  avatar_url: z.string().nullable(),  // same-origin /api/profile/avatar?v=...; null: initials
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
@@ -639,3 +640,63 @@ export const Dashboard = z.object({
   has_preferences: z.boolean(),
 });
 export type Dashboard = z.infer<typeof Dashboard>;
+
+export const Profile = z.object({
+  name: z.string().nullable(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  avatar_source: z.enum(["provider", "upload"]).nullable(),
+});
+export type Profile = z.infer<typeof Profile>;
+
+const ResumeSource = z.enum(["upload", "paste", "edit"]);
+export const ResumeDetail = ResumeSummary.extend({
+  shown_version: z.number().int(),
+  source: ResumeSource,
+  resume: Resume,
+});
+export type ResumeDetail = z.infer<typeof ResumeDetail>;
+
+export const VersionSummary = z.object({
+  version: z.number().int(),
+  source: ResumeSource,
+  file_name: z.string().nullable(),
+  created_at: z.string(),
+});
+export type VersionSummary = z.infer<typeof VersionSummary>;
+
+export const TailoringSummary = z.object({
+  id: z.uuid(),
+  job_title: z.string().nullable(),
+  company: z.string().nullable(),
+  created_at: z.string(),
+  ats_before: z.number().nullable(),
+  ats_after: z.number().nullable(),
+  status: z.enum(["started", "tailored", "downloaded"]),
+  resume_id: z.uuid().nullable(),
+  content_available: z.boolean(),
+});
+export type TailoringSummary = z.infer<typeof TailoringSummary>;
+export const TailoringPage = z.object({ items: z.array(TailoringSummary), next_before: z.string().nullable() });
+export type TailoringPage = z.infer<typeof TailoringPage>;
+export const TailoringDetail = TailoringSummary.extend({
+  resume: Resume.nullable(),
+  jd: JobDescription.nullable(),
+  tailored: TailoredResume.nullable(),
+});
+export type TailoringDetail = z.infer<typeof TailoringDetail>;
+
+export const Consents = z.object({
+  history: z.array(z.object({
+    purpose: z.enum(["service", "research", "age_18_plus", "waitlist"]),
+    action: z.enum(["granted", "withdrawn"]),
+    method: z.string(),
+    notice_version: z.string(),
+    notice_url: z.string(),
+    at: z.string(),
+  })),
+  research: z.boolean(),
+  research_available: z.boolean(),
+});
+export type Consents = z.infer<typeof Consents>;

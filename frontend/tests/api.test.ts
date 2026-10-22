@@ -53,7 +53,7 @@ describe("request errors", () => {
 });
 
 describe("session", () => {
-  const USER = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true };
+  const USER = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true, avatar_url: null };
 
   afterEach(() => {
     document.cookie = "rt_csrf=; max-age=0; path=/";

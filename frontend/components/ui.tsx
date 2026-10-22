@@ -48,7 +48,7 @@ export function Button({
 export function Card({ children, className = "", as: Tag = "section", ...rest }: {
   children: ReactNode;
   className?: string;
-  as?: "section" | "div";
+  as?: "section" | "div" | "form";
 } & React.HTMLAttributes<HTMLElement>) {
   return (
     <Tag {...rest} className={`rounded-2xl border border-border bg-surface p-5 sm:p-6 ${className}`}>

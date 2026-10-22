@@ -79,3 +79,6 @@ export const LogOutIcon = (p: IconProps) => (
 export const LightbulbIcon = (p: IconProps) => (
   <Icon {...p}><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z" /></Icon>
 );
+export const MoreIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></Icon>
+);

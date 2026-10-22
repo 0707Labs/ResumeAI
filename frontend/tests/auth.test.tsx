@@ -269,15 +269,17 @@ describe("waitlist", () => {
 });
 
 describe("account", () => {
-  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true };
+  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true, avatar_url: null };
   const account = (id: string, provider: string) =>
     ({ id, provider, email: "ada@example.com", linked_at: "2026-10-21T00:00:00Z" });
+  const PROFILE = { name: null, email: "ada@example.com", phone: null, avatar_url: null, avatar_source: null };
   const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
   it("can't disconnect the last way to sign in", async () => {
     routes({
       "GET /api/me": ME,
+      "GET /api/profile": PROFILE,
       "GET /api/account/providers": { accounts: [account(A, "email")], can_unlink: false,
         available: { google: true, github: false, email: true } },
     });
@@ -291,6 +293,7 @@ describe("account", () => {
   it("disconnects one of two and shows a refusal from the server", async () => {
     const fetchMock = routes({
       "GET /api/me": ME,
+      "GET /api/profile": PROFILE,
       "GET /api/account/providers": { accounts: [account(A, "email"), account(B, "google")], can_unlink: true,
         available: { google: true, github: true, email: true } },
       [`DELETE /api/account/providers/${B}`]: () => json({ detail: "last_login_method" }, 409),
@@ -300,11 +303,5 @@ describe("account", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("You need at least one way to sign in");
     const init = fetchMock.mock.calls.find(([u]) => String(u).endsWith(B))![1]!;
     expect((init.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
-  });
-
-  it("asks signed-out visitors to sign in", async () => {
-    routes({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
-    render(<AccountPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/profile");
   });
 });

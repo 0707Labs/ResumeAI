@@ -2,8 +2,49 @@
  * The signed-in user area (backend app/api/profile.py). Same rules as auth.ts: our origin
  * only, CSRF on writes, every response validated with its zod schema.
  */
+import type { z } from "zod";
+
+import { API_URL, ApiError, csrfToken, messageFor } from "./api";
 import { AuthError, call } from "./auth";
 import * as S from "./schemas";
+
+async function upload<T extends z.ZodType>(schema: T, path: string, file: File): Promise<z.infer<T>> {
+  const form = new FormData();
+  form.append("file", file);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "PUT", body: form, credentials: "same-origin", headers: { "X-CSRF-Token": await csrfToken() },
+    });
+  } catch {
+    throw new AuthError("backend_down", 0);
+  }
+  if (!res.ok) {
+    const detail = await res.json().then((b) => b?.detail).catch(() => undefined);
+    throw new AuthError(typeof detail === "string" ? detail : "server", res.status);
+  }
+  return schema.parse(await res.json());
+}
+
+/** POST /api/account/export and hand the browser the JSON file. */
+async function downloadExport(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/account/export`, {
+      method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": await csrfToken() },
+    });
+  } catch {
+    throw new AuthError("backend_down", 0);
+  }
+  if (!res.ok) throw new AuthError(res.status === 429 ? "rate_limited" : "server", res.status);
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "resume-tailor-export.json";
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export const userApi = {
   dashboard: () => call(S.Dashboard, "/api/dashboard"),
@@ -15,6 +56,31 @@ export const userApi = {
   resumes: () => call(S.ResumeSummary.array(), "/api/resumes"),
   saveResume: (body: { resume: S.Resume; source: "upload" | "paste"; file_name?: string; title?: string }) =>
     call(S.ResumeSummary, "/api/resumes", { method: "POST", body }),
+
+  profile: () => call(S.Profile, "/api/profile"),
+  updateProfile: (body: { name?: string; phone?: string | null }) =>
+    call(S.Profile, "/api/profile", { method: "PATCH", body }),
+  uploadAvatar: (file: File) => upload(S.Profile, "/api/profile/avatar", file),
+  removeAvatar: () => call(S.Profile, "/api/profile/avatar", { method: "DELETE" }),
+
+  resume: (id: string, version?: number) =>
+    call(S.ResumeDetail, `/api/resumes/${id}${version ? `?version=${version}` : ""}`),
+  versions: (id: string) => call(S.VersionSummary.array(), `/api/resumes/${id}/versions`),
+  addVersion: (id: string, body: { resume: S.Resume; source: "edit" | "upload" | "paste"; file_name?: string }) =>
+    call(S.ResumeDetail, `/api/resumes/${id}/versions`, { method: "POST", body }),
+  updateResume: (id: string, body: { title?: string; is_default?: true }) =>
+    call(S.ResumeSummary, `/api/resumes/${id}`, { method: "PATCH", body }),
+  duplicateResume: (id: string) => call(S.ResumeSummary, `/api/resumes/${id}/duplicate`, { method: "POST" }),
+  deleteResume: (id: string) => call(null, `/api/resumes/${id}`, { method: "DELETE" }),
+
+  tailorings: (before?: string | null) =>
+    call(S.TailoringPage, `/api/tailorings${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+  tailoring: (id: string) => call(S.TailoringDetail, `/api/tailorings/${id}`),
+  deleteTailoring: (id: string) => call(null, `/api/tailorings/${id}`, { method: "DELETE" }),
+
+  consents: () => call(S.Consents, "/api/account/consents"),
+  setResearch: (granted: boolean) => call(S.Consents, "/api/account/consents/research", { method: "PUT", body: { granted } }),
+  exportData: downloadExport,
 };
 
 export const SENIORITY_LABEL: Record<(typeof S.SENIORITY)[number], string> = {
@@ -48,10 +114,17 @@ export function initials(name: string | null, email: string): string {
 
 /** A sentence for a failed user-area call. */
 export function userError(err: unknown): string {
+  if (err instanceof ApiError) return messageFor(err);  // parsing a file, tailoring: their own wording
   const code = err instanceof AuthError ? err.code : "server";
   switch (code) {
     case "rate_limited": return "That's a lot of changes in a short time. Please wait a minute and try again.";
     case "resume_limit": return "You've saved the most resumes we keep (20). Delete one to add another.";
+    case "version_limit": return "This resume has 100 versions, the most we keep. Duplicate it to keep editing.";
+    case "bullet_id_mismatch": return "A bullet ended up under the wrong job. Reload the resume and try the edit again.";
+    case "avatar_unsupported_type": return "That picture type isn't supported. Use a PNG, JPEG, WebP or GIF.";
+    case "avatar_too_large": return "That picture is over 2 MB, or too large in pixels. Try a smaller one.";
+    case "no_research_notice": return "The research notice isn't published yet, so this can't be switched on.";
+    case "not_found": return "That isn't there any more. It may have been deleted.";
     case "invalid_input": return "Something in there didn't look right. Check the fields and try again.";
     case "backend_down": return "We can't reach the service right now. Please try again in a moment.";
     default: return "Something went wrong on our side. Please try again in a moment.";

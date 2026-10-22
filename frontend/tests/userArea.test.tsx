@@ -32,7 +32,7 @@ const sent = (fetchMock: ReturnType<typeof routes>, key: string) =>
   fetchMock.mock.calls.filter(([u, i]) => `${i?.method ?? "GET"} ${String(u)}` === key);
 
 const ME = Me.parse({ id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: "Ada Lovelace",
-  role: "user", status: "active", capabilities: [], onboarded: true });
+  role: "user", status: "active", capabilities: [], onboarded: true, avatar_url: null });
 const PLAN: PlanStatus = { kind: "free", credits: 0, pass_expires_at: null, pass_days_left: null, pass_downloads_left: null,
   pro_period_end: null, free_allowance: 2, free_left: 1, resets_at: "2026-11-01T00:00:00Z" };
 const PREFS = { target_roles: [], seniority: null, industries: [], locations: [], work_modes: [], employment_types: [],
@@ -79,7 +79,23 @@ describe("UserShell", () => {
       expect(current.map((a) => a.getAttribute("href"))).toEqual(["/app/tailor"]);
     }
     expect(within(navs[0]).getAllByRole("link").map((a) => a.textContent))
-      .toEqual(["Dashboard", "Tailor", "Plan & Billing", "Invites & Referrals", "Profile"]);
+      .toEqual(["Dashboard", "Tailor", "My Resumes", "Plan & Billing", "Invites & Referrals", "Profile"]);
+    // The phone bar: four sections, the rest behind More.
+    expect(within(navs[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Dashboard", "Tailor", "Resumes", "Billing"]);
+  });
+
+  it("opens More on the phone bar, and marks it when a section behind it is current", async () => {
+    routes(COMMON);
+    pathname = "/app/profile";
+    render(<UserShell me={ME} initialTheme="system"><p>page</p></UserShell>);
+    const bar = screen.getAllByRole("navigation", { name: "Sections" })[1];
+    const more = within(bar).getByRole("button", { name: "More" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(within(bar).getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "page");
+    expect(within(bar).getByRole("link", { name: "Invites & Referrals" })).toHaveAttribute("href", "/app/invites");
+    await userEvent.keyboard("{Escape}");
+    expect(more).toHaveAttribute("aria-expanded", "false");
   });
 
   it("shows the plan and offers admin only to staff", async () => {
@@ -145,7 +161,7 @@ describe("dashboard", () => {
 });
 
 describe("welcome", () => {
-  const base = { "GET /api/me": { ...ME, name: "Ada", onboarded: false }, "GET /api/profile/preferences": PREFS,
+  const base = { "GET /api/me": { ...ME, name: "Ada", onboarded: false, avatar_url: null }, "GET /api/profile/preferences": PREFS,
     "GET /api/auth/csrf": { csrf_token: "tok" } };
 
   it("saves the name and preferences, then finishes without a resume", async () => {

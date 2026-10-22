@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { SavedResumePicker } from "@/components/app/SavedResumePicker";
 import { useHydrated } from "@/components/AppShell";
 import { ArrowRightIcon, ShieldIcon } from "@/components/icons";
 import { AllowanceNote } from "@/components/AllowanceNote";
@@ -158,6 +159,12 @@ export default function InputPage() {
               No resume handy? Try a sample
             </button>
           </div>
+
+          <SavedResumePicker disabled={busy} onPick={(resume, title) => {
+            setResumeError(null);
+            s.setResume(resume, { mode: "file", fileName: title });
+            setTab("upload");
+          }} />
 
           <Tabs tab={tab} onChange={setTab} />
 

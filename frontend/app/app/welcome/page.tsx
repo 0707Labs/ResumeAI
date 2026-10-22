@@ -8,12 +8,9 @@ import { ErrorState } from "@/components/app/states";
 import { CheckIcon } from "@/components/icons";
 import { UploadDropzone } from "@/components/UploadDropzone";
 import { Button, Card, Label, inputClass } from "@/components/ui";
-import { api, messageFor } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { Me, PreferencesIn } from "@/lib/schemas";
 import { initials, userApi, userError } from "@/lib/user";
-
-/** The resume couldn't be read: its message (from api.ts) says why, in plain words. */
-class ParseError extends Error {}
 
 const STEPS = ["About you", "What you're looking for", "Your resume"] as const;
 
@@ -37,7 +34,7 @@ export default function WelcomePage() {
   async function run(fn: () => Promise<unknown>, next: () => void) {
     setBusy(true);
     setError(null);
-    try { await fn(); next(); } catch (e) { setError(e instanceof ParseError ? e.message : userError(e)); } finally { setBusy(false); }
+    try { await fn(); next(); } catch (e) { setError(userError(e)); } finally { setBusy(false); }
   }
 
   const finish = () => run(() => userApi.finishOnboarding(), () => router.replace("/app/dashboard"));
@@ -111,7 +108,7 @@ export default function WelcomePage() {
             ) : (
               <UploadDropzone busy={busy} onReject={setError} onFile={(file) => run(async () => {
                 let resume;
-                try { resume = await api.parseResumeFile(file); } catch (e) { throw new ParseError(messageFor(e)); }
+                resume = await api.parseResumeFile(file);
                 await userApi.saveResume({ resume, source: "upload", file_name: file.name });
                 setSaved(file.name);
               }, () => {})} />

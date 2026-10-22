@@ -72,13 +72,14 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 }
 
 /** Free-text entries as removable chips: type and press Enter or comma, or Add. */
-function ListInput({ id, label, hint, placeholder, values, onChange }: {
+export function ListInput({ id, label, hint, placeholder, values, onChange, max = 10, maxLength = 80 }: {
   id: string; label: string; hint?: string; placeholder: string; values: string[]; onChange: (v: string[]) => void;
+  max?: number; maxLength?: number;
 }) {
   const [draft, setDraft] = useState("");
-  const full = values.length >= 10;
+  const full = values.length >= max;
   const add = () => {
-    const v = draft.replace(/,/g, " ").split(/\s+/).join(" ").trim().slice(0, 80);
+    const v = draft.replace(/,/g, " ").split(/\s+/).join(" ").trim().slice(0, maxLength);
     if (v && !full && !values.some((x) => x.toLowerCase() === v.toLowerCase())) onChange([...values, v]);
     setDraft("");
   };
@@ -99,7 +100,7 @@ function ListInput({ id, label, hint, placeholder, values, onChange }: {
       )}
       <div className="flex gap-2">
         <input id={id} className={inputClass} value={draft} placeholder={full ? "That's the most we keep" : placeholder}
-          disabled={full} maxLength={80} onChange={(e) => setDraft(e.target.value)}
+          disabled={full} maxLength={maxLength} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }} onBlur={add} />
         <button type="button" onClick={add} disabled={!draft.trim() || full}
           className="mt-1.5 min-h-10 rounded-lg border border-border-strong px-3 text-sm font-medium text-fg hover:bg-surface-2 disabled:opacity-50">

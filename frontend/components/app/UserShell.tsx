@@ -4,24 +4,28 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { Avatar } from "@/components/app/Avatar";
 import { ThemeToggle } from "@/components/AppShell";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
 import { CreditsLive } from "@/components/CreditsLive";
-import { CardIcon, GiftIcon, HomeIcon, LogOutIcon, ShieldIcon, UserIcon, WandIcon } from "@/components/icons";
+import { CardIcon, FileIcon, GiftIcon, HomeIcon, LogOutIcon, MoreIcon, ShieldIcon, UserIcon, WandIcon } from "@/components/icons";
 import { api } from "@/lib/api";
 import { isStaff } from "@/lib/roles";
 import type { Me, PlanStatus } from "@/lib/schemas";
 import type { Theme } from "@/lib/theme";
-import { initials, planLabel, userApi } from "@/lib/user";
+import { planLabel, userApi } from "@/lib/user";
 
-/** Sections of the signed-in area. Resumes, Downloads and Support join as they're built. */
+/** Sections of the signed-in area. Downloads and Support join as they're built. The first
+ * BOTTOM_BAR are on the phone bottom bar; the rest sit behind its "More". */
 export const USER_NAV = [
   { href: "/app/dashboard", label: "Dashboard", Icon: HomeIcon },
   { href: "/app/tailor", label: "Tailor", Icon: WandIcon },
+  { href: "/app/resumes", label: "My Resumes", short: "Resumes", Icon: FileIcon },
   { href: "/app/billing", label: "Plan & Billing", short: "Billing", Icon: CardIcon },
   { href: "/app/invites", label: "Invites & Referrals", short: "Invites", Icon: GiftIcon },
   { href: "/app/profile", label: "Profile", Icon: UserIcon },
 ] as const;
+const BOTTOM_BAR = 4;
 
 export const isCurrentSection = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -66,25 +70,61 @@ export function UserShell({ me, initialTheme, children }: { me: Me | null; initi
         </nav>
         <main id="main" className="min-w-0 flex-1">{children}</main>
       </div>
-      <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-        <ul className="grid grid-cols-5">
-          {USER_NAV.map((item) => {
-            const current = isCurrentSection(pathname, item.href);
-            return (
-              <li key={item.href}>
-                <Link href={item.href} aria-current={current ? "page" : undefined}
-                  className={`flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 text-[11px] ${
-                    current ? "font-medium text-accent" : "text-muted hover:text-fg"}`}>
-                  <item.Icon className="h-5 w-5" />
-                  <span className="truncate">{"short" in item ? item.short : item.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <BottomNav pathname={pathname} />
       <OutOfCreditsModal />
     </div>
+  );
+}
+
+function BottomNav({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const main = USER_NAV.slice(0, BOTTOM_BAR);
+  const more = USER_NAV.slice(BOTTOM_BAR);
+  const moreCurrent = more.some((i) => isCurrentSection(pathname, i.href));
+  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  const cell = (current: boolean) => `flex min-h-14 w-full flex-col items-center justify-center gap-0.5 px-1 text-[11px] ${
+    current ? "font-medium text-accent" : "text-muted hover:text-fg"}`;
+  return (
+    <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+      {open && (
+        <ul id="more-sections" className="border-b border-border p-2">
+          {more.map((item) => (
+            <li key={item.href}>
+              <Link href={item.href} aria-current={isCurrentSection(pathname, item.href) ? "page" : undefined}
+                className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-fg hover:bg-surface-2">
+                <item.Icon />{item.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ul className="grid grid-cols-5">
+        {main.map((item) => {
+          const current = isCurrentSection(pathname, item.href);
+          return (
+            <li key={item.href}>
+              <Link href={item.href} aria-current={current ? "page" : undefined} className={cell(current)}>
+                <item.Icon className="h-5 w-5" />
+                <span className="truncate">{"short" in item ? item.short : item.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+        <li>
+          <button type="button" aria-expanded={open} aria-controls="more-sections" onClick={() => setOpen((o) => !o)}
+            className={cell(moreCurrent || open)}>
+            <MoreIcon className="h-5 w-5" />
+            <span>More</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
   );
 }
 
@@ -134,8 +174,8 @@ function AvatarMenu({ me, initialTheme }: { me: Me; initialTheme: Theme }) {
   return (
     <div ref={root} className="relative">
       <button type="button" aria-haspopup="true" aria-expanded={open} aria-controls="account-menu" onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold text-fg hover:ring-2 hover:ring-border-strong">
-        <span aria-hidden="true">{initials(me.name, me.email)}</span>
+        className="rounded-full hover:ring-2 hover:ring-border-strong">
+        <Avatar src={me.avatar_url} name={me.name} email={me.email} />
         <span className="sr-only">Account menu</span>
       </button>
       {open && (

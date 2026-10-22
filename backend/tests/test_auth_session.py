@@ -55,7 +55,7 @@ def test_sign_in_sets_httponly_lax_cookie_and_stores_only_a_hash(client, user_id
     assert row.session_token_hash == hash_token(token) != token
 
     me = client.get("/api/me").json()
-    assert me == {"id": str(user_id), "email": "ada@example.com", "name": None, "capabilities": [],
+    assert me == {"id": str(user_id), "email": "ada@example.com", "name": None, "capabilities": [], "onboarded": False,
                   "role": "user", "status": "active"}
 
 

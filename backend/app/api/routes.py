@@ -228,9 +228,7 @@ class ScoreResponse(BaseModel):
     delta: float | None = None
 
 
-@router.post("/api/ats/score")
-def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis)) -> ScoreResponse:
-    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
+def _score(body: ScoreRequest, llm) -> ScoreResponse:
     before = score(body.resume, body.jd, llm=llm)
     if body.tailored is None:
         return ScoreResponse(before=before)
@@ -238,6 +236,22 @@ def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analy
     after = score(apply_tailoring(body.resume, checked, approved_only=body.approved_only),
                   body.jd, llm=llm)
     return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))
+
+
+@router.post("/api/ats/score")
+async def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis),
+                    db: AsyncSession = Depends(get_db)) -> ScoreResponse:
+    """For a signed-in analysis the latest scores are kept on it (numbers only) for the
+    dashboard and resume lists."""
+    pinned = pinned_to(billed, body.resume, body.jd)
+    llm, _ = claude_for(body.use_llm, pinned)
+    result = await run_in_threadpool(_score, body, llm)
+    if pinned is not None:
+        pinned.ats_before = round(result.before.total, 1)
+        if result.after is not None:
+            pinned.ats_after = round(result.after.total, 1)
+        await db.commit()
+    return result
 
 
 class MentorRequest(BaseModel):
@@ -248,13 +262,25 @@ class MentorRequest(BaseModel):
     use_llm: bool = True
 
 
-@router.post("/api/mentor")
-def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysis)) -> MentorAdvice:
+def _mentor(body: MentorRequest, llm) -> MentorAdvice:
     analysis = body.analysis or analyze(body.resume, body.jd)
     ats = body.ats or score(body.resume, body.jd)
     advice = build_advice(body.resume, body.jd, analysis, ats)
-    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
     return polish(advice, llm) if llm is not None else advice
+
+
+@router.post("/api/mentor")
+async def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysis),
+                 db: AsyncSession = Depends(get_db)) -> MentorAdvice:
+    """For a signed-in analysis the first suggested action is kept as the dashboard's
+    mentor tip (cleared by the retention purge with the rest of the analysis text)."""
+    pinned = pinned_to(billed, body.resume, body.jd)
+    llm, _ = claude_for(body.use_llm, pinned)
+    advice = await run_in_threadpool(_mentor, body, llm)
+    if pinned is not None and advice.actions:
+        pinned.mentor_tip = advice.actions[0].text[:1000]
+        await db.commit()
+    return advice
 
 
 _SAMPLES = Path(__file__).resolve().parent.parent / "samples"

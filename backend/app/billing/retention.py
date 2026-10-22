@@ -58,7 +58,7 @@ async def purge_analyses_batch(db: AsyncSession, config: BillingConfig, now: dat
         Analysis.purged_at.is_(None), Analysis.created_at < cutoff, Analysis.usable_until <= now, ~recent_download,
     ).order_by(Analysis.created_at).limit(config.retention.batch_size).with_for_update(skip_locked=True)
     done = await db.scalars(update(Analysis).where(Analysis.id.in_(ids.scalar_subquery()))
-                            .values(resume=null(), jd=null(), tailored=null(), purged_at=now).returning(Analysis.id)
+                            .values(resume=null(), jd=null(), tailored=null(), mentor_tip=null(), purged_at=now).returning(Analysis.id)
                             .execution_options(synchronize_session=False))
     return len(done.all())
 

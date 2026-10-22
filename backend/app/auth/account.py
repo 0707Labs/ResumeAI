@@ -18,7 +18,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import subject_ref
-from app.db.models import Account, AuthSession, ConsentRecord, EmailToken, PendingAuth, User
+from app.db.models import (
+    Account, AuthSession, ConsentRecord, EmailToken, JobPreferences, PendingAuth, SavedResume, User,
+)
 from app.db.rls import service_scope
 
 Provider = Literal["google", "github", "email"]
@@ -108,6 +110,9 @@ async def _delete_account(db: AsyncSession, user: User) -> None:
     await db.execute(delete(PendingAuth).where(PendingAuth.verified_email == email))
     await db.execute(delete(EmailToken).where(or_(EmailToken.user_id == uid, EmailToken.email == email)))
     await db.execute(delete(Account).where(Account.user_id == uid))
+    # What the user wrote about themselves goes now too (the user row is only soft-deleted).
+    await db.execute(delete(SavedResume).where(SavedResume.user_id == uid))  # versions cascade
+    await db.execute(delete(JobPreferences).where(JobPreferences.user_id == uid))
     await db.execute(delete(AuthSession).where(AuthSession.user_id == uid))
 
     granted = (await db.execute(text(

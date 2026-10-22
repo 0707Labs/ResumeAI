@@ -11,6 +11,7 @@ transaction. Every token is stored only as a sha256 hash.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -29,7 +30,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING = {
@@ -90,6 +91,7 @@ class User(Base):
     # same transaction as the ledger row. Its row lock serializes a user's credit changes.
     credits_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     referral_code: Mapped[str | None] = mapped_column(Text, unique=True)  # made on first use
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # first-login wizard done/skipped
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
@@ -597,15 +599,29 @@ class Analysis(Base):
     usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+    # Metadata for lists and the dashboard (0011). mentor_tip is text, so the purge clears it.
+    resume_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"))
+    job_title: Mapped[str | None] = mapped_column(Text)
+    company: Mapped[str | None] = mapped_column(Text)
+    ats_before: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    ats_after: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    mentor_tip: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
         CheckConstraint("(tailored_at IS NULL) = (llm_tailored IS NULL) AND (tailored IS NULL OR tailored_at IS NOT NULL)"
                         " AND (purged_at IS NOT NULL OR (tailored IS NULL) = (tailored_at IS NULL))", name="tailored"),
         CheckConstraint("(purged_at IS NULL) = (resume IS NOT NULL) AND (purged_at IS NULL) = (jd IS NOT NULL)"
-                        " AND (purged_at IS NULL OR tailored IS NULL)", name="purged"),
+                        " AND (purged_at IS NULL OR tailored IS NULL) AND (purged_at IS NULL OR mentor_tip IS NULL)",
+                        name="purged"),
+        CheckConstraint("(ats_before IS NULL OR ats_before BETWEEN 0 AND 100)"
+                        " AND (ats_after IS NULL OR ats_after BETWEEN 0 AND 100)", name="ats"),
+        CheckConstraint("(job_title IS NULL OR length(job_title) <= 200) AND (company IS NULL OR length(company) <= 200)"
+                        " AND (mentor_tip IS NULL OR length(mentor_tip) <= 1000)", name="meta_len"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
         Index("ix_analyses_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
+        Index("ix_analyses_resume_id", "resume_id", postgresql_where=text("resume_id IS NOT NULL")),
     )
 
 
@@ -737,3 +753,84 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (CheckConstraint("key ~ '^[a-z][a-z0-9_]{0,63}$'", name="key"),)
+
+
+SENIORITY_LEVELS = ("intern", "junior", "mid", "senior", "lead", "principal")
+WORK_MODES = ("remote", "hybrid", "onsite")
+EMPLOYMENT_TYPES = ("full_time", "part_time", "contract", "internship", "freelance")
+RESUME_SOURCES = ("upload", "paste", "edit")
+
+
+class JobPreferences(Base):
+    """What the user is looking for (onboarding step 2, profile tab). One row per user."""
+
+    __tablename__ = "job_preferences"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    target_roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    seniority: Mapped[str | None] = mapped_column(Text)
+    industries: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    locations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    work_modes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    employment_types: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    notice_period_days: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("seniority IS NULL OR " + _in("seniority", SENIORITY_LEVELS), name="seniority"),
+        CheckConstraint("work_modes <@ ARRAY[" + ", ".join(repr(v) for v in WORK_MODES) + "]::text[]",
+                        name="work_modes"),
+        CheckConstraint("employment_types <@ ARRAY[" + ", ".join(repr(v) for v in EMPLOYMENT_TYPES) + "]::text[]",
+                        name="employment_types"),
+        CheckConstraint("notice_period_days IS NULL OR notice_period_days BETWEEN 0 AND 365", name="notice_period"),
+        CheckConstraint("text_list_ok(target_roles, 10, 80)", name="target_roles"),
+        CheckConstraint("text_list_ok(industries, 10, 80)", name="industries"),
+        CheckConstraint("text_list_ok(locations, 10, 80)", name="locations"),
+    )
+
+
+class SavedResume(Base):
+    """A base resume the user keeps (not purged; the user deletes it). Content lives in versions."""
+
+    __tablename__ = "resumes"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("length(title) BETWEEN 1 AND 120", name="title"),
+        Index("ix_resumes_user_created", "user_id", "created_at"),
+        Index("ix_resumes_one_default", "user_id", unique=True, postgresql_where=text("is_default")),
+    )
+
+
+class ResumeVersion(Base):
+    """One version of a saved resume: the parsed Resume JSON, bullet ids included.
+    Never updated (trigger); an edit or re-upload adds the next version."""
+
+    __tablename__ = "resume_versions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    file_name: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        UniqueConstraint("resume_id", "version"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(_in("source", RESUME_SOURCES), name="source"),
+        CheckConstraint("file_name IS NULL OR length(file_name) <= 200", name="file_name"),
+    )

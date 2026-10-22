@@ -31,6 +31,7 @@ class Me(BaseModel):
     role: Role
     status: Literal["active", "suspended"]
     capabilities: list[Capability]  # what the UI may offer; the API checks again on every call
+    onboarded: bool  # false until the first-login wizard is finished or skipped
 
 
 class CsrfToken(BaseModel):
@@ -46,7 +47,7 @@ class ProviderAvailability(BaseModel):
 @router.get("/api/me")
 async def me(user: User = Depends(current_user)) -> Me:
     return Me(id=user.id, email=user.email, name=user.name, role=user.role, status=user.status,
-              capabilities=capabilities(user.role))
+              capabilities=capabilities(user.role), onboarded=user.onboarded_at is not None)
 
 
 @router.get("/api/auth/providers")

@@ -8,6 +8,7 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
 from app.api.oauth import router as oauth_router
+from app.api.profile import router as profile_router
 from app.api.referrals import admin_router as admin_referrals_router
 from app.api.referrals import router as referrals_router
 from app.api.routes import router
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(admin_billing_router)
     app.include_router(referrals_router)
+    app.include_router(profile_router)
     app.include_router(admin_referrals_router)
     return app
 

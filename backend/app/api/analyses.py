@@ -10,6 +10,7 @@ from the start (over_daily_cap tells the pipeline why). Downloading is what pays
 /api/downloads in routes.py).
 """
 
+import logging
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -24,7 +25,7 @@ from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import resolve_session
-from app.billing import analyses
+from app.billing import analyses, budget
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import current_analysis_id, parse_analysis_id
 from app.billing.entitlements import can_start_tailoring
@@ -33,6 +34,7 @@ from app.db.rls import user_scope
 from app.db.session import get_db
 from app.models import JobDescription, Resume
 
+log = logging.getLogger("app.billing")
 router = APIRouter(prefix="/api/analyses")
 
 # True for a request whose X-Analysis-Id names the caller's analysis that was started
@@ -82,6 +84,11 @@ async def start(
     no_credits otherwise. Send one Idempotency-Key per Analyze click; a retry with it
     returns the same analysis. Over the daily Claude cap it still starts (and
     downloads), with claude false."""
+    # Staff paused analyses, or a Claude budget is used up with the kill switch on
+    # (app.billing.budget). Running analyses finish; new ones wait for the reset.
+    if (paused := await budget.pause_reason(db)) is not None:
+        log.warning("analysis refused: %s", paused)
+        raise HTTPException(status_code=503, detail="analyses_paused")
     try:
         started = await analyses.start_analysis(
             db, config, user.id, resume=body.resume.model_dump(mode="json"), jd=body.jd.model_dump(mode="json"),

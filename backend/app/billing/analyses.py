@@ -178,7 +178,8 @@ async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.
     usable_until = now + timedelta(hours=config.analyses.usable_hours) if used < cap else now
     row = Analysis(id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, resume=resume, jd=jd,
                    inputs_sha256=inputs_digest(resume, jd), created_at=now, usable_until=usable_until,
-                   job_title=_label(jd.get("title")), company=_label(jd.get("company")))
+                   job_title=_label(jd.get("title")), company=_label(jd.get("company")),
+                   entitlement=decision.pays_with)
     db.add(row)
     await db.flush()
     return Started(row, decision, replay=False, claude_per_day=cap)

@@ -42,6 +42,10 @@ class Settings(BaseModel):
     referral_trigger: Literal["on_verified_signup", "on_first_tailoring"]
     referral_reward_credits: int = Field(ge=0, le=50)
     referral_monthly_cap: int = Field(ge=0, le=1000)
+    # Claude spend (defaults: billing.toml [alerts].daily_llm_spend_usd, monthly = 30 x daily).
+    daily_budget_usd: float = Field(gt=0, le=1_000_000)
+    monthly_budget_usd: float = Field(gt=0, le=10_000_000)
+    budget_kill_switch: bool = True  # past a budget, new analyses pause until it resets
 
 
 def defaults(base: BillingConfig | None = None) -> dict[str, Any]:
@@ -51,6 +55,8 @@ def defaults(base: BillingConfig | None = None) -> dict[str, Any]:
         "invites_per_user": config.referrals.invites_per_user, "signup_bonus_credits": config.signup.bonus_credits,
         "referrals_enabled": config.referrals.enabled, "referral_trigger": config.referrals.trigger,
         "referral_reward_credits": config.referrals.reward_credits, "referral_monthly_cap": config.referrals.monthly_cap,
+        "daily_budget_usd": config.alerts.daily_llm_spend_usd, "monthly_budget_usd": config.alerts.daily_llm_spend_usd * 30,
+        "budget_kill_switch": True,
     }
 
 

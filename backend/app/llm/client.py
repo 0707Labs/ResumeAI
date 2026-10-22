@@ -6,6 +6,7 @@ and the rest of the app never touches SDK types.
 
 import logging
 import os
+import time
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar
 
@@ -33,12 +34,14 @@ class ClaudeLLM:
                  on_usage: Callable[[str, Any], None] | None = None):
         self.client = client or anthropic.Anthropic(default_headers=_workspace_header())
         self.model = model
-        # Called with (schema name, response) after every response, for cost tracking.
+        # Called after every call for cost tracking: (schema name, response or None) plus
+        # latency_ms, status (ok, refused, truncated, invalid, error, rate_limited) and error_code.
         self.on_usage = on_usage
         # (schema name, input tokens, output tokens) per successful call, for cost checks.
         self.usage: list[tuple[str, int, int]] = []
 
     def parse(self, *, system: str, user: str, schema: type[T], effort: str = "medium") -> T:
+        started = time.monotonic()
         try:
             response = self.client.beta.messages.parse(
                 model=self.model,
@@ -54,12 +57,15 @@ class ClaudeLLM:
             )
         except anthropic.APIError as exc:
             log.warning("Claude call for %s failed: %s", schema.__name__, exc)
+            self._report(schema.__name__, None, started, "rate_limited" if isinstance(exc, anthropic.RateLimitError)
+                         else "error", _error_code(exc))
             raise LLMError(_describe(exc)) from exc
 
         self.usage.append((schema.__name__, response.usage.input_tokens,
                            response.usage.output_tokens))
-        if self.on_usage is not None:
-            self.on_usage(schema.__name__, response)
+        status = ("refused" if response.stop_reason == "refusal" else "truncated" if response.stop_reason == "max_tokens"
+                  else "invalid" if response.parsed_output is None else "ok")
+        self._report(schema.__name__, response, started, status, None)
         if response.stop_reason == "refusal":
             raise LLMError("Claude declined this request.")
         if response.stop_reason == "max_tokens":
@@ -67,6 +73,21 @@ class ClaudeLLM:
         if response.parsed_output is None:
             raise LLMError("Claude returned output that didn't match the schema.")
         return response.parsed_output
+
+
+    def _report(self, stage: str, response: Any, started: float, status: str, error_code: str | None) -> None:
+        if self.on_usage is not None:
+            self.on_usage(stage, response, latency_ms=round((time.monotonic() - started) * 1000), status=status,
+                          error_code=error_code)
+
+
+def _error_code(exc: anthropic.APIError) -> str:
+    """A short, content-free code for the cost views ("api_429", "connection")."""
+    if isinstance(exc, anthropic.APIStatusError):
+        return f"api_{exc.status_code}"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "connection"
+    return type(exc).__name__[:80]
 
 
 def _workspace_header() -> dict[str, str]:

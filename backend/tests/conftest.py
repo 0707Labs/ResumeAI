@@ -39,7 +39,8 @@ ORIGIN = "http://localhost:3000"  # the default RT_PUBLIC_URL
 TABLES = ("users, accounts, auth_sessions, pending_auth, email_tokens, invites, invite_redemptions,"
           " waitlist, consent_records, consent_notices, credit_transactions, passes,"
           " payments, billing_customers, processed_webhook_events, subscriptions, billing_reviews, llm_usage, analyses, downloads, referrals, app_settings,"
-          " job_preferences, resumes, resume_versions, support_tickets, support_ticket_messages")
+          " job_preferences, resumes, resume_versions, support_tickets, support_ticket_messages,"
+          " daily_llm_costs, daily_revenue, aggregate_runs, budget_alerts")
 
 
 def fixture_text(name: str) -> str:

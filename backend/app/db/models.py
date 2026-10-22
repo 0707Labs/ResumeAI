@@ -10,7 +10,7 @@ transaction. Every token is stored only as a sha256 hash.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
     Boolean,
     Numeric,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Identity,
@@ -567,6 +568,10 @@ class BillingReview(Base):
     )
 
 
+LLM_STATUSES = ("ok", "refused", "truncated", "invalid", "error", "rate_limited")
+ENTITLEMENTS = ("free", "pass", "pro", "credit")
+
+
 class LlmUsage(Base):
     """One row per Claude call: tokens and cost, for spend tracking and cost per analysis.
     analysis_id is the server-side analyses.id the call was billed to (set only after the
@@ -585,8 +590,17 @@ class LlmUsage(Base):
     cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6))  # NULL: model not priced in billing.toml
     created_at: Mapped[datetime] = _created_at()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="ok")  # see LLM_STATUSES
+    error_code: Mapped[str | None] = mapped_column(Text)
 
-    __table_args__ = (Index("ix_llm_usage_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_llm_usage_created_at", "created_at"),
+        CheckConstraint(_in("status", LLM_STATUSES), name="status"),
+        CheckConstraint("error_code IS NULL OR length(error_code) <= 80", name="error_code_len"),
+        Index("ix_llm_usage_user_created", "user_id", "created_at", postgresql_where=text("user_id IS NOT NULL")),
+    )
 
 
 DOWNLOAD_FORMATS = ("docx", "pdf")
@@ -629,6 +643,7 @@ class Analysis(Base):
     ats_after: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     mentor_tip: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # deleting purges at once
+    entitlement: Mapped[str | None] = mapped_column(Text)  # what allowed the run: free, pass, pro, credit
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
@@ -642,6 +657,7 @@ class Analysis(Base):
         CheckConstraint("(job_title IS NULL OR length(job_title) <= 200) AND (company IS NULL OR length(company) <= 200)"
                         " AND (mentor_tip IS NULL OR length(mentor_tip) <= 1000)", name="meta_len"),
         CheckConstraint("deleted_at IS NULL OR purged_at IS NOT NULL", name="deleted"),
+        CheckConstraint("entitlement IS NULL OR " + _in("entitlement", ENTITLEMENTS), name="entitlement"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
         Index("ix_analyses_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
         Index("ix_analyses_resume_id", "resume_id", postgresql_where=text("resume_id IS NOT NULL")),
@@ -932,3 +948,62 @@ class SupportTicketMessage(Base):
         CheckConstraint("length(body) BETWEEN 1 AND 5000", name="body_len"),
         Index("ix_support_ticket_messages_ticket_created", "ticket_id", "created_at"),
     )
+
+
+class DailyLlmCost(Base):
+    """One day's Claude usage per pipeline step, model and entitlement (refresh-aggregates)."""
+
+    __tablename__ = "daily_llm_costs"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    stage: Mapped[str] = mapped_column(Text, primary_key=True)
+    model: Mapped[str] = mapped_column(Text, primary_key=True)
+    entitlement: Mapped[str] = mapped_column(Text, primary_key=True)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    wasted_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    unpriced_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class DailyRevenue(Base):
+    """One day's payments per product and currency (refresh-aggregates)."""
+
+    __tablename__ = "daily_revenue"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    product_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    currency: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    payments: Mapped[int] = mapped_column(Integer, nullable=False)
+    gross_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refunded_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    disputes: Mapped[int] = mapped_column(Integer, nullable=False)
+    settled_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refunded_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    fees_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unsettled: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AggregateRun(Base):
+    __tablename__ = "aggregate_runs"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BudgetAlert(Base):
+    """A budget threshold already alerted for a period, so each goes out once."""
+
+    __tablename__ = "budget_alerts"
+
+    period: Mapped[str] = mapped_column(Text, primary_key=True)
+    threshold: Mapped[int] = mapped_column(Integer, primary_key=True)
+    spend_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    budget_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    sent_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (CheckConstraint("threshold IN (50, 80, 100)", name="threshold"),)

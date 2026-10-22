@@ -82,6 +82,8 @@ frontend/
 - Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
   `npm run test:contract` with the backend running validates every endpoint against the zod schemas
 - E2E: `npm run test:e2e` (Playwright, Chromium; one-time `npx playwright install chromium`).
+  On this Mac set `PLAYWRIGHT_BROWSERS_PATH=$HOME/0707Labs/.playwright-browsers` for install and runs:
+  the default `~/Library/Caches/ms-playwright` gets cleared (docs/testing.md).
   Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
   reusing servers already running there; a backend with a real key fails the spec's rules-only check.
   `E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://127.0.0.1:8100` runs a separate pair instead.

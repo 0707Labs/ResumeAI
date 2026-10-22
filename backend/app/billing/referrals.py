@@ -32,6 +32,7 @@ from app.billing import ledger
 from app.billing.analyses import month_start
 from app.billing.config import BillingConfig
 from app.db.models import Analysis, Referral, User
+from app.db.rls import service_scope
 
 log = logging.getLogger("app.billing")
 
@@ -76,7 +77,9 @@ async def ensure_code(db: AsyncSession, user: User) -> str:
         return user.referral_code
     while True:
         code = "".join(secrets.choice(ALPHABET) for _ in range(8))
-        if await db.scalar(select(User.id).where(User.referral_code == code)) is None:
+        async with service_scope(db):  # uniqueness is a question about every user's code
+            taken = await db.scalar(select(User.id).where(User.referral_code == code))
+        if taken is None:
             user.referral_code = code
             await db.flush()
             return code

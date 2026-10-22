@@ -16,6 +16,7 @@ from app.auth.csrf import issue_csrf, require_csrf
 from app.auth.deps import current_user
 from app.auth.events import log_auth_event
 from app.auth.ratelimit import rate_limit
+from app.auth.roles import Capability, Role, capabilities
 from app.auth.sessions import end_session
 from app.db.models import User
 from app.db.session import get_db
@@ -27,8 +28,9 @@ class Me(BaseModel):
     id: uuid.UUID
     email: str
     name: str | None
-    role: Literal["user", "admin"]
+    role: Role
     status: Literal["active", "suspended"]
+    capabilities: list[Capability]  # what the UI may offer; the API checks again on every call
 
 
 class CsrfToken(BaseModel):
@@ -43,7 +45,8 @@ class ProviderAvailability(BaseModel):
 
 @router.get("/api/me")
 async def me(user: User = Depends(current_user)) -> Me:
-    return Me(id=user.id, email=user.email, name=user.name, role=user.role, status=user.status)
+    return Me(id=user.id, email=user.email, name=user.name, role=user.role, status=user.status,
+              capabilities=capabilities(user.role))
 
 
 @router.get("/api/auth/providers")

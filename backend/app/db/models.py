@@ -11,6 +11,7 @@ transaction. Every token is stored only as a sha256 hash.
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -49,6 +50,7 @@ LEDGER_REASONS = (
     "referral", "admin_adjust", "purchase_reversal",
 )
 CONSENT_PURPOSES = ("service", "research", "age_18_plus", "waitlist")
+ROLES = ("user", "support", "admin", "superadmin")  # app.auth.roles maps them to capabilities
 
 
 class Base(DeclarativeBase):
@@ -92,10 +94,11 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("credits_balance >= 0", name="credits_balance"),
-        CheckConstraint(_in("role", ("user", "admin")), name="role"),
+        CheckConstraint(_in("role", ROLES), name="role"),
         CheckConstraint(_in("status", ("active", "suspended")), name="status"),
         Index("users_email_live", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
         Index("users_deleted_at", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),
+        Index("ix_users_staff", "role", postgresql_where=text("role <> 'user'")),
     )
 
 
@@ -134,6 +137,7 @@ class AuthSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    reauth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # step-up for superadmin actions
 
 
 class Invite(Base):
@@ -689,3 +693,47 @@ class Referral(Base):
         Index("ix_referrals_review", "created_at", postgresql_where=text("needs_review")),
         Index("ix_referrals_ip", "ip_hmac", "created_at", postgresql_where=text("ip_hmac IS NOT NULL")),
     )
+
+
+class AdminAuditLog(Base):
+    """One row per staff mutation, written in the mutation's own transaction (app.admin.audit).
+    Append-only by trigger; no foreign keys, so entries outlive what they describe.
+    before/after are summaries (ids, amounts, flags), never resume or JD text or secrets."""
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # NULL = system
+    actor_role: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)  # "<area>.<verb>", e.g. "credits.adjust"
+    target_type: Mapped[str | None] = mapped_column(Text)
+    target_id: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    before: Mapped[dict | None] = mapped_column(JSONB)
+    after: Mapped[dict | None] = mapped_column(JSONB)
+    ip_hmac: Mapped[str | None] = mapped_column(Text)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("actor_role", ("system", *ROLES)), name="actor_role"),
+        CheckConstraint("action ~ '^[a-z_]+\\.[a-z_]+$'", name="action"),
+        CheckConstraint("reason IS NULL OR length(reason) <= 500", name="reason_len"),
+        CheckConstraint("user_agent IS NULL OR length(user_agent) <= 300", name="ua_len"),
+        Index("ix_admin_audit_log_created_at", "created_at"),
+        Index("ix_admin_audit_log_actor_created", "actor_id", "created_at"),
+        Index("ix_admin_audit_log_target", "target_type", "target_id", "created_at"),
+    )
+
+
+class AppSetting(Base):
+    """Runtime switches that override env/billing.toml defaults (app.admin.settings)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (CheckConstraint("key ~ '^[a-z][a-z0-9_]{0,63}$'", name="key"),)

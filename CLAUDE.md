@@ -125,6 +125,19 @@ frontend/
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.
 - Log auth events only via `log_auth_event`: user_id at most, never email, IP, code or token.
+
+## Admin and data-access conventions (docs/admin.md)
+- Every /api/admin route depends on `require("<capability>")` (app/auth/roles.py), never a role
+  name; mutations also take `require_csrf` and an admin rate limit. tests/test_admin_security.py
+  enforces this for every route.
+- Every staff mutation calls `app.admin.audit.record()` before its commit (same transaction).
+  Summaries only: ids, counts, amounts, flags; never resume/JD text, ticket bodies or secrets.
+- Signed-in requests run as Postgres role `rt_app` with RLS (`current_user` switches it).
+  Work that touches other users' rows goes in a small `async with service_scope(db):` block.
+  Under RLS a cross-user UPDATE matches nothing instead of failing: test cross-user writes.
+- New user-owned tables: add them to the rt_app grants + `own_rows` policy in their migration.
+  Staff/config/cost tables get no rt_app grant.
+- Admin responses carry metadata only; no resume or JD text, no secret values.
 - No user row exists before invite redemption + required consent (one transaction).
 - Frontend auth calls live in lib/auth.ts (AuthError codes -> copy via authMessage). Provider
   buttons follow Google/GitHub branding (official marks, brand colour tokens in globals.css).

@@ -29,6 +29,7 @@ from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import current_analysis_id, parse_analysis_id
 from app.billing.entitlements import can_start_tailoring
 from app.db.models import Analysis, User
+from app.db.rls import user_scope
 from app.db.session import get_db
 from app.models import JobDescription, Resume
 
@@ -116,6 +117,7 @@ async def billed_analysis(request: Request, db: AsyncSession = Depends(get_db)) 
     if analysis_id is not None:
         signed_in = await resolve_session(db, request)
         if signed_in is not None and signed_in.user.status == "active":
+            await user_scope(db, signed_in.user.id)
             analysis = await analyses.usable(db, signed_in.user.id, analysis_id)
             if analysis is None:
                 capped = await db.scalar(select(Analysis.id).where(

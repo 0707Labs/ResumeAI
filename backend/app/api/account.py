@@ -21,6 +21,7 @@ from app.auth.events import log_auth_event
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import end_session
 from app.db.models import User
+from app.db.rls import service_scope
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/account")
@@ -74,7 +75,8 @@ async def link_email(body: EmailIn, user: User = Depends(current_user),
                      db: AsyncSession = Depends(get_db)) -> Accepted:
     """Email a link that adds email sign-in for this address to this account."""
     per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
-    await send_magic_link(db, body.email, "link", user_id=user.id)
+    async with service_scope(db):  # email_tokens belong to the sign-in flow, not to the user
+        await send_magic_link(db, body.email, "link", user_id=user.id)
     return Accepted()
 
 

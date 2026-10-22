@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import subject_ref
 from app.db.models import Account, AuthSession, ConsentRecord, EmailToken, PendingAuth, User
+from app.db.rls import service_scope
 
 Provider = Literal["google", "github", "email"]
 
@@ -39,7 +40,14 @@ async def list_accounts(db: AsyncSession, user_id: uuid.UUID) -> list[Account]:
 
 async def link(db: AsyncSession, user: User, provider: Provider, provider_account_id: str,
                verified_email: str) -> Literal["linked", "already_linked"]:
-    """Add a login method to `user`. Commits."""
+    """Add a login method to `user`. Commits. Runs as the service role: whether another
+    account already owns this identity or address is a question about other users' rows."""
+    async with service_scope(db):
+        return await _link(db, user, provider, provider_account_id, verified_email)
+
+
+async def _link(db: AsyncSession, user: User, provider: Provider, provider_account_id: str,
+                verified_email: str) -> Literal["linked", "already_linked"]:
     owner = (await db.execute(select(Account.user_id).where(
         Account.provider == provider, Account.provider_account_id == provider_account_id
     ))).scalar_one_or_none()
@@ -83,7 +91,13 @@ async def unlink(db: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID) ->
 
 
 async def delete_account(db: AsyncSession, user: User) -> None:
-    """Delete the account and everything that lets anyone sign in to it. Commits."""
+    """Delete the account and everything that lets anyone sign in to it. Commits.
+    Runs as the service role: pending sign-ins and email tokens aren't user-owned rows."""
+    async with service_scope(db):
+        await _delete_account(db, user)
+
+
+async def _delete_account(db: AsyncSession, user: User) -> None:
     uid, email, now = user.id, user.email, datetime.now(UTC)
     identities = [tuple(r) for r in (await db.execute(
         select(Account.provider, Account.provider_account_id).where(Account.user_id == uid)

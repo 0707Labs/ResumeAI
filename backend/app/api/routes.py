@@ -22,6 +22,7 @@ from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import parse_analysis_id
 from app.config import get_settings
 from app.db.models import Analysis, Download, User
+from app.db.rls import service_scope
 from app.db.session import get_db
 from app.export.preview import render_preview
 from app.export.render import to_docx, to_pdf
@@ -162,7 +163,8 @@ async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(b
         billed.llm_tailored = llm is not None and not any(n.startswith(RULES_FALLBACK) for n in result.notes)
         billed.tailored_at = func.now()
         if billed.user_id is not None:
-            await referrals.on_first_tailoring(db, config, billed.user_id)
+            async with service_scope(db):  # the reward goes to the referrer: another user's rows
+                await referrals.on_first_tailoring(db, config, billed.user_id)
         await db.commit()
     return result
 

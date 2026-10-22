@@ -5,13 +5,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.admin import require_admin
+from app.admin import audit
+from app.api.admin import READ_LIMIT, WRITE_LIMIT
+from app.auth.roles import require
 from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
@@ -137,8 +139,8 @@ class DecisionIn(BaseModel):
     reason: str = Field(default="admin", min_length=1, max_length=200)
 
 
-@admin_router.get("")
-async def queue(view: Literal["review", "recent"] = "review", _: User = Depends(require_admin),
+@admin_router.get("", dependencies=[Depends(READ_LIMIT)])
+async def queue(view: Literal["review", "recent"] = "review", _: User = Depends(require("referrals.decide")),
                 db: AsyncSession = Depends(get_db)) -> list[AdminReferral]:
     referrer, referee = aliased(User), aliased(User)
     q = (select(Referral, referrer.email, referee.email)
@@ -157,29 +159,40 @@ async def queue(view: Literal["review", "recent"] = "review", _: User = Depends(
     return out
 
 
-async def _decide(db: AsyncSession, action, *args) -> AdminReferral | None:
+async def _decide(db: AsyncSession, request: Request, admin: User, verb: str, referral_id: uuid.UUID,
+                  action, reason: str | None = None) -> None:
+    before = await db.get(Referral, referral_id)
+    before_status = before.status if before else None
     try:
-        row = await action(db, *args)
+        row = await action(db)
     except referrals.NotAllowed:
         await db.rollback()
         raise HTTPException(status_code=409, detail="not_allowed") from None
+    audit.record(db, admin, f"referrals.{verb}", request=request, target_type="referral", target_id=referral_id,
+                 reason=reason, before={"status": before_status},
+                 after=None if row is None else {"status": row.status, "reward_credits": row.reward_credits})
     await db.commit()
-    return row
 
 
-@admin_router.post("/{referral_id}/approve", status_code=204, dependencies=[Depends(require_csrf)])
-async def approve(referral_id: uuid.UUID, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
-                  config: BillingConfig = Depends(get_billing_config)) -> None:
-    await _decide(db, lambda d: referrals.approve(d, config, referral_id, admin.id))
+DECIDE = [Depends(WRITE_LIMIT), Depends(require_csrf)]
 
 
-@admin_router.post("/{referral_id}/reject", status_code=204, dependencies=[Depends(require_csrf)])
-async def reject(referral_id: uuid.UUID, body: DecisionIn, admin: User = Depends(require_admin),
-                 db: AsyncSession = Depends(get_db)) -> None:
-    await _decide(db, lambda d: referrals.reject(d, referral_id, admin.id, body.reason))
+@admin_router.post("/{referral_id}/approve", status_code=204, dependencies=DECIDE)
+async def approve(referral_id: uuid.UUID, request: Request, admin: User = Depends(require("referrals.decide")),
+                  db: AsyncSession = Depends(get_db), config: BillingConfig = Depends(get_billing_config)) -> None:
+    await _decide(db, request, admin, "approve", referral_id,
+                  lambda d: referrals.approve(d, config, referral_id, admin.id))
 
 
-@admin_router.post("/{referral_id}/reverse", status_code=204, dependencies=[Depends(require_csrf)])
-async def reverse(referral_id: uuid.UUID, body: DecisionIn, admin: User = Depends(require_admin),
-                  db: AsyncSession = Depends(get_db)) -> None:
-    await _decide(db, lambda d: referrals.reverse(d, referral_id, admin.id, body.reason))
+@admin_router.post("/{referral_id}/reject", status_code=204, dependencies=DECIDE)
+async def reject(referral_id: uuid.UUID, body: DecisionIn, request: Request,
+                 admin: User = Depends(require("referrals.decide")), db: AsyncSession = Depends(get_db)) -> None:
+    await _decide(db, request, admin, "reject", referral_id,
+                  lambda d: referrals.reject(d, referral_id, admin.id, body.reason), body.reason)
+
+
+@admin_router.post("/{referral_id}/reverse", status_code=204, dependencies=DECIDE)
+async def reverse(referral_id: uuid.UUID, body: DecisionIn, request: Request,
+                  admin: User = Depends(require("referrals.decide")), db: AsyncSession = Depends(get_db)) -> None:
+    await _decide(db, request, admin, "reverse", referral_id,
+                  lambda d: referrals.reverse(d, referral_id, admin.id, body.reason), body.reason)

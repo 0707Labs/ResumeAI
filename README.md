@@ -62,6 +62,18 @@ the e2e tests. Production sends them through Amazon SES (`RT_MAILER=ses`), and t
 refuses to start without a sender and keys. SES setup, the send-only IAM policy,
 SPF/DKIM/DMARC records and the go-live checklist are in [docs/email.md](docs/email.md).
 
+## Admin access
+
+Staff roles are `support`, `admin` and `superadmin`. To make the first superadmin, sign up
+normally, then run:
+
+```bash
+cd backend && ADMIN_BOOTSTRAP_EMAIL=you@example.com .venv/bin/python -m app.auth.cli bootstrap-admin
+```
+
+Roles, the audit log, step-up re-authentication and the database's row-level security
+(including the one-time `rt_app` role setup) are in [docs/admin.md](docs/admin.md).
+
 ## Billing (Dodo Payments)
 
 Payments go through Dodo Payments, the merchant of record (it handles tax and issues

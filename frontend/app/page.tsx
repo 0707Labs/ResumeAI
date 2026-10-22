@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ArrowRightIcon, CheckIcon, ErrorIcon, FileIcon, ShieldIcon, UploadIcon } from "@/components/icons";
+import { LandingView } from "@/components/site/LandingView";
 import { PublicPage } from "@/components/site/PublicPage";
 import { SignUpButton } from "@/components/site/SignUpButton";
 import { freePoints, planPoints, priceList } from "@/lib/billing";
@@ -65,6 +66,7 @@ export default async function LandingPage() {
   const faq = inviteOnly ? FAQ : FAQ.filter((f) => !f.q.startsWith("Why is it invite-only"));
   return (
     <PublicPage>
+      <LandingView />
       <script type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd(faq)).replace(/</g, "\\u003c") }} />
       <Hero inviteOnly={inviteOnly} />

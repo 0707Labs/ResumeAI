@@ -27,6 +27,20 @@ from app.db.rls import service_scope
 from app.db.session import get_db
 
 
+STEPS = ("gap_analysis", "tailor", "tailor_repair", "ats_semantic", "mentor")  # app.billing.costs.PIPELINE_STEPS
+
+
+class StepModel(BaseModel):
+    """Which Claude model one pipeline step uses. The model must have a price in
+    billing.toml [llm_prices] (checked when saved, and again when used)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9][a-z0-9.\-]*$")
+    max_tokens: int = Field(ge=1024, le=64000)
+    effort: Literal["low", "medium", "high"]
+
+
 class Settings(BaseModel):
     """Every runtime setting, with its type. Unknown keys are refused."""
 
@@ -46,6 +60,11 @@ class Settings(BaseModel):
     daily_budget_usd: float = Field(gt=0, le=1_000_000)
     monthly_budget_usd: float = Field(gt=0, le=10_000_000)
     budget_kill_switch: bool = True  # past a budget, new analyses pause until it resets
+    # Plans (defaults: billing.toml; RT_BILLING_PRO_ENABLED for Pro).
+    pro_enabled: bool
+    free_analyses_per_month: int = Field(ge=0, le=100)
+    # Claude per pipeline step; a step not listed uses the built-in default.
+    llm_models: dict[Literal[STEPS], StepModel] = Field(default_factory=dict)  # type: ignore[valid-type]
 
 
 def defaults(base: BillingConfig | None = None) -> dict[str, Any]:
@@ -57,6 +76,8 @@ def defaults(base: BillingConfig | None = None) -> dict[str, Any]:
         "referral_reward_credits": config.referrals.reward_credits, "referral_monthly_cap": config.referrals.monthly_cap,
         "daily_budget_usd": config.alerts.daily_llm_spend_usd, "monthly_budget_usd": config.alerts.daily_llm_spend_usd * 30,
         "budget_kill_switch": True,
+        "pro_enabled": bool(config.products.get("pro_monthly") and config.products["pro_monthly"].enabled),
+        "free_analyses_per_month": config.free.analyses_per_month, "llm_models": {},
     }
 
 
@@ -81,6 +102,9 @@ def apply(base: BillingConfig, values: Settings) -> BillingConfig:
             "reward_credits": values.referral_reward_credits, "monthly_cap": values.referral_monthly_cap,
             "invites_per_user": values.invites_per_user}),
         "signup": base.signup.model_copy(update={"bonus_credits": values.signup_bonus_credits}),
+        "free": base.free.model_copy(update={"analyses_per_month": values.free_analyses_per_month}),
+        "products": {k: p.model_copy(update={"enabled": values.pro_enabled}) if k == "pro_monthly" else p
+                     for k, p in base.products.items()},
     })
 
 
@@ -114,13 +138,13 @@ async def write(db: AsyncSession, actor: User, request: Request | None, key: str
         checked = Settings(**{**before.values.model_dump(), key: value})
     except ValidationError as exc:
         raise ValueError(exc.errors()[0]["msg"]) from None
-    new_value = getattr(checked, key)
+    new_value = checked.model_dump(mode="json")[key]
     await db.execute(insert(AppSetting).values(key=key, value=new_value, updated_by=actor.id)
                      .on_conflict_do_update(index_elements=[AppSetting.key],
                                             set_={"value": new_value, "updated_by": actor.id,
                                                   "updated_at": func.now()}))
     audit.record(db, actor, "settings.update", request=request, target_type="setting", target_id=key,
-                 reason=reason, before={key: getattr(before.values, key)}, after={key: new_value})
+                 reason=reason, before={key: before.values.model_dump(mode="json")[key]}, after={key: new_value})
     await db.commit()
     return await read_all(db)
 
@@ -132,6 +156,6 @@ async def reset(db: AsyncSession, actor: User, request: Request | None, key: str
     before = await read_all(db)
     await db.execute(delete(AppSetting).where(AppSetting.key == key))
     audit.record(db, actor, "settings.reset", request=request, target_type="setting", target_id=key,
-                 reason=reason, before={key: getattr(before.values, key)}, after={key: defaults()[key]})
+                 reason=reason, before={key: before.values.model_dump(mode="json")[key]}, after={key: defaults()[key]})
     await db.commit()
     return await read_all(db)

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { ThemeToggle } from "@/components/AppShell";
 import { ShieldIcon } from "@/components/icons";
 import { ROLE_LABEL, sectionsFor } from "@/lib/roles";
@@ -23,6 +24,7 @@ export function AdminShell({ me, initialTheme, children }: { me: Me; initialThem
       <a href="#admin-main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
         Skip to main content
       </a>
+      <MaintenanceBanner />
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">

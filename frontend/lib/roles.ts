@@ -32,7 +32,8 @@ export interface AdminSection {
 
 /** Admin sections in sidebar order. */
 export const ADMIN_SECTIONS: AdminSection[] = [
-  { href: "/admin", label: "Overview", needs: "staff.access", description: "Where things stand." },
+  { href: "/admin", label: "Overview", needs: "staff.access",
+    description: "Users, activity, revenue and Claude cost, and the sign-up funnel." },
   { href: "/admin/users", label: "Users", needs: "users.read",
     description: "Find an account, see its history (metadata only), and act on it." },
   { href: "/admin/invites", label: "Invites", needs: "invites.write",
@@ -47,6 +48,12 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     description: "Claude spend by step, model and plan; budgets, the kill switch and margin." },
   { href: "/admin/billing", label: "Billing", needs: "billing.read",
     description: "Billing reviews, webhook failures and the credit ledger." },
+  { href: "/admin/quality", label: "Quality", needs: "quality.read",
+    description: "Verifier flags and overrides, parse failures, ATS lift, and fabrication reports." },
+  { href: "/admin/integrations", label: "Integrations", needs: "integrations.read",
+    description: "Claude, the database, Dodo, email and sign-in providers: status, health checks, webhooks, models." },
+  { href: "/admin/settings", label: "Settings", needs: "audit.read",
+    description: "Feature flags, plans and pricing, legal versions, staff roles, and the audit log." },
 ];
 
 export const sectionsFor = (me: Pick<Me, "capabilities">) => ADMIN_SECTIONS.filter((s) => can(me, s.needs));

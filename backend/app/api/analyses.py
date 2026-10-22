@@ -26,6 +26,7 @@ from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import resolve_session
 from app.billing import analyses, budget
+from app.admin import settings as runtime
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import current_analysis_id, parse_analysis_id
 from app.billing.entitlements import can_start_tailoring
@@ -77,7 +78,7 @@ async def start(
     idempotency_key: str | None = Header(default=None, max_length=128),
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
-    config: BillingConfig = Depends(get_billing_config),
+    config: BillingConfig = Depends(runtime.live_billing_config),
 ) -> AnalysisOut:
     """Start an analysis. Spends nothing (the clean download is what pays). Allowed by a
     free tailoring this month, or past those by a pass, Pro or a credit balance; 402
@@ -106,7 +107,7 @@ async def start(
 async def allowance(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
-    config: BillingConfig = Depends(get_billing_config),
+    config: BillingConfig = Depends(runtime.live_billing_config),
 ) -> AllowanceOut:
     now = datetime.now(UTC)
     snap = await analyses.snapshot(db, config, user.id, user.credits_balance, now)

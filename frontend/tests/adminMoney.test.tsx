@@ -118,7 +118,8 @@ const COSTS = {
 };
 const SETTINGS = { values: { invite_only: false, analyses_paused: false, maintenance_banner: null, invites_per_user: 10,
   signup_bonus_credits: 0, referrals_enabled: true, referral_trigger: "on_first_tailoring", referral_reward_credits: 1,
-  referral_monthly_cap: 10, daily_budget_usd: 20, monthly_budget_usd: 300, budget_kill_switch: true }, overridden: [], defaults: {} };
+  referral_monthly_cap: 10, daily_budget_usd: 20, monthly_budget_usd: 300, budget_kill_switch: true,
+  pro_enabled: false, free_analyses_per_month: 2, llm_models: {} }, overridden: [], defaults: {} };
 
 describe("costs", () => {
   it("shows spend against the budgets and where it goes", async () => {

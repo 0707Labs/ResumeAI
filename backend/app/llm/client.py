@@ -18,6 +18,7 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5-5"
+MAX_TOKENS = 16000
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -31,9 +32,13 @@ class LLM(Protocol):
 
 class ClaudeLLM:
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL,
-                 on_usage: Callable[[str, Any], None] | None = None):
+                 on_usage: Callable[[str, Any], None] | None = None,
+                 step_models: Callable[[str], Any] | None = None):
         self.client = client or anthropic.Anthropic(default_headers=_workspace_header())
         self.model = model
+        # Pipeline step -> configured model/max_tokens/effort, or None for the defaults
+        # here (app.llm.models.for_step in the app).
+        self.step_models = step_models
         # Called after every call for cost tracking: (schema name, response or None) plus
         # latency_ms, status (ok, refused, truncated, invalid, error, rate_limited) and error_code.
         self.on_usage = on_usage
@@ -41,11 +46,17 @@ class ClaudeLLM:
         self.usage: list[tuple[str, int, int]] = []
 
     def parse(self, *, system: str, user: str, schema: type[T], effort: str = "medium") -> T:
+        model, max_tokens = self.model, MAX_TOKENS
+        if self.step_models is not None:
+            from app.billing.costs import pipeline_step
+
+            if (chosen := self.step_models(pipeline_step(schema.__name__))) is not None:
+                model, max_tokens, effort = chosen.model, chosen.max_tokens, chosen.effort
         started = time.monotonic()
         try:
             response = self.client.beta.messages.parse(
-                model=self.model,
-                max_tokens=16000,
+                model=model,
+                max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
                 output_format=schema,
@@ -112,4 +123,6 @@ def get_llm() -> LLM | None:
         return None
     from app.billing.costs import record_llm_usage
 
-    return ClaudeLLM(on_usage=record_llm_usage)
+    from app.llm.models import for_step
+
+    return ClaudeLLM(on_usage=record_llm_usage, step_models=for_step)

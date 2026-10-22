@@ -506,11 +506,14 @@ class ProcessedWebhookEvent(Base):
     outcome: Mapped[str | None] = mapped_column(Text)
     failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text)
+    # The verified event data, kept only while the delivery is failing (staff can replay it).
+    payload: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (
         CheckConstraint("outcome IS NULL OR " + _in("outcome", ("processed", "ignored", "flagged")),
                         name="outcome"),
         CheckConstraint("(processed_at IS NULL) = (outcome IS NULL)", name="outcome_when_processed"),
+        CheckConstraint("payload IS NULL OR processed_at IS NULL", name="payload_while_failing"),
         Index("ix_processed_webhook_events_failing", "received_at",
               postgresql_where=text("processed_at IS NULL")),
     )
@@ -644,6 +647,15 @@ class Analysis(Base):
     mentor_tip: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # deleting purges at once
     entitlement: Mapped[str | None] = mapped_column(Text)  # what allowed the run: free, pass, pro, credit
+    # Verifier counts for /admin/quality (0016), metadata only: set when Claude/rules tailor
+    # (generated, blocked rewrites, bullets with a warning) and at each paid download
+    # (approved, rejected, warnings approved anyway). They survive the purge.
+    bullets_generated: Mapped[int | None] = mapped_column(Integer)
+    bullets_blocked: Mapped[int | None] = mapped_column(Integer)
+    bullets_flagged: Mapped[int | None] = mapped_column(Integer)
+    bullets_approved: Mapped[int | None] = mapped_column(Integer)
+    bullets_rejected: Mapped[int | None] = mapped_column(Integer)
+    flag_overrides: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
@@ -1007,3 +1019,37 @@ class BudgetAlert(Base):
     sent_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (CheckConstraint("threshold IN (50, 80, 100)", name="threshold"),)
+
+
+INTEGRATION_STATUSES = ("healthy", "degraded", "failing", "not_configured")
+
+
+class DailyCounter(Base):
+    """A plain per-day count (parse failures by code, landing views). No user, IP or content."""
+
+    __tablename__ = "daily_counters"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+
+    __table_args__ = (CheckConstraint("name ~ '^[a-z][a-z0-9_.:]{0,79}$'", name="name"),)
+
+
+class IntegrationCheck(Base):
+    """The last health check of one integration (app.admin.integrations)."""
+
+    __tablename__ = "integration_checks"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(Text)  # sanitized: never a message or a secret
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    checked_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        CheckConstraint(_in("status", INTEGRATION_STATUSES), name="status"),
+        CheckConstraint("error_code IS NULL OR length(error_code) <= 120", name="error_len"),
+    )

@@ -88,6 +88,7 @@ class PublicConfig(BaseModel):
     """Flags the signed-out pages need (the landing page renders from these)."""
 
     invite_only: bool
+    maintenance_banner: str | None = None  # staff's notice for every page (/admin/settings)
 
 
 class InviteIn(BaseModel):
@@ -276,7 +277,8 @@ async def _finish_email_link(db: AsyncSession, request: Request, response: Respo
 
 @router.get("/auth/config")
 async def public_config(db: AsyncSession = Depends(get_db)) -> PublicConfig:
-    return PublicConfig(invite_only=await runtime.invite_only(db))
+    values = (await runtime.read_all(db)).values
+    return PublicConfig(invite_only=values.invite_only, maintenance_banner=values.maintenance_banner or None)
 
 
 @router.get("/auth/pending")

@@ -41,6 +41,20 @@ npm run test:e2e
 Put the `export` in your shell profile to make it stick. Without it Playwright falls
 back to `~/Library/Caches/ms-playwright`, which works until the cache is cleared.
 
+## Running e2e beside other servers
+
+Playwright reuses whatever already listens on :3000 and :8000, even another checkout's
+app, which fails in confusing ways (wrong routes, magic links that never arrive). Check
+with `lsof -iTCP:3000 -iTCP:8000 -sTCP:LISTEN`; if those ports are taken, run a second copy:
+
+```bash
+E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://localhost:8100 npm run test:e2e
+```
+
+Use `localhost`, not `127.0.0.1`: Next's dev server blocks its scripts for other hosts,
+so pages never become interactive and every sign-in step times out. Next also allows one
+`next dev` per folder, so stop any dev server already running in `frontend/` first.
+
 ## E2E and the magic-link rate limit
 
 Every e2e account signs up by magic link, and the backend allows 5 magic links per 15

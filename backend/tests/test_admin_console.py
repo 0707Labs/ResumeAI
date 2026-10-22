@@ -422,4 +422,4 @@ def test_runtime_settings_change_the_quota_and_the_reward(new_browser, pg_engine
     assert boss.put("/api/admin/settings/referral_reward_credits", json={"value": 2, "reason": "promo"}).status_code == 200
     assert user.get("/api/invites").json()["reward_credits"] == 2
     assert boss.put("/api/admin/settings/invite_only", json={"value": False, "reason": "open beta"}).status_code == 200
-    assert new_browser().get("/api/auth/config").json() == {"invite_only": False}
+    assert new_browser().get("/api/auth/config").json() == {"invite_only": False, "maintenance_banner": None}

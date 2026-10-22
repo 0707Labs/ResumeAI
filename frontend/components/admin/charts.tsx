@@ -30,6 +30,7 @@ export function StatTile({ label, value, sub }: { label: string; value: React.Re
 export interface Series { key: string; label: string; color: "series-1" | "series-2" }
 
 /** Axis money: whole dollars from $10 up, cents below (so small spend doesn't read "$0, $0, $0"). */
+export const count = (v: unknown) => Number(v).toLocaleString("en");
 const tick = (v: unknown) => { const n = Number(v); return usd(n, n !== 0 && Math.abs(n) < 10 ? 2 : 0); };
 const axis = { stroke: "var(--border-strong)", tick: { fill: "var(--muted)", fontSize: 12 }, tickLine: false } as const;
 
@@ -94,8 +95,8 @@ function TableView<T extends Record<string, unknown>>({ caption, data, x, series
 }
 
 /** One measure over time as bars (a single series: the title names it, so no legend). */
-export function PeriodBars<T extends Record<string, unknown>>({ title, data, x, series, format = (v) => usd(v) }: {
-  title: string; data: T[]; x: keyof T & string; series: Series; format?: (v: number) => string;
+export function PeriodBars<T extends Record<string, unknown>>({ title, data, x, series, format = (v) => usd(v), axisFormat = tick }: {
+  title: string; data: T[]; x: keyof T & string; series: Series; format?: (v: number) => string; axisFormat?: (v: unknown) => string;
 }) {
   return (
     <figure>
@@ -105,7 +106,7 @@ export function PeriodBars<T extends Record<string, unknown>>({ title, data, x, 
           <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap={2}>
             <CartesianGrid vertical={false} stroke="var(--border)" />
             <XAxis dataKey={x as string} tickFormatter={(v) => period(String(v))} {...axis} minTickGap={16} />
-            <YAxis tickFormatter={tick} {...axis} axisLine={false} width={56} />
+            <YAxis tickFormatter={axisFormat} allowDecimals={axisFormat === tick} {...axis} axisLine={false} width={56} />
             <Tooltip cursor={{ fill: "var(--surface-2)" }} content={<ChartTooltip series={[series]} format={format} />} />
             <Bar dataKey={series.key} name={series.label} fill={`var(--${series.color})`} radius={[4, 4, 0, 0]} maxBarSize={32}
               isAnimationActive={false} />
@@ -118,8 +119,8 @@ export function PeriodBars<T extends Record<string, unknown>>({ title, data, x, 
 }
 
 /** Two or more measures of the same unit over time as lines, with a legend and end labels. */
-export function PeriodLines<T extends Record<string, unknown>>({ title, data, x, series, format = (v) => usd(v) }: {
-  title: string; data: T[]; x: keyof T & string; series: Series[]; format?: (v: number) => string;
+export function PeriodLines<T extends Record<string, unknown>>({ title, data, x, series, format = (v) => usd(v), axisFormat = tick }: {
+  title: string; data: T[]; x: keyof T & string; series: Series[]; format?: (v: number) => string; axisFormat?: (v: unknown) => string;
 }) {
   const last = data.length - 1;
   return (
@@ -131,7 +132,7 @@ export function PeriodLines<T extends Record<string, unknown>>({ title, data, x,
           <LineChart data={data} margin={{ top: 8, right: 96, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" />
             <XAxis dataKey={x as string} tickFormatter={(v) => period(String(v))} {...axis} minTickGap={16} />
-            <YAxis tickFormatter={tick} {...axis} axisLine={false} width={56} />
+            <YAxis tickFormatter={axisFormat} allowDecimals={axisFormat === tick} {...axis} axisLine={false} width={56} />
             <Tooltip cursor={{ stroke: "var(--border-strong)" }} content={<ChartTooltip series={series} format={format} />} />
             {series.map((s) => (
               <Line key={s.key} type="linear" dataKey={s.key} name={s.label} stroke={`var(--${s.color})`} strokeWidth={2}
@@ -164,7 +165,7 @@ export function BarList({ label, rows, format = (v) => usd(v), names = {} }: {
             <span className="shrink-0 tabular-nums text-fg">{format(r.value)}{r.sub && <span className="ml-1 text-xs text-muted">{r.sub}</span>}</span>
           </div>
           <div className="mt-1 h-1.5 rounded-full bg-surface-2" aria-hidden="true">
-            <div className="h-1.5 rounded-full bg-series-1" style={{ width: `${Math.max(1, (r.value / max) * 100)}%` }} />
+            <div className="h-1.5 rounded-full bg-series-1" style={{ width: r.value > 0 ? `${Math.max(1, (r.value / max) * 100)}%` : 0 }} />
           </div>
         </li>
       ))}

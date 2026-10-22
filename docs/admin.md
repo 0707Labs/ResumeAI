@@ -105,14 +105,11 @@ leaves the role (other databases on the cluster may use it).
 
 ## 5. Runtime settings
 
-`app_settings` holds switches staff can flip without a deploy: `invite_only`,
-`analyses_paused` (kill switch) and `maintenance_banner` so far. Each key is typed in
+`app_settings` holds switches staff can flip without a deploy (the table in 5b). Each key is typed in
 `app.admin.settings.Settings`; its default comes from env/billing.toml, so nothing
 changes until someone sets a value. `PUT /api/admin/settings/{key}` (superadmin, step-up,
 reason required) validates, stores and audits; `POST .../reset` returns to the default.
 Prices, credit amounts and pass lengths stay in `billing.toml` (purchases snapshot them).
-The settings are read by their features as those are built; storing a value has no
-effect before then.
 
 ## 5b. What the settings change today
 
@@ -125,7 +122,12 @@ sign-in). Each defaults to env or `billing.toml` until set:
 | `invites_per_user` | `[referrals].invites_per_user` | invite quota (`/api/invites`, link sign-ups) |
 | `signup_bonus_credits` | `[signup].bonus_credits` | starter credits at account creation (ledger, `signup_bonus`) |
 | `referrals_enabled`, `referral_trigger`, `referral_reward_credits`, `referral_monthly_cap` | `[referrals]` | referral attribution and rewards |
-| `analyses_paused`, `maintenance_banner` | off / none | read by later steps (kill switch, banner) |
+| `analyses_paused` | off | `POST /api/analyses` (503 `analyses_paused`; `/admin/costs`) |
+| `maintenance_banner` | none | `/api/auth/config`: shown above every page (site, workspace, admin) |
+| `daily_budget_usd`, `monthly_budget_usd`, `budget_kill_switch` | `[alerts]` | Claude budgets (docs/billing.md section 12) |
+| `pro_enabled` | `RT_BILLING_PRO_ENABLED` | `/api/billing/plans`, checkout |
+| `free_analyses_per_month` | `[free].analyses_per_month` | starting an analysis, the allowance shown to users |
+| `llm_models` | built-in (claude-opus-5-5, 16000 tokens) | the Claude client, per pipeline step, cached 30 s |
 
 The signed-out, rules-only pipeline never reads them, so it still runs without a database.
 
@@ -152,3 +154,60 @@ own role, and the last superadmin can't be demoted.
 - Admin rate limits: 120 reads and 30 writes a minute per IP (`admin_read`,
   `admin_write`). The limiter is in-process: move it to Redis before running more than
   one API instance.
+
+
+## 8. The admin pages
+
+| Page | Needs | What it shows |
+|---|---|---|
+| `/admin` (Overview) | staff | Users (total, new, active day/week/month), waitlist, paid users, tailorings, open tickets; revenue, MRR-equivalent and credits sold/used (billing.read); Claude cost and gross margin (costs.read); sign-ups and revenue/cost by day; the funnel; daily CSV |
+| `/admin/revenue`, `/admin/costs` | billing.read, costs.read | docs/billing.md section 12 |
+| `/admin/quality` | quality.read | Verifier counts and rates, parse failures and warnings, ATS lift, fabrication reports |
+| `/admin/integrations` | integrations.read | Status cards, health checks, models per step (superadmin edits), the webhook log and replay (billing.write) |
+| `/admin/settings` | audit.read (edits: superadmin) | Flags, plans and pricing (read-only), legal versions, staff roles, the audit log |
+
+**Definitions.** Active users are distinct accounts with a session seen in the last day,
+week or month. Paid users paid at least once. MRR-equivalent is active Pro subscriptions
+at Pro's USD price plus the last 30 days of one-time revenue (passes and credit packs),
+net of refunds. Gross margin is (net revenue after fees - Claude cost) / net revenue
+after fees, over 30 days. The funnel follows the accounts created in the range: landing
+views (a separate count) -> signed up -> finished a tailoring -> downloaded -> paid.
+
+**Counts, not content.** Quality reads counts kept on each analysis (bullets produced,
+blocked, flagged; approved, rejected and approved-despite-a-warning at download) and
+`daily_counters` (resume parse results by code, landing views). Counters collect in memory
+and are written once a minute and at shutdown (`app.admin.counters`), so the parse path
+never waits on the database. Landing views are a cookie-free beacon (`POST
+/api/metrics/landing-view`): no IP, no user, a number per UTC day.
+
+**Integrations never show secrets.** Each secret is "set" or "not set"; a superadmin also
+sees the last 4 characters of values long enough for that to give nothing away, never for
+URLs. Health checks run server-side against read-only endpoints (Claude's model lookup,
+Dodo's product list, SES's account endpoint, the database) and store a status and a short
+code (`http_401`, a class name), never a provider's message. Checks are audited
+(`integrations.check`). A test sends real-looking secrets through the API and asserts no
+5-character run of any of them comes back.
+
+**Webhook replay.** While a Dodo delivery is failing, its verified event data is kept
+(`processed_webhook_events.payload`) and cleared once it's processed. Replay runs it
+through the same idempotent path as a live delivery, so it can never apply twice; it is
+audited (`billing.webhook_replay`). The list never returns the payload.
+
+**Models per step.** `llm_models` maps a pipeline step (gap analysis, tailor, tailor
+repair, ATS semantic, mentor) to a model, max tokens and effort. Only models priced in
+`billing.toml [llm_prices]` are accepted, so every call stays costed; a model that later
+loses its price, a bad value or an unreadable setting falls back to the default. The
+client sets effort rather than temperature.
+
+## 9. Scheduled jobs
+
+| Job | Schedule | Does |
+|---|---|---|
+| `python -m app.billing.cli purge-expired` | daily | retention purge (docs/billing.md section 11) |
+| `python -m app.billing.cli refresh-aggregates` | every 15 minutes | revenue and cost rollups |
+| `python -m app.billing.cli budget-check` | every 5 minutes | budget alerts |
+| `python -m app.auth.cli expire-invites` | daily | revokes personal invites that expired unused, so the sender's slot comes back |
+
+```
+30 3 * * * cd /srv/resume-tailor/backend && .venv/bin/python -m app.auth.cli expire-invites
+```

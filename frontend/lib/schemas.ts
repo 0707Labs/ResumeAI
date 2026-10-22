@@ -332,7 +332,7 @@ export const ProviderAvailability = z.object({ google: z.boolean(), github: z.bo
 export const AuthStep = z.object({ next: z.enum(["signed_in", "invite", "consent", "verify_email", "linked"]) });
 export const Accepted = z.object({ status: z.literal("ok") });
 /** Flags the signed-out pages need (GET /api/auth/config). */
-export const PublicConfig = z.object({ invite_only: z.boolean() });
+export const PublicConfig = z.object({ invite_only: z.boolean(), maintenance_banner: z.string().nullable().optional() });
 export const PendingSignIn = z.object({
   kind: z.enum(["signup", "needs_email"]),
   provider: Provider,
@@ -829,7 +829,8 @@ export const AdminSettings = z.object({
     invites_per_user: z.number().int(), signup_bonus_credits: z.number().int(), referrals_enabled: z.boolean(),
     referral_trigger: z.enum(["on_verified_signup", "on_first_tailoring"]), referral_reward_credits: z.number().int(),
     referral_monthly_cap: z.number().int(), daily_budget_usd: z.number(), monthly_budget_usd: z.number(),
-    budget_kill_switch: z.boolean(),
+    budget_kill_switch: z.boolean(), pro_enabled: z.boolean(), free_analyses_per_month: z.number().int(),
+    llm_models: z.record(z.string(), z.object({ model: z.string(), max_tokens: z.number().int(), effort: z.enum(["low", "medium", "high"]) })),
   }),
   overridden: z.array(z.string()),
   defaults: z.record(z.string(), z.unknown()),
@@ -886,3 +887,82 @@ export const AdminCosts = z.object({
     cache_write: z.number().nullable() })),
 });
 export type AdminCosts = z.infer<typeof AdminCosts>;
+
+// --- Admin overview, integrations, quality, settings (app/api/admin_ops.py, admin.py) ---
+
+export const AdminHome = z.object({
+  days: z.number().int(), as_of: z.string().nullable(),
+  users: z.object({ total: z.number().int(), new_7d: z.number().int(), new_30d: z.number().int(), dau: z.number().int(),
+    wau: z.number().int(), mau: z.number().int(), waitlist: z.number().int(), paid: z.number().int() }),
+  tailorings: z.object({ d7: z.number().int(), d30: z.number().int() }),
+  open_tickets: z.number().int(),
+  revenue: z.object({ revenue_30d_usd: z.number(), fees_30d_usd: z.number(), mrr_equivalent_usd: z.number(),
+    active_pro: z.number().int(), credits_sold_30d: z.number().int(), credits_consumed_30d: z.number().int() }).nullable(),
+  costs: z.object({ llm_cost_30d_usd: z.number(), gross_margin: z.number().nullable().optional() }).nullable(),
+  series: z.array(z.object({ day: z.string(), signups: z.number().int(), revenue_usd: z.number().nullable(),
+    cost_usd: z.number().nullable() })),
+  funnel: z.object({ landing_views: z.number().int(), signups: z.number().int(), first_tailoring: z.number().int(),
+    downloaded: z.number().int(), paid: z.number().int() }),
+});
+export type AdminHome = z.infer<typeof AdminHome>;
+
+export const IntegrationStatus = z.enum(["healthy", "degraded", "failing", "not_configured", "configured"]);
+export const Integration = z.object({
+  name: z.string(), status: IntegrationStatus, checkable: z.boolean(), checked_at: z.string().nullable(),
+  last_ok_at: z.string().nullable(), error_code: z.string().nullable(), check_detail: z.record(z.string(), z.unknown()),
+  facts: z.record(z.string(), z.unknown()),
+  secrets: z.array(z.object({ name: z.string(), set: z.boolean(), hint: z.string().nullable() })),
+});
+export type Integration = z.infer<typeof Integration>;
+export const Integrations = z.array(Integration);
+export const CheckOut = Integration.pick({ name: true, status: true, checked_at: true, last_ok_at: true, error_code: true,
+  check_detail: true });
+
+export const WebhookRow = z.object({
+  id: z.string(), provider: z.string(), event_type: z.string(), occurred_at: z.string(), received_at: z.string(),
+  processed_at: z.string().nullable(), status: z.string(), failures: z.number().int(), last_error: z.string().nullable(),
+  replayable: z.boolean(),
+});
+export type WebhookRow = z.infer<typeof WebhookRow>;
+export const WebhookPage = z.object({ items: z.array(WebhookRow), total: z.number().int(), page: z.number().int(),
+  page_size: z.number().int() });
+
+export const AdminQuality = z.object({
+  days: z.number().int(),
+  verifier: z.object({
+    totals: z.record(z.string(), z.number().int()),
+    rates: z.object({ flagged: z.number().nullable(), blocked: z.number().nullable(), override: z.number().nullable() }),
+    trend: z.array(z.object({ day: z.string(), generated: z.number().int(), flagged: z.number().int(), blocked: z.number().int(),
+      overrides: z.number().int() })),
+  }),
+  parsing: z.object({ attempts: z.number().int(), ok: z.number().int(), failed: z.record(z.string(), z.number().int()),
+    failure_rate: z.number().nullable(), warnings: z.record(z.string(), z.number().int()) }),
+  ats_lift: z.object({ buckets: z.array(z.object({ label: z.string(), count: z.number().int() })), median: z.number().nullable() }),
+  fabrication_reports: z.array(z.object({ id: z.uuid(), subject: z.string(), status: z.string(), analysis_id: z.uuid().nullable(),
+    created_at: z.string() })),
+});
+export type AdminQuality = z.infer<typeof AdminQuality>;
+
+export const AdminConfig = z.object({
+  products: z.array(z.object({ key: z.string(), name: z.string(), kind: z.string(), enabled: z.boolean(),
+    credits: z.number().int().nullable(), pass_days: z.number().int().nullable(), fair_use_cap: z.number().int().nullable(),
+    interval: z.string().nullable(), prices: z.record(z.string(), z.number().int()) })),
+  free_analyses_per_month: z.number().int(), credits_per_download: z.number().int(), redownload_free_days: z.number().int(),
+  claude_per_day: z.object({ free: z.number().int(), paid: z.number().int() }),
+  retention: z.object({ analysis_days: z.number().int(), download_days: z.number().int().nullable() }),
+  llm_prices: z.array(z.string()),
+  notices: z.array(z.object({ purpose: z.string(), version: z.string(), language: z.string(), published_at: z.string(),
+    current: z.boolean(), body_url: z.string() })),
+});
+export type AdminConfig = z.infer<typeof AdminConfig>;
+
+export const AuditEntry = z.object({
+  id: z.number().int(), actor_id: z.uuid().nullable(), actor_email: z.string().nullable(), actor_role: z.string(),
+  action: z.string(), target_type: z.string().nullable(), target_id: z.string().nullable(), reason: z.string().nullable(),
+  before: z.record(z.string(), z.unknown()).nullable(), after: z.record(z.string(), z.unknown()).nullable(), created_at: z.string(),
+});
+export type AuditEntry = z.infer<typeof AuditEntry>;
+export const AuditPage = z.object({ entries: z.array(AuditEntry), next_before_id: z.number().int().nullable() });
+export const StaffMember = z.object({ id: z.uuid(), email: z.string(), name: z.string().nullable(), role: Role,
+  last_login_at: z.string().nullable() });
+export type StaffMember = z.infer<typeof StaffMember>;

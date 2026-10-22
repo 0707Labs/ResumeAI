@@ -3,6 +3,7 @@
   .venv/bin/python -m app.auth.cli create-invite [--email a@b.c] [--max-uses N] [--days N] [--note TEXT]
   .venv/bin/python -m app.auth.cli publish-notice PURPOSE VERSION BODY_URL --body-file FILE
   ADMIN_BOOTSTRAP_EMAIL=you@example.com .venv/bin/python -m app.auth.cli bootstrap-admin [--force]
+  .venv/bin/python -m app.auth.cli expire-invites   (daily: frees the slots of expired, unused invites)
 
 The invite code is printed once; only its hash is stored."""
 
@@ -13,7 +14,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from app.admin import audit
@@ -49,6 +50,21 @@ def bootstrap_admin(db: Session, email: str, *, force: bool = False) -> str:
     return "promoted to superadmin"
 
 
+def expire_invites(db: Session, now: datetime | None = None) -> int:
+    """Revoke personal invites that expired unused, so each sender's slot comes back
+    (revoke_user_invite returns a slot only when the invite was never redeemed). Commits.
+    Returns how many were revoked."""
+    now = now or datetime.now(UTC)
+    stale = db.execute(select(Invite.id, Invite.created_by).where(
+        Invite.kind == "personal", Invite.revoked_at.is_(None), Invite.uses == 0,
+        Invite.expires_at.is_not(None), Invite.expires_at <= now)).all()
+    done = 0
+    for invite_id, user_id in stale:
+        done += bool(db.scalar(text("SELECT revoke_user_invite(:u, :i)"), {"u": user_id, "i": invite_id}))
+        db.commit()  # one at a time: each takes the sender's row lock briefly
+    return done
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m app.auth.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -65,6 +81,7 @@ def main(argv: list[str] | None = None) -> None:
     notice.add_argument("--language", default="en")
     boot = sub.add_parser("bootstrap-admin", help="promote ADMIN_BOOTSTRAP_EMAIL's account to superadmin")
     boot.add_argument("--force", action="store_true", help="even though a superadmin exists")
+    sub.add_parser("expire-invites", help="revoke expired, unused personal invites so their slots come back")
     args = parser.parse_args(argv)
 
     engine = create_engine(get_settings().database_url)
@@ -75,6 +92,8 @@ def main(argv: list[str] | None = None) -> None:
             except BootstrapError as exc:
                 engine.dispose()
                 sys.exit(f"bootstrap-admin: {exc}")
+        elif args.cmd == "expire-invites":
+            print(f"revoked {expire_invites(db)} expired invite(s)")
         elif args.cmd == "create-invite":
             code = generate_code()
             db.add(Invite(

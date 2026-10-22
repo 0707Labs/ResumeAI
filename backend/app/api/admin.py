@@ -49,7 +49,7 @@ class SettingsOut(BaseModel):
 
 
 def _settings_out(current: runtime.Current) -> SettingsOut:
-    return SettingsOut(values=current.values.model_dump(), overridden=sorted(current.overridden),
+    return SettingsOut(values=current.values.model_dump(mode="json"), overridden=sorted(current.overridden),
                        defaults=runtime.defaults())
 
 
@@ -64,7 +64,12 @@ class SettingIn(Reason):
 
 @router.put("/settings/{key}", dependencies=WRITE)
 async def put_setting(key: str, body: SettingIn, request: Request, actor: User = Depends(require("settings.write")),
-                      db: AsyncSession = Depends(get_db)) -> SettingsOut:
+                      db: AsyncSession = Depends(get_db), config: BillingConfig = Depends(billing_config)) -> SettingsOut:
+    if key == "llm_models" and isinstance(body.value, dict):
+        # Only models with a price, so every call stays costed (the allowlist).
+        unpriced = sorted({str(v.get("model")) for v in body.value.values() if isinstance(v, dict)} - set(config.llm_prices))
+        if unpriced:
+            raise HTTPException(status_code=422, detail="model_not_allowed")
     try:
         return _settings_out(await runtime.write(db, actor, request, key, body.value, body.reason))
     except runtime.UnknownSetting:
@@ -110,6 +115,7 @@ async def audit_log(
     actor_id: uuid.UUID | None = None, action: str | None = Query(None, max_length=64),
     target_type: str | None = Query(None, max_length=64), target_id: str | None = Query(None, max_length=64),
     before_id: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=200),
+    since: datetime | None = None, until: datetime | None = None,
 ) -> AuditPage:
     q = select(AdminAuditLog, User.email).outerjoin(User, User.id == AdminAuditLog.actor_id)
     if actor_id:
@@ -122,6 +128,10 @@ async def audit_log(
         q = q.where(AdminAuditLog.target_id == target_id)
     if before_id:
         q = q.where(AdminAuditLog.id < before_id)
+    if since:
+        q = q.where(AdminAuditLog.created_at >= since)
+    if until:
+        q = q.where(AdminAuditLog.created_at < until)
     rows = (await db.execute(q.order_by(AdminAuditLog.id.desc()).limit(limit + 1))).all()
     entries = [AuditEntry(id=r.id, actor_id=r.actor_id, actor_email=email, actor_role=r.actor_role,
                           action=r.action, target_type=r.target_type, target_id=r.target_id, reason=r.reason,

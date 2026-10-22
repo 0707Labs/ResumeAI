@@ -40,7 +40,7 @@ TABLES = ("users, accounts, auth_sessions, pending_auth, email_tokens, invites, 
           " waitlist, consent_records, consent_notices, credit_transactions, passes,"
           " payments, billing_customers, processed_webhook_events, subscriptions, billing_reviews, llm_usage, analyses, downloads, referrals, app_settings,"
           " job_preferences, resumes, resume_versions, support_tickets, support_ticket_messages,"
-          " daily_llm_costs, daily_revenue, aggregate_runs, budget_alerts")
+          " daily_llm_costs, daily_revenue, aggregate_runs, budget_alerts, daily_counters, integration_checks")
 
 
 def fixture_text(name: str) -> str:

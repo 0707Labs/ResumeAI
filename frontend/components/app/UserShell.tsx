@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { Avatar } from "@/components/app/Avatar";
 import { ThemeToggle } from "@/components/AppShell";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
@@ -45,6 +46,7 @@ export function UserShell({ me, initialTheme, children }: { me: Me | null; initi
       <a href="#main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
         Skip to main content
       </a>
+      <MaintenanceBanner />
       <header className="sticky top-0 z-30 border-b border-border bg-surface">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <Link href="/app/dashboard" className="text-base font-semibold text-fg">Resume Tailor</Link>

@@ -9,9 +9,12 @@ import time
 from collections import deque
 from collections.abc import Callable
 
+from urllib.parse import urlsplit
+
 from fastapi import HTTPException, Request
 
 from app.auth.events import log_auth_event
+from app.config import get_settings
 
 
 class SlidingWindow:
@@ -39,12 +42,21 @@ class SlidingWindow:
 limiter = SlidingWindow()
 
 
+def scaled(limit: int) -> int:
+    """The limit, times RT_DEV_RATE_LIMIT_SCALE on a localhost origin only (end-to-end
+    runs sign up more accounts than 5 magic links per 15 minutes allow)."""
+    settings = get_settings()
+    if settings.dev_rate_limit_scale > 1 and urlsplit(settings.public_url).hostname in {"localhost", "127.0.0.1"}:
+        return limit * settings.dev_rate_limit_scale
+    return limit
+
+
 def rate_limit(name: str, limit: int, per_seconds: int):
     """FastAPI dependency: at most `limit` calls per client IP per window."""
 
     def check(request: Request) -> None:
         ip = request.client.host if request.client else "unknown"
-        wait = limiter.hit(f"{name}:{ip}", limit, per_seconds)
+        wait = limiter.hit(f"{name}:{ip}", scaled(limit), per_seconds)
         if wait is not None:
             log_auth_event("rate_limited", outcome="denied", reason=name)
             raise HTTPException(

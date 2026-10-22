@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BALANCE_EVENT } from "@/lib/billing";
 import { referralsApi } from "@/lib/referrals";
 
 const POLL_MS = 30_000;
 
 /**
  * The signed-in user's credit balance, kept live: polled every 30 seconds and whenever
- * the tab comes back into focus. A referral reward that arrives shows once as
+ * the tab comes back into focus, and set directly when a download reports it. A referral reward that arrives shows once as
  * "Your friend joined. +1 credit" (then it's marked seen on the server).
  */
 export function CreditsLive() {
@@ -40,8 +41,14 @@ export function CreditsLive() {
     void refresh();
     const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, POLL_MS);
     const onFocus = () => void refresh();
+    const onBalance = (e: Event) => setBalance((e as CustomEvent<number>).detail);
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(timer); window.removeEventListener("focus", onFocus); };
+    window.addEventListener(BALANCE_EVENT, onBalance);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(BALANCE_EVENT, onBalance);
+    };
   }, [refresh]);
 
   useEffect(() => {

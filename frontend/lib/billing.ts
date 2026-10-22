@@ -13,6 +13,13 @@ export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "";
 export const POLL_MS = 2000;
 export const GIVE_UP_MS = 90_000;
 
+/** Fires with the new balance after something spent or added credits, so the header updates at once. */
+export const BALANCE_EVENT = "rt:credits-balance";
+
+export function announceBalance(credits: number) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(BALANCE_EVENT, { detail: credits }));
+}
+
 /** Fires when any API call answers 402 (see announceOutOfCredits in api.ts). */
 export const OUT_OF_CREDITS_EVENT = "rt:out-of-credits";
 

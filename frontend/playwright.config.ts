@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { E2E_WEBHOOK_SECRET } from "./e2e/helpers";
+
 // End-to-end happy path against the real FastAPI backend in rules-only mode.
 // Run with `npm run test:e2e`. Locally, servers already on :8000/:3000 are reused,
 // so a backend you started with ANTHROPIC_API_KEY set will make the spec fail its
@@ -30,7 +32,14 @@ export default defineConfig({
       cwd: "..",
       url: `${API}/health`,
       // Empty key = rules only: deterministic output, no network calls to Anthropic.
-      env: { ANTHROPIC_API_KEY: "", CORS_ORIGINS: WEB, RT_PUBLIC_URL: WEB },
+      env: {
+        ANTHROPIC_API_KEY: "", CORS_ORIGINS: WEB, RT_PUBLIC_URL: WEB,
+        // More magic links than 5 per 15 minutes (honoured on localhost only; see app/auth/ratelimit.py).
+        RT_DEV_RATE_LIMIT_SCALE: "10",
+        // Test-mode payments: webhooks signed by e2e/helpers.ts. The API key is never used
+        // (checkout is answered in the browser), but the provider needs one to be built.
+        DODO_ENVIRONMENT: "test", DODO_API_KEY: "e2e-not-used", DODO_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

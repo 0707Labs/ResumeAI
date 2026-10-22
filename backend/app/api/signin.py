@@ -28,7 +28,7 @@ from app.auth.identity import AccountUnavailable, resolve_identity
 from app.auth.invites import find_bound, find_usable
 from app.auth.mailer import get_mailer, magic_link_mail
 from app.auth.pending import clear_pending, create_pending, load_pending
-from app.auth.ratelimit import limiter, rate_limit
+from app.auth.ratelimit import limiter, rate_limit, scaled
 from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
@@ -127,7 +127,7 @@ def after_verified_email() -> Literal["invite", "consent"]:
 
 
 def per_key_limit(key: str, limit: int, window: int) -> None:
-    if limiter.hit(key, limit, window) is not None:
+    if limiter.hit(key, scaled(limit), window) is not None:
         log_auth_event("rate_limited", outcome="denied", reason=key.split(":", 1)[0])
         raise _fail(429, "rate_limited")
 

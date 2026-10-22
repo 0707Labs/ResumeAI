@@ -198,3 +198,16 @@ def test_provider_availability_follows_configuration(client, monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
     monkeypatch.delenv("GITHUB_CLIENT_ID", raising=False)
     assert client.get("/api/auth/providers").json() == {"google": True, "github": False, "email": True}
+
+
+def test_dev_rate_limit_scale_only_applies_on_localhost(monkeypatch):
+    from app.auth.ratelimit import scaled
+
+    assert scaled(5) == 5
+    monkeypatch.setenv("RT_DEV_RATE_LIMIT_SCALE", "10")
+    assert scaled(5) == 50  # RT_PUBLIC_URL defaults to http://localhost:3000
+    monkeypatch.setenv("RT_PUBLIC_URL", "https://resume.0707labs.com")
+    assert scaled(5) == 5
+    monkeypatch.setenv("RT_PUBLIC_URL", "http://localhost:3000")
+    monkeypatch.setenv("RT_DEV_RATE_LIMIT_SCALE", "100000")
+    assert scaled(5) == 500  # capped at x100

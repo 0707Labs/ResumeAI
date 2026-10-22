@@ -33,6 +33,11 @@ class Settings:
     invite_only: bool = field(
         default_factory=lambda: os.environ.get("RT_INVITE_ONLY", "1").strip().lower() not in {"0", "false", "off", "no"}
     )
+    # Local end-to-end runs only: multiply every rate limit by this. Ignored (1) unless
+    # RT_PUBLIC_URL is a localhost origin, so it can't loosen a deployed instance.
+    dev_rate_limit_scale: int = field(
+        default_factory=lambda: max(1, min(int(os.environ.get("RT_DEV_RATE_LIMIT_SCALE", "1") or 1), 100))
+    )
     # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only).
     mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox"))
     # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.

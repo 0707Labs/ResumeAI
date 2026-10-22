@@ -8,7 +8,7 @@ import { ExportPanel, type Format } from "@/components/ExportPanel";
 import { PreviewPages } from "@/components/PreviewPages";
 import { Alert, Card, Spinner } from "@/components/ui";
 import { ApiError, api, messageFor } from "@/lib/api";
-import { takePendingDownload } from "@/lib/billing";
+import { announceBalance, takePendingDownload } from "@/lib/billing";
 import { openDownload } from "@/lib/download";
 import { counts, exportCheck, withDecisions } from "@/lib/review";
 import type { ExportPreview } from "@/lib/schemas";
@@ -49,6 +49,7 @@ export default function ExportPage() {
     try {
       const link = await api.requestDownload(fmt, resume, jd, payload, analysis);
       openDownload(link.url);
+      announceBalance(link.credits_balance);
       setDownloaded(link.paid_with === "window"
         ? `Your ${fmt.toUpperCase()} is downloading. Re-downloading this resume is free for a week after you paid.`
         : link.paid_with === "credit"

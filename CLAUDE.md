@@ -83,9 +83,10 @@ frontend/
   `E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://127.0.0.1:8100` runs a separate pair instead.
   Specs live in e2e/; Vitest only picks up tests/.
   The workspace needs an account, so every spec except landing needs Postgres (the backend's
-  RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites, notices and credits with the admin CLIs
-  and reads magic links from backend/.dev-outbox. A run sends 5 magic links, exactly the 5-per-15-min per-IP
-  limit, which a reused backend keeps in memory: restart it (or wait) between runs.
+  RT_DATABASE_URL, migrated): e2e/helpers.ts seeds invites, notices and credits with the admin CLIs,
+  reads magic links from backend/.dev-outbox, and fakes only Dodo's hosted checkout (webhooks are
+  real and signed). The started backend gets RT_DEV_RATE_LIMIT_SCALE=10 (localhost-only) because the
+  suite sends more than 5 magic links per 15 min; a backend you reuse needs it too. See docs/testing.md.
   Point RT_DATABASE_URL at a separate migrated database when other branches share the dev one.
 - Node 20 here: Vitest pinned to 4.x and jsdom to 29.x (5.x/30.x need Node 22).
   `.npmrc` sets legacy-peer-deps because npm 10 crashes on Vite 8's optional peers.

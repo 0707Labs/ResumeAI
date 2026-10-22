@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { API, ensureNotices, giveCredits, signUp } from "./helpers";
+import { API, ensureNotices, fakeCheckout, payWebhook, signUp } from "./helpers";
 
 // One full pass through the app against the real backend in rules-only mode
 // (no ANTHROPIC_API_KEY), so every tailored bullet starts out unchanged and the
 // only edits are the two made here by hand. The workspace needs an account, so it
 // starts by signing up (Postgres required, as for auth.spec.ts). Downloading is what
-// pays: the first try opens the pricing dialog, then a credit (granted with the admin
-// CLI, as the purchase webhook would) pays for it.
+// pays: the first try opens the pricing dialog; buying a pack (test mode: signed webhook,
+// see helpers.ts) brings the buyer back and the download finishes by itself.
 
 const ANSWER = "At Acme Retail I built dbt models that feed the weekly SQL extracts.";
 const CITED = "Cut weekly reporting time by 30% by automating SQL extracts with dbt models";
@@ -113,25 +113,30 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await expect(page.getByText(CITED)).toHaveCount(0);
 
   // No credits yet: the pricing dialog, and no file.
+  const payments = await fakeCheckout(page);
   let downloads = 0;
   page.on("download", () => { downloads += 1; });
   await page.getByRole("button", { name: "Download DOCX" }).click();
   const paywall = page.getByRole("dialog", { name: "Download your tailored resume" });
   await expect(paywall).toBeVisible();
-  await paywall.getByRole("button", { name: "Not now" }).click();
   expect(downloads).toBe(0);
 
-  // One credit (as the purchase webhook would grant): the download spends it.
-  await giveCredits(page, 1);
+  // Buy a credit pack. Back from checkout, the page waits for the webhook, then returns
+  // to the export page, where the DOCX download finishes by itself and spends 1 credit.
+  await paywall.getByRole("button", { name: "Buy Credit pack" }).click();
+  await expect(page).toHaveURL(/\/billing\/success\?payment=/);
+  await expect(page.getByText("Confirming your payment")).toBeVisible();
   const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Download DOCX" }).click(),
+    page.waitForEvent("download", { timeout: 30_000 }),
+    (async () => payWebhook(payments[0]))(),
   ]);
+  await expect(page).toHaveURL(/\/app\/export$/);
   expect(download.suggestedFilename()).toBe("Asha_Rao_tailored.docx");
   const file = await readFile(await download.path());
   expect(file.subarray(0, 4).toString("latin1")).toBe("PK\x03\x04");
   expect(file.includes("word/document.xml")).toBe(true);
-  await expect(page.getByText("1 credit used; 0 left.")).toBeVisible();
+  await expect(page.getByText("1 credit used; 4 left.")).toBeVisible();
+  await expect(page.getByTestId("credits-balance")).toHaveText("4 credits");
 
   // The same resume again, as PDF: free within the re-download window.
   const [pdf] = await Promise.all([
@@ -141,18 +146,18 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   expect(pdf.suggestedFilename()).toBe("Asha_Rao_tailored.pdf");
   await expect(page.getByText(/free for a week after you paid/)).toBeVisible();
 
-  // 7. Free allowance: a rules-only run doesn't count, and nothing was charged. Two more
-  // starts use this month's two free tailorings; the third opens the pricing dialog.
+  // 7. Free allowance: a rules-only run doesn't count. Two more starts use this month's
+  // two free tailorings; past them the credit balance allows more, and spends nothing.
   await page.goto("/app");
   const allowance = page.getByTestId("allowance");
   await expect(allowance).toContainText("2 of 2 free tailorings left this month");
-  for (const left of ["1 of 2", "0 of 2"]) {
+  for (const left of ["1 of 2", "keep tailoring with your 4 credits"]) {
     await page.getByRole("button", { name: "Analyze" }).click();
     await expect(page).toHaveURL(/\/app\/analysis$/);
     await page.goto("/app");
-    await expect(allowance).toContainText(left === "0 of 2" ? "used this month's 2 free tailorings" : left);
+    await expect(allowance).toContainText(left);
   }
   await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page.getByRole("dialog", { name: "You've used this month's free tailorings" })).toBeVisible();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/app\/analysis$/);
+  await expect(page.getByTestId("credits-balance")).toHaveText("4 credits");
 });

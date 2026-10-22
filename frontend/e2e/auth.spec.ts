@@ -32,8 +32,9 @@ test("invite, consent, signed in; last sign-in method can't be removed", async (
   await page.getByRole("checkbox", { name: /Terms of Service and Privacy Policy/ }).check();
   await create.click();
 
-  await expect(page).toHaveURL(/\/app$/);
-  await page.getByRole("link", { name: "Account" }).click();
+  await expect(page).toHaveURL(/\/app\/welcome$/);  // first sign-in: the welcome steps
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.locator("#account-menu").getByRole("link", { name: "Profile" }).click();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
   await expect(page.getByRole("button", { name: /Disconnect Email link/ })).toBeDisabled();
   await expect(page.getByText(/only way to sign in/)).toBeVisible();

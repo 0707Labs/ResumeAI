@@ -132,7 +132,7 @@ def test_portal_link_uses_our_stored_customer(client, ada, api_app, pg_engine):
     r = client.post("/api/billing/portal", headers=csrf(client))
     assert r.json() == {"url": "https://portal/session"}
     buyer, return_url = provider.buyers[0]
-    assert buyer.provider_customer_id == "cus_1" and return_url.endswith("/account/billing")
+    assert buyer.provider_customer_id == "cus_1" and return_url.endswith("/app/billing")
 
 
 def test_portal_needs_csrf_and_reports_unavailable(client, ada, api_app):

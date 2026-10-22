@@ -35,7 +35,7 @@ export default function ReferralsPage() {
   if (data === null) {
     return (
       <Alert tone="info" title="Sign in to see your referrals">
-        <Link href="/signin?next=/account/referrals" className="font-medium text-accent underline">Sign in</Link> to
+        <Link href="/signin?next=/app/invites" className="font-medium text-accent underline">Sign in</Link> to
         get your link.
       </Alert>
     );

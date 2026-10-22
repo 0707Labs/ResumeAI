@@ -42,7 +42,7 @@ export default function ScorePage() {
 
   if (!hydrated) return null;
   if (!resume || !jd) {
-    return <Alert tone="info" title="No score yet">Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link>.</Alert>;
+    return <Alert tone="info" title="No score yet">Start on the <Link href="/app/tailor" className="font-medium text-accent underline">first step</Link>.</Alert>;
   }
 
   const approved = tailored ? counts(tailored, decisions).approved : 0;
@@ -95,7 +95,7 @@ export default function ScorePage() {
 
           {tailored && approved === 0 && (
             <Alert tone="info" title="No approved changes yet">
-              Both scores match because nothing is approved. <Link href="/app/review" className="font-medium text-accent underline">Review your changes</Link> to see what they add.
+              Both scores match because nothing is approved. <Link href="/app/tailor/review" className="font-medium text-accent underline">Review your changes</Link> to see what they add.
             </Alert>
           )}
 
@@ -118,8 +118,8 @@ export default function ScorePage() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/app/review" className="text-sm text-accent underline-offset-2 hover:underline">Back to review</Link>
-        <Link href="/app/mentor" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
+        <Link href="/app/tailor/review" className="text-sm text-accent underline-offset-2 hover:underline">Back to review</Link>
+        <Link href="/app/tailor/mentor" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
           Talk it through with the mentor <ArrowRightIcon />
         </Link>
       </div>

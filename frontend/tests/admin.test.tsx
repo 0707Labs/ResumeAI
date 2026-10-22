@@ -15,11 +15,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const base = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "staff@example.com", name: null, status: "active" } as const;
-const SUPPORT = Me.parse({ ...base, role: "support", capabilities: ["staff.access", "tickets.read", "tickets.write", "users.read"] });
+const base = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "staff@example.com", name: null, status: "active", onboarded: true } as const;
+const SUPPORT = Me.parse({ ...base, role: "support", capabilities: ["staff.access", "tickets.read", "tickets.write", "users.read"], onboarded: true });
 const ADMIN = Me.parse({ ...base, role: "admin",
-  capabilities: ["staff.access", "users.read", "audit.read", "billing.read", "billing.write", "referrals.decide"] });
-const USER = Me.parse({ ...base, role: "user", capabilities: [] });
+  capabilities: ["staff.access", "users.read", "audit.read", "billing.read", "billing.write", "referrals.decide"], onboarded: true });
+const USER = Me.parse({ ...base, role: "user", capabilities: [], onboarded: true });
 
 describe("roles", () => {
   it("reads capabilities from /api/me, never the role name", () => {
@@ -37,8 +37,8 @@ describe("roles", () => {
   });
 
   it("accepts roles and capabilities the backend may add later", () => {
-    expect(Me.safeParse({ ...base, role: "superadmin", capabilities: ["staff.access", "something.new"] }).success).toBe(true);
-    expect(Me.safeParse({ ...base, role: "owner", capabilities: [] }).success).toBe(false);
+    expect(Me.safeParse({ ...base, role: "superadmin", capabilities: ["staff.access", "something.new"], onboarded: true }).success).toBe(true);
+    expect(Me.safeParse({ ...base, role: "owner", capabilities: [], onboarded: true }).success).toBe(false);
     expect(Me.safeParse({ ...base, role: "user" }).success).toBe(false);  // capabilities are required
   });
 });
@@ -58,7 +58,7 @@ describe("admin protection", () => {
   });
 
   it("lets a signed-in staff member reach the sign-in page to re-authenticate", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ...base, role: "admin", capabilities: [] })));
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ...base, role: "admin", capabilities: [], onboarded: true })));
     vi.stubGlobal("fetch", fetchMock);
     function Probe({ skip }: { skip: boolean }) { useSignedInRedirect("/admin", { skip }); return null; }
     render(<Probe skip />);

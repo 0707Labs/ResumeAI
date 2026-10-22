@@ -1,4 +1,4 @@
-"""/account: linked login methods and account deletion.
+"""/app/profile: linked login methods and account deletion.
 
 Connecting Google/GitHub starts at GET /api/auth/{provider}/start?intent=link
 (app/api/oauth.py); adding email sign-in sends a magic link bound to this user."""

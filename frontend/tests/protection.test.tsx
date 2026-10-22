@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [] };
+const ME = { id: "6f1d2c1e-8a4b-4f7e-9a51-1c2d3e4f5a6b", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true };
 
 function stubFetch(table: Record<string, () => Response>) {
   vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -45,7 +45,7 @@ describe("proxy", () => {
     proxy(new NextRequest(`http://localhost:3000${path}`, { headers: cookie ? { cookie } : {} }));
 
   it("sends signed-out visitors of the workspace to /signin with where they were going", () => {
-    for (const path of ["/app", "/app/history", "/app/review", "/app/export"]) {
+    for (const path of ["/app", "/app/history", "/app/tailor/review", "/app/tailor/export"]) {
       const res = visit(path);
       expect(res.status).toBe(307);
       expect(res.headers.get("location")).toBe(`http://localhost:3000/signin?next=${encodeURIComponent(path)}`);
@@ -67,9 +67,9 @@ describe("proxy", () => {
 
 describe("post-sign-in destination", () => {
   it("accepts only our own workspace and account paths", () => {
-    expect(safeNext("/app/review")).toBe("/app/review");
+    expect(safeNext("/app/tailor/review")).toBe("/app/tailor/review");
     expect(safeNext("/app")).toBe("/app");
-    expect(safeNext("/account/billing")).toBe("/account/billing");
+    expect(safeNext("/app/billing")).toBe("/app/billing");
     expect(safeNext("/admin/billing")).toBe("/admin/billing");  // back after a staff re-sign-in
     for (const bad of [undefined, null, "", "//evil.example", "https://evil.example", "/\\evil", "/signin", "/appx", "/adminx"]) {
       expect(safeNext(bad)).toBe("/app");
@@ -77,12 +77,12 @@ describe("post-sign-in destination", () => {
   });
 
   it("remembers the destination for an emailed link, once, for 30 minutes", () => {
-    rememberNext("/app/review");
-    expect(takeNext()).toBe("/app/review");
+    rememberNext("/app/tailor/review");
+    expect(takeNext()).toBe("/app/tailor/review");
     expect(takeNext()).toBe("/app");
 
     vi.useFakeTimers();
-    rememberNext("/app/score");
+    rememberNext("/app/tailor/score");
     vi.advanceTimersByTime(31 * 60 * 1000);
     expect(takeNext()).toBe("/app");
 
@@ -93,10 +93,10 @@ describe("post-sign-in destination", () => {
 
 describe("sign-in screens", () => {
   it("a signed-in visitor skips /signin and goes where they were headed", async () => {
-    search = new URLSearchParams("next=/app/review");
+    search = new URLSearchParams("next=/app/tailor/review");
     stubFetch({ ...PROVIDERS, "GET /api/me": () => json(ME), "GET /api/auth/config": () => json({ invite_only: true }) });
     render(<SignInPage />);
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/review"));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/tailor/review"));
   });
 
   it("an unsafe next sends a signed-in visitor to the workspace instead", async () => {
@@ -107,7 +107,7 @@ describe("sign-in screens", () => {
   });
 
   it("asking for an email link on /signin?next=… remembers the destination", async () => {
-    search = new URLSearchParams("next=/app/review");
+    search = new URLSearchParams("next=/app/tailor/review");
     stubFetch({
       ...PROVIDERS, ...SIGNED_OUT,
       "GET /api/auth/config": () => json({ invite_only: true }),
@@ -119,7 +119,7 @@ describe("sign-in screens", () => {
     await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
     await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
     await screen.findByRole("status");
-    expect(takeNext()).toBe("/app/review");
+    expect(takeNext()).toBe("/app/tailor/review");
   });
 
   it("signup lists the invite step only in invite-only mode, and links Terms and Privacy", async () => {

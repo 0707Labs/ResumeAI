@@ -10,7 +10,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test("signed out: the workspace sends you to sign in, remembering where you were going", async ({ page }) => {
-  for (const path of ["/app", "/app/review", "/app/export"]) {
+  for (const path of ["/app", "/app/tailor/review", "/app/tailor/export"]) {
     await page.goto(path);
     await expect(page).toHaveURL(new RegExp(`/signin\\?next=${encodeURIComponent(path)}$`));
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
@@ -19,7 +19,7 @@ test("signed out: the workspace sends you to sign in, remembering where you were
   await page.goto("/login");
   await expect(page).toHaveURL(/\/signin$/);
   await page.goto("/review");
-  await expect(page).toHaveURL(/\/signin\?next=%2Fapp%2Freview$/);
+  await expect(page).toHaveURL(/\/signin\?next=%2Fapp%2Ftailor%2Freview$/);
 });
 
 test("a stale session cookie doesn't get into the workspace", async ({ page, context, baseURL }) => {
@@ -32,15 +32,15 @@ test("a stale session cookie doesn't get into the workspace", async ({ page, con
 test("signed in: sign-in pages skip ahead; email sign-in returns to the page asked for", async ({ page, browser, baseURL }) => {
   const email = await signUp(page, "return");
   await page.goto("/signin");
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/app\/dashboard$/);  // /app -> the dashboard once onboarded
   await page.goto("/signup");
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/app\/dashboard$/);
 
   // A fresh browser, signed out, asks for /review.
   const other = await browser.newContext({ baseURL });
   const tab = await other.newPage();
-  await tab.goto("/app/review");
-  await expect(tab).toHaveURL(/\/signin\?next=%2Fapp%2Freview$/);
+  await tab.goto("/app/tailor/review");
+  await expect(tab).toHaveURL(/\/signin\?next=%2Fapp%2Ftailor%2Freview$/);
   await tab.getByLabel("Email").fill(email);
   await tab.getByRole("button", { name: "Email me a sign-in link" }).click();
   await expect(tab.getByRole("status").filter({ hasText: "Check your email" })).toBeVisible();
@@ -48,6 +48,6 @@ test("signed in: sign-in pages skip ahead; email sign-in returns to the page ask
   // The emailed link opens in a new tab of the same browser.
   const linkTab = await other.newPage();
   await linkTab.goto(await linkFor(email));
-  await expect(linkTab).toHaveURL(/\/app\/review$/);
+  await expect(linkTab).toHaveURL(/\/app\/tailor\/review$/);
   await other.close();
 });

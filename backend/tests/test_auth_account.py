@@ -1,4 +1,4 @@
-"""/account: listing, connecting and disconnecting login methods; account deletion."""
+"""/app/profile: listing, connecting and disconnecting login methods; account deletion."""
 
 import asyncio
 import uuid
@@ -131,7 +131,7 @@ def start_link(client, provider):
 def test_connect_google_with_a_different_email(client, mock, ada, pg_engine, new_browser):
     before = client.cookies["rt_session"]
     res = link_google(client, mock, sub="g-work", email="ada.work@example.com")
-    assert where(res) == "/account?linked=google"
+    assert where(res) == "/app/profile?linked=google"
     assert client.cookies["rt_session"] != before  # rotated on link
     assert scalar(pg_engine, "SELECT user_id FROM accounts WHERE provider = 'google'") == ada["id"]
     assert scalar(pg_engine, "SELECT email_at_link FROM accounts WHERE provider = 'google'") == "ada.work@example.com"
@@ -146,7 +146,7 @@ def test_connect_identity_owned_by_someone_else_is_refused(client, mock, ada, pg
     bo = add_user(pg_engine, "bo@example.com")
     add_account(pg_engine, bo, "google", "g-bo", "bo@example.com")
     res = link_google(client, mock, sub="g-bo", email="bo@example.com")
-    assert where(res) == "/account?error=already_linked_elsewhere"
+    assert where(res) == "/app/profile?error=already_linked_elsewhere"
     assert scalar(pg_engine, "SELECT user_id FROM accounts WHERE provider = 'google'") == bo
 
 
@@ -161,7 +161,7 @@ def test_connect_needs_a_verified_email(client, mock, ada, pg_engine):
         json={"access_token": "gho_x", "token_type": "bearer"})
     mock.get("https://api.github.com/user").respond(json={"id": 4242})
     mock.get("https://api.github.com/user/emails").respond(json=[])
-    assert where(callback(client, "github", code="c", state=q["state"])) == "/account?error=email_unverified"
+    assert where(callback(client, "github", code="c", state=q["state"])) == "/app/profile?error=email_unverified"
     assert count(pg_engine, "accounts", "provider = 'github'") == 0
 
 
@@ -172,7 +172,7 @@ def test_connect_is_refused_if_a_different_user_signed_in_meanwhile(client, mock
     mock.post("https://oauth2.googleapis.com/token").respond(
         json={"access_token": "x", "token_type": "Bearer",
               "id_token": id_token(q["nonce"])})
-    assert where(callback(client, "google", code="c", state=q["state"])) == "/account?error=not_signed_in"
+    assert where(callback(client, "google", code="c", state=q["state"])) == "/app/profile?error=not_signed_in"
     assert count(pg_engine, "accounts", "provider = 'google'") == 0
 
 

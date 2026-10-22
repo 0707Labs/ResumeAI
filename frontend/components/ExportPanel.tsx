@@ -39,7 +39,7 @@ export function ExportPanel({ unresolved, summaryUnresolved, approvedCount, busy
             ))}
             {summaryUnresolved && <li>Your rewritten summary</li>}
           </ul>
-          <Link href="/app/review" className="inline-block text-sm font-medium text-accent underline-offset-2 hover:underline">
+          <Link href="/app/tailor/review" className="inline-block text-sm font-medium text-accent underline-offset-2 hover:underline">
             Resolve them on the review page
           </Link>
         </div>

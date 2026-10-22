@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ScorePage from "@/app/app/score/page";
+import ScorePage from "@/app/app/tailor/score/page";
 import { BreakdownBars } from "@/components/BreakdownBars";
 import { KeywordChips } from "@/components/KeywordChips";
 import { ScoreRing, clampScore } from "@/components/ScoreRing";
@@ -14,7 +14,7 @@ import { tailored } from "./reviewFixtures";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => "/app/score",
+  usePathname: () => "/app/tailor/score",
 }));
 
 const WEIGHTS = {

@@ -52,10 +52,13 @@ backend/
   alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
-  app/             routes: / (landing), /app workspace (input, /app/analysis, /app/review, /app/score,
-                   /app/mentor, /app/export), /signin, /signup/*, /legal/*; proxy.ts + app/app/layout.tsx
-                   guard /app; next.config.ts redirects /login and the old step paths
-  components/      AppShell, UploadDropzone, ResumePreview, ui, icons (+ later steps)
+  app/             routes: / (landing), /signin, /signup/*, /legal/*, /pricing; signed-in area /app
+                   (UserShell: /app/welcome first login, /app/dashboard, /app/tailor + /analysis /review
+                   /score /mentor /export, /app/billing, /app/invites, /app/profile); /admin (AdminShell).
+                   proxy.ts + app/app/layout.tsx and app/admin/layout.tsx guard them; next.config.ts
+                   redirects /login, /account/*, and the old step paths
+  components/      AppShell (public pages), app/ (UserShell, states, PreferencesForm), admin/, UploadDropzone,
+                   ResumePreview, ui, icons
   lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
                    store.ts (zustand, sessionStorage), theme.ts, diff.ts
   tests/           vitest + Testing Library; contract.test.ts hits the real backend

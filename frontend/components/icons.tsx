@@ -61,3 +61,21 @@ export const MailIcon = (p: IconProps) => (
 export const UserIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></Icon>
 );
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2Z" /></Icon>
+);
+export const WandIcon = (p: IconProps) => (
+  <Icon {...p}><path d="m15 4 5 5L9 20H4v-5Z" /><path d="m13 6 5 5" /></Icon>
+);
+export const CardIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></Icon>
+);
+export const GiftIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5M12 8s1.5-5 4-5a2.5 2.5 0 0 1 0 5" /></Icon>
+);
+export const LogOutIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></Icon>
+);
+export const LightbulbIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z" /></Icon>
+);

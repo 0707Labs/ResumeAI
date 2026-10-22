@@ -41,7 +41,7 @@ export default function MentorPage() {
 
   if (!hydrated) return null;
   if (!analysis || !resume || !jd) {
-    return <Alert tone="info" title="Nothing to talk through yet">Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link>.</Alert>;
+    return <Alert tone="info" title="Nothing to talk through yet">Start on the <Link href="/app/tailor" className="font-medium text-accent underline">first step</Link>.</Alert>;
   }
   if (!mentor) {
     return (
@@ -145,8 +145,8 @@ function Mentor({ advice, onRefresh, refreshing, error }: {
       {advice.notes.length > 0 && <p className="text-xs text-muted">{advice.notes.join(" ")}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/app/score" className="text-sm text-accent underline-offset-2 hover:underline">Back to score</Link>
-        <Link href="/app/export" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
+        <Link href="/app/tailor/score" className="text-sm text-accent underline-offset-2 hover:underline">Back to score</Link>
+        <Link href="/app/tailor/export" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover">
           Export your resume <ArrowRightIcon />
         </Link>
       </div>

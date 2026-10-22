@@ -31,7 +31,7 @@ export default function AnalysisPage() {
   if (!analysis) {
     return (
       <Alert tone="info" title="Nothing to show yet">
-        Start on the <Link href="/app" className="font-medium text-accent underline">first step</Link> with your resume
+        Start on the <Link href="/app/tailor" className="font-medium text-accent underline">first step</Link> with your resume
         and a job description.
       </Alert>
     );
@@ -57,7 +57,7 @@ export default function AnalysisPage() {
       );
       const updated = await api.submitAnswers(analysis, payload);
       setAnswered(updated);
-      router.push("/app/review");
+      router.push("/app/tailor/review");
     } catch (e) {
       setError(messageFor(e));
     } finally {

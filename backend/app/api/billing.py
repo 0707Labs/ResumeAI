@@ -251,7 +251,7 @@ async def portal(user: User = Depends(current_user), db: AsyncSession = Depends(
         BillingCustomer.user_id == user.id, BillingCustomer.provider == provider.name))
     buyer = Buyer(user_id=user.id, email=user.email, name=user.name, provider_customer_id=customer_id)
     try:
-        url = await provider.get_portal_url(buyer, return_url=f"{get_settings().public_url}/account/billing")
+        url = await provider.get_portal_url(buyer, return_url=f"{get_settings().public_url}/app/billing")
     except PaymentError:
         raise HTTPException(status_code=502, detail="portal_failed") from None
     if url is None:

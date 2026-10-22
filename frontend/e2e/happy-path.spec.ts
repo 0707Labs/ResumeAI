@@ -39,11 +39,11 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await signUp(page, "happy");
 
   // 1. Input
-  await page.goto("/app");
+  await page.goto("/app/tailor");
   await page.getByRole("button", { name: "No resume handy? Try a sample" }).click();
   await expect(page.getByText("Up to date")).toBeVisible();
   await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page).toHaveURL(/\/app\/analysis$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/analysis$/);
 
   // 2. Gaps and questions: first missing question Yes, second No, third Skip.
   const questions = page.locator('section[aria-labelledby="group-missing"] fieldset');
@@ -56,7 +56,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
   await skip.locator("label", { hasText: "Skip" }).click();
   await expect(page.locator("#questions-progress")).toContainText("3 of 3");
   await page.getByRole("button", { name: "Continue to tailoring" }).click();
-  await expect(page).toHaveURL(/\/app\/review$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/review$/);
 
   // 3. Review: cite the confirmed answer in an unchanged bullet; it verifies.
   await expect(page.getByRole("heading", { name: "Review each change" })).toBeVisible();
@@ -83,7 +83,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 4. Score: the approved, answer-backed edit raises the estimate.
   await page.getByRole("link", { name: "See your score" }).click();
-  await expect(page).toHaveURL(/\/app\/score$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/score$/);
   await expect(page.getByText("Estimate only. Real ATS systems vary.")).toBeVisible();
   const afterRing = /^With your 1 approved change:/;
   await expect(page.getByRole("img", { name: afterRing })).toBeVisible();
@@ -94,7 +94,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 5. Mentor: verdict renders; tick one plan task.
   await page.getByRole("link", { name: "Talk it through with the mentor" }).click();
-  await expect(page).toHaveURL(/\/app\/mentor$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/mentor$/);
   await expect(page.getByTestId("verdict")).toContainText("Should you apply?");
   const task = page.locator('input[type="checkbox"][id^="plan-"]').first();
   await task.check();
@@ -103,7 +103,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 6. Export: an image-only preview; the paid DOCX downloads as a zip.
   await page.getByRole("link", { name: "Export your resume" }).click();
-  await expect(page).toHaveURL(/\/app\/export$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/export$/);
   // The preview is server-rendered images (watermarked, contact and last section blurred):
   // none of the resume's text is on the page.
   const preview = page.getByTestId("preview-pages");
@@ -130,7 +130,7 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
     page.waitForEvent("download", { timeout: 30_000 }),
     (async () => payWebhook(payments[0]))(),
   ]);
-  await expect(page).toHaveURL(/\/app\/export$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/export$/);
   expect(download.suggestedFilename()).toBe("Asha_Rao_tailored.docx");
   const file = await readFile(await download.path());
   expect(file.subarray(0, 4).toString("latin1")).toBe("PK\x03\x04");
@@ -148,16 +148,16 @@ test("sample resume: answer, review, score, mentor, export", async ({ page, requ
 
   // 7. Free allowance: a rules-only run doesn't count. Two more starts use this month's
   // two free tailorings; past them the credit balance allows more, and spends nothing.
-  await page.goto("/app");
+  await page.goto("/app/tailor");
   const allowance = page.getByTestId("allowance");
   await expect(allowance).toContainText("2 of 2 free tailorings left this month");
   for (const left of ["1 of 2", "keep tailoring with your 4 credits"]) {
     await page.getByRole("button", { name: "Analyze" }).click();
-    await expect(page).toHaveURL(/\/app\/analysis$/);
-    await page.goto("/app");
+    await expect(page).toHaveURL(/\/app\/tailor\/analysis$/);
+    await page.goto("/app/tailor");
     await expect(allowance).toContainText(left);
   }
   await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page).toHaveURL(/\/app\/analysis$/);
+  await expect(page).toHaveURL(/\/app\/tailor\/analysis$/);
   await expect(page.getByTestId("credits-balance")).toHaveText("4 credits");
 });

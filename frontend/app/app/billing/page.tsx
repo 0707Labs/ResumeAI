@@ -48,7 +48,7 @@ export default function BillingPage() {
     return (
       <div className="mx-auto max-w-md">
         <Alert tone="info" title="Please sign in">
-          <Link href="/signin?next=/account/billing" className="font-medium text-accent underline">Sign in</Link> to see your billing.
+          <Link href="/signin?next=/app/billing" className="font-medium text-accent underline">Sign in</Link> to see your billing.
         </Alert>
       </div>
     );
@@ -57,7 +57,6 @@ export default function BillingPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <p className="text-sm"><Link href="/account" className="text-muted hover:text-fg">← Account</Link></p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Billing</h1>
       </div>
       <BillingAlert error={error} />

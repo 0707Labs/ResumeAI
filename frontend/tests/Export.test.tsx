@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ExportPage from "@/app/app/export/page";
+import ExportPage from "@/app/app/tailor/export/page";
 import { ApiError, api } from "@/lib/api";
 import type { ExportPreview } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
@@ -12,7 +12,7 @@ import { tailored, verified } from "./reviewFixtures";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => "/app/export",
+  usePathname: () => "/app/tailor/export",
 }));
 const openDownload = vi.fn();
 vi.mock("@/lib/download", () => ({ openDownload: (...a: unknown[]) => openDownload(...a) }));
@@ -48,7 +48,7 @@ describe("Step 6: export", () => {
     const panel = screen.getByTestId("export-panel");
     expect(within(panel).getByText(/flagged changes still need your decision/i)).toBeInTheDocument();
     expect(within(panel).getByText(/Led a churn dashboard/)).toBeInTheDocument();
-    expect(within(panel).getByRole("link", { name: /resolve them on the review page/i })).toHaveAttribute("href", "/app/review");
+    expect(within(panel).getByRole("link", { name: /resolve them on the review page/i })).toHaveAttribute("href", "/app/tailor/review");
     expect(downloadButton("DOCX")).toBeDisabled();
     expect(downloadButton("PDF")).toBeDisabled();
     expect(downloadButton("DOCX")).toHaveAccessibleDescription(/still need your decision/i);
@@ -120,7 +120,7 @@ describe("Step 6: export", () => {
     render(<ExportPage />);
     await user.click(downloadButton("DOCX"));
     expect(await screen.findByText("Sign in to download")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/export");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/tailor/export");
     expect(screen.queryByText("Download didn't finish")).not.toBeInTheDocument();
     expect(openDownload).not.toHaveBeenCalled();
   });
@@ -141,7 +141,7 @@ describe("Step 6: export", () => {
     vi.spyOn(api, "exportPreview").mockResolvedValue(preview);
     const requestDownload = vi.spyOn(api, "requestDownload").mockResolvedValue(link("credit", 4));
     sessionStorage.setItem("rt:pending-download", JSON.stringify({ fmt: "pdf", at: Date.now() }));
-    window.history.replaceState(null, "", "/app/export?resume=download");
+    window.history.replaceState(null, "", "/app/tailor/export?resume=download");
     const { rerender } = render(<ExportPage />);
     await waitFor(() => expect(openDownload).toHaveBeenCalledWith("/api/downloads/file/abc.def"));
     expect(requestDownload.mock.calls[0][0]).toBe("pdf");

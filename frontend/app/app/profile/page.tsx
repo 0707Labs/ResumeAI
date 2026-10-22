@@ -40,7 +40,7 @@ function Account() {
     return (
       <div className="mx-auto max-w-md">
         <Alert tone="info" title="Please sign in">
-          <Link href="/signin?next=/account" className="font-medium text-accent underline">Sign in</Link> to see your account.
+          <Link href="/signin?next=/app/profile" className="font-medium text-accent underline">Sign in</Link> to see your account.
         </Alert>
       </div>
     );
@@ -61,7 +61,7 @@ function Account() {
         <h2 className="text-lg font-semibold">Billing</h2>
         <p className="mt-1 text-sm text-muted">Credits, passes, purchases and receipts.</p>
         <div className="mt-3 flex flex-wrap gap-4">
-          <Link href="/account/billing" className="text-sm font-medium text-accent underline">Go to billing</Link>
+          <Link href="/app/billing" className="text-sm font-medium text-accent underline">Go to billing</Link>
           {me.role === "admin" && (
             <Link href="/admin/billing" className="text-sm font-medium text-accent underline">Billing admin</Link>
           )}
@@ -71,7 +71,7 @@ function Account() {
         <h2 className="text-lg font-semibold">Invite friends</h2>
         <p className="mt-1 text-sm text-muted">Share your link and earn credits when friends join.</p>
         <div className="mt-3 flex flex-wrap gap-4">
-          <Link href="/account/referrals" className="text-sm font-medium text-accent underline">Your referral link</Link>
+          <Link href="/app/invites" className="text-sm font-medium text-accent underline">Your referral link</Link>
           {me.role === "admin" && (
             <Link href="/admin/referrals" className="text-sm font-medium text-accent underline">Referral review queue</Link>
           )}

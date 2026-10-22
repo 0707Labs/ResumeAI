@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import BillingPage from "@/app/account/billing/page";
+import BillingPage from "@/app/app/billing/page";
 import CheckoutSuccessPage from "@/app/billing/success/page";
 import PricingPage from "@/app/pricing/page";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
@@ -31,7 +31,7 @@ function routes(table: Record<string, Handler | unknown>) {
   return fetchMock;
 }
 
-const ME = { id: "11111111-1111-4111-8111-111111111111", email: "ada@example.com", name: "Ada", role: "user", status: "active", capabilities: [] };
+const ME = { id: "11111111-1111-4111-8111-111111111111", email: "ada@example.com", name: "Ada", role: "user", status: "active", capabilities: [], onboarded: true };
 const PAYMENT_ID = "22222222-2222-4222-8222-222222222222";
 const PACK = { key: "credit_pack_5", kind: "credit_pack", name: "Credit pack", prices: { USD: 600, INR: 49900 },
   credits: 5, pass_days: null, fair_use_cap: null, interval: null, available: true };
@@ -201,7 +201,7 @@ describe("billing page", () => {
   it("asks to sign in when signed out", async () => {
     routes({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
     render(<BillingPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/account/billing");
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/billing");
   });
 });
 
@@ -249,7 +249,7 @@ describe("billing admin page", () => {
   it("shows alerts, margin, costs and resolves a review", async () => {
     let resolved = false;
     routes({
-      "GET /api/me": { ...ME, role: "admin", capabilities: ["staff.access", "billing.read", "billing.write"] },
+      "GET /api/me": { ...ME, role: "admin", capabilities: ["staff.access", "billing.read", "billing.write"], onboarded: true },
       "GET /api/admin/billing/overview?days=30": () => json(resolved ? { ...OVERVIEW, reviews: [] } : OVERVIEW),
       "POST /api/admin/billing/reviews/33333333-3333-4333-8333-333333333333/resolve": () => {
         resolved = true;
@@ -289,7 +289,7 @@ describe("download paywall", () => {
     search = new URLSearchParams(`payment=${PAYMENT_ID}`);
     routes({ [`GET /api/billing/payments/${PAYMENT_ID}`]: () => json(paidPack) });
     render(<CheckoutSuccessPage />);
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/export?resume=download"));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/app/tailor/export?resume=download"));
   });
 
   it("the remembered download is used once and only for an hour", () => {

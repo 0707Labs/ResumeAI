@@ -16,20 +16,19 @@ import { MonitorIcon, MoonIcon, SunIcon, TrashIcon, UserIcon } from "./icons";
 import { isResolved } from "./QuestionCard";
 import { Button } from "./ui";
 
-/** Sign-in, account and billing pages: no tailoring progress bar there. */
-const AUTH_PATHS = ["/signin", "/signup", "/auth", "/waitlist", "/account", "/pricing", "/billing"];
-const isAuthPath = (path: string) => AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 /** The landing and legal pages (components/site) and /admin (components/admin) bring their own chrome. */
 const isMarketingPath = (path: string) => path === "/" || path === "/legal" || path.startsWith("/legal/");
 const isAdminPath = (path: string) => path === "/admin" || path.startsWith("/admin/");
+/** The signed-in area has its own shell (components/app/UserShell, from app/app/layout.tsx). */
+const isUserAreaPath = (path: string) => path === "/app" || path.startsWith("/app/");
 
 const STEPS = [
-  { href: "/app", label: "Your details" },
-  { href: "/app/analysis", label: "Gaps" },
-  { href: "/app/review", label: "Review" },
-  { href: "/app/score", label: "Score" },
-  { href: "/app/mentor", label: "Mentor" },
-  { href: "/app/export", label: "Export" },
+  { href: "/app/tailor", label: "Your details" },
+  { href: "/app/tailor/analysis", label: "Gaps" },
+  { href: "/app/tailor/review", label: "Review" },
+  { href: "/app/tailor/score", label: "Score" },
+  { href: "/app/tailor/mentor", label: "Mentor" },
+  { href: "/app/tailor/export", label: "Export" },
 ] as const;
 
 /** Restore the session from sessionStorage once, on the client. During server
@@ -54,7 +53,7 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
   const pathname = usePathname();
   // A friend's link (?ref=CODE) on any page is kept for sign-up (lib/referrals.ts).
   useEffect(() => { captureReferral(window.location.search); }, [pathname]);
-  if (isMarketingPath(pathname) || isAdminPath(pathname)) return <>{children}</>;
+  if (isMarketingPath(pathname) || isAdminPath(pathname) || isUserAreaPath(pathname)) return <>{children}</>;
   return (
     <>
       <a href="#main" className="sr-only z-50 rounded-lg bg-accent px-4 py-2 text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
@@ -68,11 +67,9 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
               Pricing
             </Link>
             <ThemeToggle initial={initialTheme} />
-            <ClearAll />
             <AccountLink pathname={pathname} />
           </div>
         </div>
-        {!isAuthPath(pathname) && <StepNav />}
       </header>
       <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       <OutOfCreditsModal />
@@ -96,14 +93,14 @@ function AccountLink({ pathname }: { pathname: string }) {
   return me ? (
     <>
       <CreditsLive />
-      <Link href="/account" className={cls}><UserIcon />Account</Link>
+      <Link href="/app/dashboard" className={cls}><UserIcon />Your dashboard</Link>
     </>
   ) : (
     <Link href="/signin" className={cls}>Sign in</Link>
   );
 }
 
-function StepNav() {
+export function StepNav() {
   const pathname = usePathname();
   const s = useSession();
   // A step is reachable once the data it needs exists.
@@ -113,15 +110,15 @@ function StepNav() {
     .filter((i) => i.status === "missing" && i.question)
     .every((i) => isResolved(s.answers[i.question!.id]));
   const reachable: Record<string, boolean> = {
-    "/app": true,
-    "/app/analysis": !!s.analysis,
-    "/app/review": !!s.tailored || questionsDone,
-    "/app/score": !!s.tailored,
-    "/app/mentor": !!s.analysis,
-    "/app/export": !!s.tailored,
+    "/app/tailor": true,
+    "/app/tailor/analysis": !!s.analysis,
+    "/app/tailor/review": !!s.tailored || questionsDone,
+    "/app/tailor/score": !!s.tailored,
+    "/app/tailor/mentor": !!s.analysis,
+    "/app/tailor/export": !!s.tailored,
   };
   return (
-    <nav aria-label="Progress" className="mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6">
+    <nav aria-label="Progress" className="overflow-x-auto">
       <ol className="flex gap-1 pb-2">
         {STEPS.map((step, i) => {
           const current = pathname === step.href;
@@ -182,7 +179,7 @@ export function ThemeToggle({ initial }: { initial: Theme }) {
   );
 }
 
-function ClearAll() {
+export function ClearAll() {
   const clearAll = useSession((s) => s.clearAll);
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -197,7 +194,7 @@ function ClearAll() {
     return (
       <div role="group" aria-label="Confirm clearing your data" className="flex items-center gap-1.5">
         <span className="hidden text-sm text-muted sm:inline">Remove everything from this tab?</span>
-        <Button variant="danger" className="min-h-9 px-3" onClick={() => { clearAll(); setConfirming(false); setCleared(true); router.replace("/app"); }}>
+        <Button variant="danger" className="min-h-9 px-3" onClick={() => { clearAll(); setConfirming(false); setCleared(true); router.replace("/app/tailor"); }}>
           Yes, clear
         </Button>
         <Button variant="ghost" className="min-h-9 px-3" onClick={() => setConfirming(false)} autoFocus>Cancel</Button>

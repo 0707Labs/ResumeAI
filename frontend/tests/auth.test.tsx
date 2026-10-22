@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import AccountPage from "@/app/account/page";
+import AccountPage from "@/app/app/profile/page";
 import EmailLinkPage from "@/app/auth/email/page";
 import SignInPage from "@/app/signin/page";
 import ConsentPage from "@/app/signup/consent/page";
@@ -269,7 +269,7 @@ describe("waitlist", () => {
 });
 
 describe("account", () => {
-  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [] };
+  const ME = { id: "0b6f1d9e-2c4a-4f7b-9d1e-3a5c7e9f1b2d", email: "ada@example.com", name: null, role: "user", status: "active", capabilities: [], onboarded: true };
   const account = (id: string, provider: string) =>
     ({ id, provider, email: "ada@example.com", linked_at: "2026-10-21T00:00:00Z" });
   const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -305,6 +305,6 @@ describe("account", () => {
   it("asks signed-out visitors to sign in", async () => {
     routes({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
     render(<AccountPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/account");
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/profile");
   });
 });

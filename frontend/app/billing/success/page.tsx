@@ -34,7 +34,7 @@ function CheckoutSuccess() {
   const router = useRouter();
   const paid = payment?.status === "paid";
   // Bought to finish a download: once the webhook has granted it, go back and finish it.
-  useEffect(() => { if (paid && pendingDownload()) router.replace("/app/export?resume=download"); }, [paid, router]);
+  useEffect(() => { if (paid && pendingDownload()) router.replace("/app/tailor/export?resume=download"); }, [paid, router]);
 
   useEffect(() => {
     if (!paymentId) return;
@@ -63,7 +63,7 @@ function CheckoutSuccess() {
 
   if (!paymentId) {
     return <Centered><Alert tone="warn" title="We don't know which payment this is">
-      Your purchases are listed on <Link href="/account/billing" className="font-medium text-accent underline">your billing page</Link>.
+      Your purchases are listed on <Link href="/app/billing" className="font-medium text-accent underline">your billing page</Link>.
     </Alert></Centered>;
   }
 
@@ -127,7 +127,7 @@ function CheckoutSuccess() {
             </Alert>
           )}
           <p className="text-sm">
-            <Link href="/account/billing" className="font-medium text-accent underline">Go to your billing page</Link>
+            <Link href="/app/billing" className="font-medium text-accent underline">Go to your billing page</Link>
           </p>
         </div>
       </Card>

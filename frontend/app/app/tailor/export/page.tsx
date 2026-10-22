@@ -78,7 +78,7 @@ export default function ExportPage() {
   if (!resume || !jd || !tailored || !payload) {
     return (
       <Alert tone="info" title="Nothing to export yet">
-        Review your tailored bullets on the <Link href="/app/review" className="font-medium text-accent underline">review page</Link> first.
+        Review your tailored bullets on the <Link href="/app/tailor/review" className="font-medium text-accent underline">review page</Link> first.
       </Alert>
     );
   }
@@ -124,7 +124,7 @@ export default function ExportPage() {
           {needsSignIn && (
             <Alert tone="info" title="Sign in to download">
               Tailoring and the preview are free; downloading needs an account.{" "}
-              <Link href="/signin?next=/app/export" className="font-medium text-accent underline">Sign in</Link> and
+              <Link href="/signin?next=/app/tailor/export" className="font-medium text-accent underline">Sign in</Link> and
               come back here: your work stays in this tab.
             </Alert>
           )}

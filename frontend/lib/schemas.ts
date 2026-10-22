@@ -296,6 +296,7 @@ export const Me = z.object({
   // What the UI may offer (app/auth/roles.py); strings, so a new backend capability can't
   // break parsing. The API checks again on every call.
   capabilities: z.array(z.string()),
+  onboarded: z.boolean(),
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
@@ -565,3 +566,76 @@ export type PaymentStatus = z.infer<typeof PaymentStatus>;
 export type BillingSummary = z.infer<typeof BillingSummary>;
 export type LedgerPage = z.infer<typeof LedgerPage>;
 export type AdminOverview = z.infer<typeof AdminOverview>;
+
+// --- user area (app/api/profile.py) ----------------------------------------------------------------
+
+export const SENIORITY = ["intern", "junior", "mid", "senior", "lead", "principal"] as const;
+export const WORK_MODES = ["remote", "hybrid", "onsite"] as const;
+export const EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", "internship", "freelance"] as const;
+
+export const Preferences = z.object({
+  target_roles: z.array(z.string()),
+  seniority: z.enum(SENIORITY).nullable(),
+  industries: z.array(z.string()),
+  locations: z.array(z.string()),
+  work_modes: z.array(z.enum(WORK_MODES)),
+  employment_types: z.array(z.enum(EMPLOYMENT_TYPES)),
+  notice_period_days: z.number().int().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type Preferences = z.infer<typeof Preferences>;
+export type PreferencesIn = Omit<Preferences, "updated_at">;
+
+export const ResumeSummary = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  is_default: z.boolean(),
+  version: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type ResumeSummary = z.infer<typeof ResumeSummary>;
+
+export const PlanStatus = z.object({
+  kind: z.enum(["pass", "pro", "credits", "free"]),
+  credits: z.number().int(),
+  pass_expires_at: z.string().nullable(),
+  pass_days_left: z.number().int().nullable(),
+  pass_downloads_left: z.number().int().nullable(),
+  pro_period_end: z.string().nullable(),
+  free_allowance: z.number().int(),
+  free_left: z.number().int(),
+  resets_at: z.string(),
+});
+export type PlanStatus = z.infer<typeof PlanStatus>;
+
+export const Dashboard = z.object({
+  name: z.string().nullable(),
+  plan: PlanStatus,
+  recent: z.array(z.object({
+    id: z.uuid(),
+    job_title: z.string().nullable(),
+    company: z.string().nullable(),
+    created_at: z.string(),
+    ats_before: z.number().nullable(),
+    ats_after: z.number().nullable(),
+    status: z.enum(["started", "tailored", "downloaded"]),
+  })),
+  last_tip: z.object({
+    text: z.string(),
+    job_title: z.string().nullable(),
+    company: z.string().nullable(),
+    created_at: z.string(),
+  }).nullable(),
+  referrals: z.object({
+    enabled: z.boolean(),
+    invites_per_user: z.number().int(),
+    invites_left: z.number().int(),
+    joined: z.number().int(),
+    rewarded: z.number().int(),
+    credits_earned: z.number().int(),
+  }),
+  has_resume: z.boolean(),
+  has_preferences: z.boolean(),
+});
+export type Dashboard = z.infer<typeof Dashboard>;

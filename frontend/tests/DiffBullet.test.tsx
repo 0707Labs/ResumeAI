@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ReviewPage from "@/app/app/review/page";
+import ReviewPage from "@/app/app/tailor/review/page";
 import { DiffBullet } from "@/components/DiffBullet";
 import { api } from "@/lib/api";
 import { approveAllVerified, decide, exportCheck, withDecisions } from "@/lib/review";
@@ -14,7 +14,7 @@ import { blocked, scoreFor, tailored, unchanged, verified, warned } from "./revi
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => "/app/review",
+  usePathname: () => "/app/tailor/review",
 }));
 
 // --- review rules ----------------------------------------------------------------------------

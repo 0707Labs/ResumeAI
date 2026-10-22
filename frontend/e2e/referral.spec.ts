@@ -9,7 +9,7 @@ import { ensureNotices, linkFor, signUp, uniqueEmail } from "./helpers";
 test("referral: link → friend joins with it → first tailoring → referrer is credited", async ({ page, browser, baseURL, request }) => {
   await ensureNotices(request);
   await signUp(page, "referrer");
-  await page.goto("/account/referrals");
+  await page.goto("/app/invites");
   const link = (await page.getByTestId("referral-link").textContent())!.trim();
   expect(link).toMatch(/\/\?ref=[A-Z2-9]{8}$/);
   await expect(page.getByText(/works as an invite: 5 left/)).toBeVisible();
@@ -31,18 +31,19 @@ test("referral: link → friend joins with it → first tailoring → referrer i
   await friend.getByRole("checkbox", { name: /18 years of age or older/ }).check();
   await friend.getByRole("checkbox", { name: /Terms of Service and Privacy Policy/ }).check();
   await friend.getByRole("button", { name: "Create my account" }).click();
-  await expect(friend).toHaveURL(/\/app$/);
+  await expect(friend).toHaveURL(/\/app\/welcome$/);
 
   // Joined, not yet rewarded (the trigger is the first tailoring).
   await page.reload();
   await expect(page.getByText(/Waiting for their first tailoring/)).toBeVisible();
   await expect(page.getByText(/works as an invite: 4 left/)).toBeVisible();
 
-  // The friend's first tailoring.
+  // The friend's first tailoring (straight past the first-login steps).
+  await friend.goto("/app/tailor");
   await friend.getByRole("button", { name: "No resume handy? Try a sample" }).click();
   await expect(friend.getByText("Up to date")).toBeVisible();
   await friend.getByRole("button", { name: "Analyze" }).click();
-  await expect(friend).toHaveURL(/\/app\/analysis$/);
+  await expect(friend).toHaveURL(/\/app\/tailor\/analysis$/);
   const questions = friend.locator('section[aria-labelledby="group-missing"] fieldset');
   for (let i = 0; i < await questions.count(); i++) await questions.nth(i).locator("label", { hasText: "Skip" }).click();
   await friend.getByRole("button", { name: "Continue to tailoring" }).click();
@@ -52,7 +53,7 @@ test("referral: link → friend joins with it → first tailoring → referrer i
   await page.goto("/app");
   await expect(page.getByTestId("credits-balance")).toHaveText("1 credit");
   await expect(page.getByRole("status").filter({ hasText: "Your friend joined. +1 credit" })).toBeVisible();
-  await page.goto("/account/referrals");
+  await page.goto("/app/invites");
   await expect(page.getByText(/Rewarded · \+1 credit/)).toBeVisible();
   await page.reload();
   await expect(page.getByRole("status").filter({ hasText: "Your friend joined" })).toHaveCount(0); // shown once

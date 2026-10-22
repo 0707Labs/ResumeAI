@@ -20,7 +20,7 @@ export async function call<T extends z.ZodType>(
   schema: T | null,
   path: string,
   { method = "GET", body, headers: extra }: {
-    method?: "GET" | "POST" | "DELETE"; body?: unknown; headers?: Record<string, string>;
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; headers?: Record<string, string>;
   } = {},
 ): Promise<z.infer<T>> {
   const headers: Record<string, string> = { ...extra };
@@ -93,7 +93,7 @@ export const NEXT_PAGE: Record<S.AuthStep["next"], string> = {
   invite: "/signup/invite",
   consent: "/signup/consent",
   verify_email: "/signup/verify-email",
-  linked: "/account?linked=email",
+  linked: "/app/profile?linked=email",
 };
 
 /** Full-page navigation to the provider (OAuth needs a top-level redirect). */

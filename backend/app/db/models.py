@@ -24,6 +24,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Text,
     UniqueConstraint,
@@ -92,12 +93,15 @@ class User(Base):
     credits_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     referral_code: Mapped[str | None] = mapped_column(Text, unique=True)  # made on first use
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # first-login wizard done/skipped
+    avatar_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # no provider picture again
+    phone: Mapped[str | None] = mapped_column(Text)  # optional, E.164
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("credits_balance >= 0", name="credits_balance"),
         CheckConstraint(_in("role", ROLES), name="role"),
         CheckConstraint(_in("status", ("active", "suspended")), name="status"),
+        CheckConstraint("phone IS NULL OR phone ~ '^\\+[1-9][0-9]{6,14}$'", name="phone"),
         Index("users_email_live", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
         Index("users_deleted_at", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),
         Index("ix_users_staff", "role", postgresql_where=text("role <> 'user'")),
@@ -277,6 +281,7 @@ class PendingAuth(Base):
     )
     # Invite-only mode: a referral link stands in for the invite (checked again at sign-up).
     referral_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    picture_url: Mapped[str | None] = mapped_column(Text)  # the provider's picture, imported after sign-up
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = _created_at()
 
@@ -290,6 +295,8 @@ class PendingAuth(Base):
         # verified one may carry an invite.
         CheckConstraint("kind = 'needs_email' OR verified_email IS NOT NULL", name="signup_has_email"),
         CheckConstraint("invite_id IS NULL OR kind = 'signup'", name="invite_only_signup"),
+        CheckConstraint("picture_url IS NULL OR (picture_url LIKE 'https://%' AND length(picture_url) <= 1000)",
+                        name="picture_url"),
     )
 
 
@@ -607,6 +614,7 @@ class Analysis(Base):
     ats_before: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     ats_after: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     mentor_tip: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # deleting purges at once
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
@@ -619,6 +627,7 @@ class Analysis(Base):
                         " AND (ats_after IS NULL OR ats_after BETWEEN 0 AND 100)", name="ats"),
         CheckConstraint("(job_title IS NULL OR length(job_title) <= 200) AND (company IS NULL OR length(company) <= 200)"
                         " AND (mentor_tip IS NULL OR length(mentor_tip) <= 1000)", name="meta_len"),
+        CheckConstraint("deleted_at IS NULL OR purged_at IS NOT NULL", name="deleted"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
         Index("ix_analyses_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
         Index("ix_analyses_resume_id", "resume_id", postgresql_where=text("resume_id IS NOT NULL")),
@@ -833,4 +842,24 @@ class ResumeVersion(Base):
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(_in("source", RESUME_SOURCES), name="source"),
         CheckConstraint("file_name IS NULL OR length(file_name) <= 200", name="file_name"),
+    )
+
+
+class UserAvatar(Base):
+    """The user's picture, re-encoded by us (app.profile.avatars): WebP, at most 256 KB."""
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("content_type = 'image/webp'", name="content_type"),
+        CheckConstraint("octet_length(data) BETWEEN 1 AND 262144", name="size"),
+        CheckConstraint(_in("source", ("provider", "upload")), name="source"),
     )

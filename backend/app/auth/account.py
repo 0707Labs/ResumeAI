@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import subject_ref
 from app.db.models import (
-    Account, AuthSession, ConsentRecord, EmailToken, JobPreferences, PendingAuth, SavedResume, User,
+    Account, AuthSession, ConsentRecord, EmailToken, JobPreferences, PendingAuth, SavedResume, User, UserAvatar,
 )
 from app.db.rls import service_scope
 
@@ -113,6 +113,7 @@ async def _delete_account(db: AsyncSession, user: User) -> None:
     # What the user wrote about themselves goes now too (the user row is only soft-deleted).
     await db.execute(delete(SavedResume).where(SavedResume.user_id == uid))  # versions cascade
     await db.execute(delete(JobPreferences).where(JobPreferences.user_id == uid))
+    await db.execute(delete(UserAvatar).where(UserAvatar.user_id == uid))
     await db.execute(delete(AuthSession).where(AuthSession.user_id == uid))
 
     granted = (await db.execute(text(
@@ -121,6 +122,6 @@ async def _delete_account(db: AsyncSession, user: User) -> None:
     ref = subject_ref(email)
     db.add_all([ConsentRecord(user_id=uid, subject_ref=ref, notice_id=notice_id, purpose=purpose,
                               action="withdrawn", method="deletion") for purpose, notice_id in granted])
-    await db.execute(update(User).where(User.id == uid).values(deleted_at=now))
+    await db.execute(update(User).where(User.id == uid).values(deleted_at=now, phone=None))
     await db.commit()
 

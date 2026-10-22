@@ -38,6 +38,7 @@ from app.billing.config import get_billing_config
 from app.config import get_settings
 from app.db.models import EmailToken, PendingAuth, Waitlist
 from app.db.session import get_db
+from app.profile import avatars
 
 router = APIRouter(prefix="/api")
 
@@ -153,6 +154,7 @@ async def send_magic_link(db: AsyncSession, email: str, purpose: Literal["login"
 async def sign_in_or_gate(
     db: AsyncSession, request: Request, response: Response, *,
     provider: Literal["google", "github", "email"], provider_account_id: str, verified_email: str | None,
+    picture_url: str | None = None,
 ) -> AuthStep:
     """Shared ending of every sign-in: existing (or auto-linked) user signs in,
     anyone else becomes a pending identity at the invite (or verify-email) step."""
@@ -164,9 +166,10 @@ async def sign_in_or_gate(
     if resolved.user is not None:
         clear_pending(response)
         await start_session(db, request, response, resolved.user, provider=provider)
+        await avatars.import_provider_picture(db, resolved.user, picture_url)  # last: may roll back
         return AuthStep(next="signed_in")
-    await create_pending(db, request, response, provider=provider,
-                         provider_account_id=provider_account_id, verified_email=verified_email)
+    await create_pending(db, request, response, provider=provider, provider_account_id=provider_account_id,
+                         verified_email=verified_email, picture_url=picture_url)
     return AuthStep(next=after_verified_email() if verified_email else "verify_email")
 
 
@@ -345,7 +348,7 @@ async def signup_complete(body: CompleteIn, request: Request, response: Response
     pending = await load_pending(db, request, lock=True)
     if pending is None:
         raise _fail(400, "pending_expired")
-    provider = pending.provider
+    provider, picture_url = pending.provider, pending.picture_url
     try:
         user = await complete_signup(db, pending, notice_ids=dict(body.notice_ids),
                                      research_opt_in=body.research_opt_in, ip=_ip(request),
@@ -358,6 +361,7 @@ async def signup_complete(body: CompleteIn, request: Request, response: Response
     log_auth_event("signup_completed", user_id=user.id, provider=provider)
     clear_pending(response)
     await start_session(db, request, response, user, provider=provider)
+    await avatars.import_provider_picture(db, user, picture_url)  # last: may roll back
     return AuthStep(next="signed_in")
 
 

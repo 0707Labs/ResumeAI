@@ -32,6 +32,7 @@ AuthEvent = Literal[
     "account_unlinked",
     "account_link_failed",
     "account_deleted",
+    "data_exported",
 ]
 
 

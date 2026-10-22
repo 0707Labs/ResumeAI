@@ -38,7 +38,7 @@ def parsed(b):
 def test_new_users_onboard_once(ada):
     b, _ = ada
     assert b.get("/api/me").json()["onboarded"] is False
-    assert b.patch("/api/profile", json={"name": "  Ada   Lovelace "}).status_code == 204
+    assert b.patch("/api/profile", json={"name": "  Ada   Lovelace "}).status_code == 200
     assert b.post("/api/profile/onboarded").status_code == 204
     me = b.get("/api/me").json()
     assert (me["onboarded"], me["name"]) == (True, "Ada Lovelace")

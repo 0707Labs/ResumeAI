@@ -20,6 +20,7 @@ from app.auth.roles import Capability, Role, capabilities
 from app.auth.sessions import end_session
 from app.db.models import User
 from app.db.session import get_db
+from app.profile import avatars
 
 router = APIRouter()
 
@@ -32,6 +33,7 @@ class Me(BaseModel):
     status: Literal["active", "suspended"]
     capabilities: list[Capability]  # what the UI may offer; the API checks again on every call
     onboarded: bool  # false until the first-login wizard is finished or skipped
+    avatar_url: str | None  # our own copy (/api/profile/avatar?v=...); None: show initials
 
 
 class CsrfToken(BaseModel):
@@ -45,9 +47,11 @@ class ProviderAvailability(BaseModel):
 
 
 @router.get("/api/me")
-async def me(user: User = Depends(current_user)) -> Me:
+async def me(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> Me:
+    sha = await avatars.current_sha(db, user.id)
     return Me(id=user.id, email=user.email, name=user.name, role=user.role, status=user.status,
-              capabilities=capabilities(user.role), onboarded=user.onboarded_at is not None)
+              capabilities=capabilities(user.role), onboarded=user.onboarded_at is not None,
+              avatar_url=avatars.url(sha))
 
 
 @router.get("/api/auth/providers")

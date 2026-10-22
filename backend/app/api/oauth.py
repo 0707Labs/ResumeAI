@@ -24,6 +24,7 @@ from app.auth.events import log_auth_event
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.db.session import get_db
+from app.profile import avatars
 
 router = APIRouter(prefix="/api/auth")
 
@@ -91,6 +92,7 @@ async def callback(
         step = await sign_in_or_gate(
             db, request, response, provider=identity.provider,
             provider_account_id=identity.provider_account_id, verified_email=identity.verified_email,
+            picture_url=identity.picture_url,
         )
     except HTTPException as exc:
         return fail(str(exc.detail))
@@ -115,5 +117,6 @@ async def _finish_link(db, request, response, flow, identity, fail) -> RedirectR
         return fail(exc.code)
     if result == "linked":
         await start_session(db, request, response, user, provider=identity.provider, event="account_linked")
+        await avatars.import_provider_picture(db, user, identity.picture_url)  # last: may roll back
     response.headers["location"] = f"/app/profile?linked={identity.provider}"
     return response

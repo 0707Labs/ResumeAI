@@ -31,7 +31,8 @@ from app.auth.invites import generate_code, hash_code
 from app.auth.mailer import MailerError, get_mailer, invite_mail
 from app.auth.ratelimit import rate_limit
 from app.billing import referrals
-from app.billing.config import BillingConfig, get_billing_config
+from app.admin.settings import live_billing_config
+from app.billing.config import BillingConfig
 from app.config import get_settings
 from app.db.models import Analysis, Invite, InviteRedemption, Referral, User
 from app.db.rls import service_scope
@@ -86,7 +87,7 @@ async def _progress(db: AsyncSession, referee_id: uuid.UUID, referral: Referral 
 
 @router.get("")
 async def overview(user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                   config: BillingConfig = Depends(get_billing_config)) -> InvitesOut:
+                   config: BillingConfig = Depends(live_billing_config)) -> InvitesOut:
     code = await referrals.ensure_code(db, user)
     await db.commit()
     uid, now = user.id, datetime.now(UTC)
@@ -133,7 +134,7 @@ class Sent(BaseModel):
 
 @router.post("", status_code=201, dependencies=[Depends(rate_limit("invite_send", 10, 3600)), Depends(require_csrf)])
 async def send_invite(body: EmailIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                      config: BillingConfig = Depends(get_billing_config)) -> Sent:
+                      config: BillingConfig = Depends(live_billing_config)) -> Sent:
     """Invite a friend by email. 409 invite_limit past the quota, already_member when the
     address has an account, already_invited when your invite to it is still open."""
     per_key_limit(f"invite_user:{user.id}", 5, 3600)

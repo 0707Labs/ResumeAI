@@ -266,11 +266,12 @@ class Waitlist(Base):
     )
     created_at: Mapped[datetime] = _created_at()
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("source IS NULL OR length(source) <= 100", name="source_len"),
-        CheckConstraint(_in("status", ("waiting", "invited", "converted")), name="status"),
+        CheckConstraint(_in("status", ("waiting", "invited", "converted", "rejected")), name="status"),
         Index("ix_waitlist_status_created", "status", "created_at"),
     )
 
@@ -909,4 +910,25 @@ class SupportTicket(Base):
         CheckConstraint("email = lower(email)", name="email_lower"),
         Index("ix_support_tickets_user_created", "user_id", "created_at"),
         Index("ix_support_tickets_open", "created_at", postgresql_where=text("status <> 'closed'")),
+    )
+
+
+class SupportTicketMessage(Base):
+    """A staff reply (emailed to the user) or an internal note (never shown to them)."""
+
+    __tablename__ = "support_ticket_messages"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", ("reply", "internal_note")), name="kind"),
+        CheckConstraint("length(body) BETWEEN 1 AND 5000", name="body_len"),
+        Index("ix_support_ticket_messages_ticket_created", "ticket_id", "created_at"),
     )

@@ -22,6 +22,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin import settings as runtime
 from app.auth.account import AccountError, link
 from app.auth.csrf import require_csrf
 from app.auth.events import log_auth_event
@@ -35,7 +36,6 @@ from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
 from app.billing import referrals
 from app.billing.config import get_billing_config
-from app.config import get_settings
 from app.db.models import EmailToken, PendingAuth, Waitlist
 from app.db.session import get_db
 from app.profile import avatars
@@ -123,9 +123,9 @@ def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def after_verified_email() -> Literal["invite", "consent"]:
+async def after_verified_email(db: AsyncSession) -> Literal["invite", "consent"]:
     """A new, verified identity goes to the invite step, or straight to consent when signup is open."""
-    return "invite" if get_settings().invite_only else "consent"
+    return "invite" if await runtime.invite_only(db) else "consent"
 
 
 def per_key_limit(key: str, limit: int, window: int) -> None:
@@ -170,7 +170,7 @@ async def sign_in_or_gate(
         return AuthStep(next="signed_in")
     await create_pending(db, request, response, provider=provider, provider_account_id=provider_account_id,
                          verified_email=verified_email, picture_url=picture_url)
-    return AuthStep(next=after_verified_email() if verified_email else "verify_email")
+    return AuthStep(next=await after_verified_email(db) if verified_email else "verify_email")
 
 
 # --- magic link ------------------------------------------------------------------------------
@@ -249,7 +249,7 @@ async def email_verify(body: TokenIn, request: Request, response: Response,
     await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id)
                      .values(kind="signup", verified_email=email))
     await db.commit()
-    return AuthStep(next=after_verified_email())
+    return AuthStep(next=await after_verified_email(db))
 
 
 async def _finish_email_link(db: AsyncSession, request: Request, response: Response,
@@ -275,8 +275,8 @@ async def _finish_email_link(db: AsyncSession, request: Request, response: Respo
 
 
 @router.get("/auth/config")
-async def public_config() -> PublicConfig:
-    return PublicConfig(invite_only=get_settings().invite_only)
+async def public_config(db: AsyncSession = Depends(get_db)) -> PublicConfig:
+    return PublicConfig(invite_only=await runtime.invite_only(db))
 
 
 @router.get("/auth/pending")
@@ -287,14 +287,14 @@ async def get_pending(request: Request, db: AsyncSession = Depends(get_db)) -> P
         raise _fail(404, "pending_expired")
     bound = bool(pending.verified_email) and await find_bound(db, pending.verified_email) is not None
     return PendingView(kind=pending.kind, provider=pending.provider, email=pending.verified_email,
-                       invite_required=get_settings().invite_only,
+                       invite_required=await runtime.invite_only(db),
                        invite_accepted=pending.invite_id is not None or pending.referral_invite,
                        has_bound_invite=bound, has_referral_invite=await _referral_invite(db, request))
 
 
 async def _referral_invite(db: AsyncSession, request: Request) -> bool:
-    config = get_billing_config()
-    if not (get_settings().invite_only and config.referrals.enabled):
+    config = await runtime.live_config(db, get_billing_config())
+    if not (await runtime.invite_only(db) and config.referrals.enabled):
         return False
     referrer = await referrals.referrer_for(db, request.cookies.get(referrals.COOKIE))
     return referrer is not None and await referrals.invites_left(db, config, referrer.id) > 0

@@ -18,6 +18,7 @@ from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.signing import sign, unsign
 from app.billing import analyses, referrals
+from app.admin import settings as runtime
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import parse_analysis_id
 from app.config import get_settings
@@ -164,7 +165,9 @@ async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(b
         billed.tailored_at = func.now()
         if billed.user_id is not None:
             async with service_scope(db):  # the reward goes to the referrer: another user's rows
-                await referrals.on_first_tailoring(db, config, billed.user_id)
+                # Rewards follow the runtime referral settings. Only here: signed-out,
+                # rules-only use never touches the database.
+                await referrals.on_first_tailoring(db, await runtime.live_config(db, config), billed.user_id)
         await db.commit()
     return result
 

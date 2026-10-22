@@ -18,7 +18,9 @@ from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.billing import referrals
-from app.billing.config import BillingConfig, get_billing_config
+from app.admin import settings as runtime
+from app.admin.settings import live_billing_config
+from app.billing.config import BillingConfig
 from app.config import get_settings
 from app.db.models import Referral, User
 from app.db.session import get_db
@@ -77,7 +79,7 @@ class SeenIn(BaseModel):
 
 @router.get("")
 async def overview(user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                   config: BillingConfig = Depends(get_billing_config)) -> ReferralsOut:
+                   config: BillingConfig = Depends(live_billing_config)) -> ReferralsOut:
     code = await referrals.ensure_code(db, user)
     await db.commit()
     rows = list(await db.scalars(select(Referral).where(Referral.referrer_id == user.id)
@@ -88,7 +90,7 @@ async def overview(user: User = Depends(current_user), db: AsyncSession = Depend
         trigger=config.referrals.trigger, reward_credits=config.referrals.reward_credits,
         invitee_reward_credits=config.referrals.invitee_reward_credits, monthly_cap=config.referrals.monthly_cap,
         rewarded_this_month=sum(1 for r in rows if r.status == "rewarded" and r.rewarded_at >= month),
-        invite_only=get_settings().invite_only, invites_left=await referrals.invites_left(db, config, user.id),
+        invite_only=await runtime.invite_only(db), invites_left=await referrals.invites_left(db, config, user.id),
         total_earned=sum(r.reward_credits for r in rows if r.status == "rewarded"),
         pending=sum(1 for r in rows if r.status == "pending"),
         rewarded=sum(1 for r in rows if r.status == "rewarded"),
@@ -179,7 +181,7 @@ DECIDE = [Depends(WRITE_LIMIT), Depends(require_csrf)]
 
 @admin_router.post("/{referral_id}/approve", status_code=204, dependencies=DECIDE)
 async def approve(referral_id: uuid.UUID, request: Request, admin: User = Depends(require("referrals.decide")),
-                  db: AsyncSession = Depends(get_db), config: BillingConfig = Depends(get_billing_config)) -> None:
+                  db: AsyncSession = Depends(get_db), config: BillingConfig = Depends(live_billing_config)) -> None:
     await _decide(db, request, admin, "approve", referral_id,
                   lambda d: referrals.approve(d, config, referral_id, admin.id))
 

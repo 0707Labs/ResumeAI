@@ -5,6 +5,9 @@ from app.api.account import router as account_router
 from app.api.analyses import router as analyses_router
 from app.api.admin import billing_router as admin_billing_router
 from app.api.admin import router as admin_router
+from app.api.admin_invites import router as admin_invites_router
+from app.api.admin_support import router as admin_support_router
+from app.api.admin_users import router as admin_users_router
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
 from app.api.downloads import router as downloads_router
@@ -40,6 +43,9 @@ def create_app() -> FastAPI:
     app.include_router(analyses_router)
     app.include_router(admin_router)
     app.include_router(admin_billing_router)
+    app.include_router(admin_users_router)
+    app.include_router(admin_invites_router)
+    app.include_router(admin_support_router)
     app.include_router(referrals_router)
     app.include_router(profile_router)
     app.include_router(downloads_router)

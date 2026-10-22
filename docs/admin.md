@@ -114,6 +114,21 @@ Prices, credit amounts and pass lengths stay in `billing.toml` (purchases snapsh
 The settings are read by their features as those are built; storing a value has no
 effect before then.
 
+## 5b. What the settings change today
+
+Staff can change these without a deploy (`/admin/settings`, superadmin with a recent
+sign-in). Each defaults to env or `billing.toml` until set:
+
+| Key | Default from | Read by |
+|---|---|---|
+| `invite_only` | `RT_INVITE_ONLY` | sign-up, `/api/auth/config`, the invite step |
+| `invites_per_user` | `[referrals].invites_per_user` | invite quota (`/api/invites`, link sign-ups) |
+| `signup_bonus_credits` | `[signup].bonus_credits` | starter credits at account creation (ledger, `signup_bonus`) |
+| `referrals_enabled`, `referral_trigger`, `referral_reward_credits`, `referral_monthly_cap` | `[referrals]` | referral attribution and rewards |
+| `analyses_paused`, `maintenance_banner` | off / none | read by later steps (kill switch, banner) |
+
+The signed-out, rules-only pipeline never reads them, so it still runs without a database.
+
 ## 6. The first superadmin
 
 The account must exist first (sign up with an invite like anyone else), so the role

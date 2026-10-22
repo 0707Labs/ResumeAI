@@ -22,7 +22,8 @@ from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.billing import referrals
-from app.billing.config import BillingConfig, get_billing_config
+from app.admin.settings import live_billing_config
+from app.billing.config import BillingConfig
 from app.billing.plan import Kind, plan_status
 from app.db.models import (
     EMPLOYMENT_TYPES,
@@ -538,7 +539,7 @@ class PlanOut(BaseModel):
 
 @router.get("/plan")
 async def plan(user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-               config: BillingConfig = Depends(get_billing_config)) -> PlanOut:
+               config: BillingConfig = Depends(live_billing_config)) -> PlanOut:
     return PlanOut(**(await plan_status(db, config, user, datetime.now(UTC))).__dict__)
 
 
@@ -584,7 +585,7 @@ def _num(value: Decimal | None) -> float | None:
 
 @router.get("/dashboard")
 async def dashboard(user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                    config: BillingConfig = Depends(get_billing_config)) -> DashboardOut:
+                    config: BillingConfig = Depends(live_billing_config)) -> DashboardOut:
     """Everything /app/dashboard shows, in one call. Metadata only: no resume or JD text."""
     now = datetime.now(UTC)
     downloaded = exists().where(Download.analysis_id == Analysis.id)

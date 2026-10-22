@@ -222,3 +222,32 @@ def invite_mail(to: str, inviter_name: str | None, expires_on: str) -> Mail:
         footer="Don't know them, or not interested? Ignore this email; we won't write again.",
         footer_in_text=True,
     )
+
+
+def waitlist_invite_mail(to: str, expires_on: str) -> Mail:
+    """A waitlist spot came up. Bound to this address: no code to type."""
+    return Mail(
+        to=to,
+        subject="Your Resume Tailor invite is here",
+        link=f"{get_settings().public_url}/signup",
+        lines=(
+            "Thanks for waiting. Your invite to Resume Tailor is ready.",
+            f"Sign up with this email address ({to}) and it's applied automatically. It works until {expires_on}.",
+        ),
+        button="Create my account",
+        footer="Changed your mind? Ignore this email; the invite simply expires.",
+        footer_in_text=True,
+    )
+
+
+def ticket_reply_mail(to: str, subject: str, reply: str) -> Mail:
+    """A staff reply to a support message. The reply text is the body; the link opens Support."""
+    return Mail(
+        to=to,
+        subject=f"Re: {subject}"[:200],
+        link=f"{get_settings().public_url}/app/support",
+        lines=tuple(p.strip() for p in reply.split("\n\n") if p.strip()) or (reply,),
+        button="Open Support",
+        footer="Reply from the Support page in the app; replies to this email aren't read.",
+        footer_in_text=True,
+    )

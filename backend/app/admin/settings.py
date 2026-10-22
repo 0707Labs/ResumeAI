@@ -11,18 +11,20 @@ app_settings has no grant for rt_app, so readers inside a signed-in request use
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import Request
+from fastapi import Depends, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin import audit
+from app.billing.config import BillingConfig, get_billing_config
 from app.config import get_settings
 from app.db.models import AppSetting, User
 from app.db.rls import service_scope
+from app.db.session import get_db
 
 
 class Settings(BaseModel):
@@ -33,10 +35,23 @@ class Settings(BaseModel):
     invite_only: bool
     analyses_paused: bool = False  # kill switch: no new analyses (in-flight ones finish)
     maintenance_banner: str | None = Field(default=None, max_length=280)
+    # Invites and referrals (defaults: billing.toml [referrals] and [signup]).
+    invites_per_user: int = Field(ge=0, le=100)
+    signup_bonus_credits: int = Field(ge=0, le=100)
+    referrals_enabled: bool
+    referral_trigger: Literal["on_verified_signup", "on_first_tailoring"]
+    referral_reward_credits: int = Field(ge=0, le=50)
+    referral_monthly_cap: int = Field(ge=0, le=1000)
 
 
-def defaults() -> dict[str, Any]:
-    return {"invite_only": get_settings().invite_only, "analyses_paused": False, "maintenance_banner": None}
+def defaults(base: BillingConfig | None = None) -> dict[str, Any]:
+    config = base or get_billing_config()
+    return {
+        "invite_only": get_settings().invite_only, "analyses_paused": False, "maintenance_banner": None,
+        "invites_per_user": config.referrals.invites_per_user, "signup_bonus_credits": config.signup.bonus_credits,
+        "referrals_enabled": config.referrals.enabled, "referral_trigger": config.referrals.trigger,
+        "referral_reward_credits": config.referrals.reward_credits, "referral_monthly_cap": config.referrals.monthly_cap,
+    }
 
 
 @dataclass(frozen=True)
@@ -45,11 +60,37 @@ class Current:
     overridden: frozenset[str]  # keys with a stored value
 
 
-async def read_all(db: AsyncSession) -> Current:
+async def read_all(db: AsyncSession, base: BillingConfig | None = None) -> Current:
     async with service_scope(db):
         rows = (await db.execute(select(AppSetting.key, AppSetting.value))).all()
     stored = {k: v for k, v in rows if k in Settings.model_fields}  # a retired key is ignored
-    return Current(values=Settings(**{**defaults(), **stored}), overridden=frozenset(stored))
+    return Current(values=Settings(**{**defaults(base), **stored}), overridden=frozenset(stored))
+
+
+def apply(base: BillingConfig, values: Settings) -> BillingConfig:
+    """billing.toml with the runtime overrides that live in it (referrals, sign-up credits)."""
+    return base.model_copy(update={
+        "referrals": base.referrals.model_copy(update={
+            "enabled": values.referrals_enabled, "trigger": values.referral_trigger,
+            "reward_credits": values.referral_reward_credits, "monthly_cap": values.referral_monthly_cap,
+            "invites_per_user": values.invites_per_user}),
+        "signup": base.signup.model_copy(update={"bonus_credits": values.signup_bonus_credits}),
+    })
+
+
+async def live_config(db: AsyncSession, base: BillingConfig | None = None) -> BillingConfig:
+    base = base or get_billing_config()
+    return apply(base, (await read_all(db, base)).values)
+
+
+async def invite_only(db: AsyncSession) -> bool:
+    return (await read_all(db)).values.invite_only
+
+
+async def live_billing_config(base: BillingConfig = Depends(get_billing_config),
+                              db: AsyncSession = Depends(get_db)) -> BillingConfig:
+    """FastAPI dependency: billing.toml plus the settings staff changed at runtime."""
+    return await live_config(db, base)
 
 
 class UnknownSetting(ValueError):

@@ -31,8 +31,8 @@ describe("roles", () => {
   });
 
   it("shows each role only the sections it can open", () => {
-    expect(sectionsFor(SUPPORT).map((s) => s.href)).toEqual(["/admin"]);
-    expect(sectionsFor(ADMIN).map((s) => s.href)).toEqual(["/admin", "/admin/billing", "/admin/referrals"]);
+    expect(sectionsFor(SUPPORT).map((s) => s.href)).toEqual(["/admin", "/admin/users", "/admin/support"]);
+    expect(sectionsFor(ADMIN).map((s) => s.href)).toEqual(["/admin", "/admin/users", "/admin/referrals", "/admin/billing"]);
     expect(sectionsFor(USER)).toEqual([]);
   });
 
@@ -74,7 +74,7 @@ describe("AdminShell", () => {
     render(<AdminShell me={ADMIN} initialTheme="system"><p>content</p></AdminShell>);
     const [mobile, desktop] = screen.getAllByRole("navigation", { name: "Admin sections" });
     for (const nav of [mobile, desktop]) {
-      expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Billing", "Referrals"]);
+      expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Users", "Referrals", "Billing"]);
       expect(within(nav).getByRole("link", { name: "Billing" })).toHaveAttribute("aria-current", "page");
       expect(within(nav).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
     }

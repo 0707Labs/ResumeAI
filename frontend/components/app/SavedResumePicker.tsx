@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 
-import { Button, inputClass } from "@/components/ui";
+import { Button, inlineInputClass } from "@/components/ui";
 import type { Resume, ResumeSummary } from "@/lib/schemas";
 import { userApi, userError } from "@/lib/user";
 
@@ -37,7 +37,7 @@ export function SavedResumePicker({ onPick, disabled }: { onPick: (resume: Resum
     <div className="mt-4 rounded-xl border border-border bg-surface-2/40 p-3">
       <label htmlFor={id} className="text-sm font-medium text-fg">Use a saved resume</label>
       <div className="mt-1.5 flex flex-wrap gap-2">
-        <select id={id} className={`${inputClass} mt-0 w-auto min-w-0 flex-1`} value={chosen} onChange={(e) => setChosen(e.target.value)}>
+        <select id={id} className={`${inlineInputClass} min-w-0 flex-1`} value={chosen} onChange={(e) => setChosen(e.target.value)}>
           {list.map((r) => <option key={r.id} value={r.id}>{r.title}{r.is_default ? " (default)" : ""}</option>)}
         </select>
         <Button variant="secondary" busy={busy} disabled={disabled || !chosen} onClick={use}>Use it</Button>

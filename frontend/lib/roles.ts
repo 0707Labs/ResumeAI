@@ -30,13 +30,19 @@ export interface AdminSection {
   description: string;
 }
 
-/** Admin sections in sidebar order. Later steps add users, invites, costs and the rest. */
+/** Admin sections in sidebar order. */
 export const ADMIN_SECTIONS: AdminSection[] = [
   { href: "/admin", label: "Overview", needs: "staff.access", description: "Where things stand." },
+  { href: "/admin/users", label: "Users", needs: "users.read",
+    description: "Find an account, see its history (metadata only), and act on it." },
+  { href: "/admin/invites", label: "Invites", needs: "invites.write",
+    description: "Generate invite codes, work the waitlist, invite settings and the funnel." },
+  { href: "/admin/referrals", label: "Referrals", needs: "referrals.decide",
+    description: "Flagged referrals to approve or reject, paid ones to reverse, and the rules." },
+  { href: "/admin/support", label: "Support", needs: "tickets.read",
+    description: "Messages from the contact form: reply, note, assign, close." },
   { href: "/admin/billing", label: "Billing", needs: "billing.read",
     description: "Revenue, LLM cost, margin, billing reviews and webhook failures." },
-  { href: "/admin/referrals", label: "Referrals", needs: "referrals.decide",
-    description: "Flagged referrals to approve or reject, and paid ones to reverse." },
 ];
 
 export const sectionsFor = (me: Pick<Me, "capabilities">) => ADMIN_SECTIONS.filter((s) => can(me, s.needs));

@@ -7,7 +7,7 @@ import { ListInput } from "@/components/app/PreferencesForm";
 import { EmptyState, ErrorState, LoadingStatus, Skeleton } from "@/components/app/states";
 import { CheckIcon, TrashIcon } from "@/components/icons";
 import { UploadDropzone } from "@/components/UploadDropzone";
-import { Alert, Button, Card, Label, inputClass } from "@/components/ui";
+import { Alert, Button, Card, Label, inlineInputClass, inputClass } from "@/components/ui";
 import { api } from "@/lib/api";
 import { blankEntry, cleanForSave, nextBulletId, sameResume } from "@/lib/resumeEdit";
 import type { Resume, ResumeDetail, ResumeSummary, VersionSummary } from "@/lib/schemas";
@@ -48,7 +48,7 @@ export function ResumeTab() {
       {list.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <Label htmlFor="resume-picker">Resume</Label>
-          <select id="resume-picker" className={`${inputClass} mt-0 w-auto`} value={current.id} onChange={(e) => select(e.target.value)}>
+          <select id="resume-picker" className={inlineInputClass} value={current.id} onChange={(e) => select(e.target.value)}>
             {list.map((r) => <option key={r.id} value={r.id}>{r.title}{r.is_default ? " (default)" : ""}</option>)}
           </select>
         </div>

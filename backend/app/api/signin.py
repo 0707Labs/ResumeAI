@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
@@ -26,7 +27,7 @@ from app.auth.csrf import require_csrf
 from app.auth.events import log_auth_event
 from app.auth.identity import AccountUnavailable, resolve_identity
 from app.auth.invites import find_bound, find_usable
-from app.auth.mailer import get_mailer, magic_link_mail
+from app.auth.mailer import MailerError, get_mailer, magic_link_mail
 from app.auth.pending import clear_pending, create_pending, load_pending
 from app.auth.ratelimit import limiter, rate_limit, scaled
 from app.auth.sessions import SignedIn, resolve_session, start_session
@@ -140,7 +141,12 @@ async def send_magic_link(db: AsyncSession, email: str, purpose: Literal["login"
         expires_at=datetime.now(UTC) + EMAIL_TOKEN_TTL,
     ))
     await db.commit()
-    get_mailer().send(magic_link_mail(email, token, purpose))
+    try:
+        # Mailers are blocking (SES is an HTTPS call): keep them off the event loop.
+        await run_in_threadpool(get_mailer().send, magic_link_mail(email, token, purpose))
+    except MailerError as exc:
+        log_auth_event("magic_link_failed", outcome="error", provider="email", reason=exc.reason)
+        raise _fail(503, "email_unavailable") from None
     log_auth_event("magic_link_sent", provider="email", reason=purpose)
 
 

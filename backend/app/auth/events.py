@@ -17,6 +17,7 @@ AuthEvent = Literal[
     "csrf_rejected",
     "rate_limited",
     "magic_link_sent",
+    "magic_link_failed",
     "magic_link_used",
     "pending_created",
     "account_linked_auto",

@@ -11,10 +11,12 @@ from app.api.referrals import admin_router as admin_referrals_router
 from app.api.referrals import router as referrals_router
 from app.api.routes import router
 from app.api.signin import router as signin_router
+from app.auth.mailer import get_mailer
 from app.config import get_settings
 
 
 def create_app() -> FastAPI:
+    get_mailer()  # fail at startup, not at the first sign-in, if RT_MAILER is misconfigured
     app = FastAPI(title="Resume Tailor", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

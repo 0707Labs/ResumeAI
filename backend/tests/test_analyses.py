@@ -2,7 +2,8 @@
 against Postgres), the start gate past the free tailorings, download charging with the
 re-download window, no overspend or double charge under concurrency, a failed export
 charging nothing, the 402 paths, signed short-lived download links, files built from the
-pinned inputs, and the pipeline using Claude only for the caller's own analysis."""
+pinned inputs, the pipeline using Claude only for the caller's own analysis, and the daily
+Claude cap (no overshoot under concurrency; over it an analysis runs rules-only)."""
 
 import asyncio
 import logging
@@ -131,11 +132,20 @@ def run(sessions, fn):
     return asyncio.run(go())
 
 
-def start(sessions, config, uid, now=NOW) -> uuid.UUID:
-    started = run(sessions, lambda db: analyses.start_analysis(
-        db, config, uid, resume={"name": "Ada"}, jd={"raw_text": "A job"}, idempotency_key=str(uuid.uuid4()),
+def start_full(sessions, config, uid, now=NOW, key=None) -> analyses.Started:
+    return run(sessions, lambda db: analyses.start_analysis(
+        db, config, uid, resume={"name": "Ada"}, jd={"raw_text": "A job"}, idempotency_key=key or str(uuid.uuid4()),
         now=now))
-    return started.analysis.id
+
+
+def start(sessions, config, uid, now=NOW) -> uuid.UUID:
+    return start_full(sessions, config, uid, now).analysis.id
+
+
+def capped(config, free, paid, free_tailorings=100):
+    """Daily Claude caps of free/paid, with enough free tailorings not to get in the way."""
+    return no_free(config, free_tailorings).model_copy(update={"analyses": config.analyses.model_copy(update={
+        "claude_analyses_per_day": free, "paid_claude_analyses_per_day": paid})})
 
 
 def pay(sessions, config, uid, aid, now=NOW, fmt="docx"):
@@ -307,6 +317,57 @@ def test_concurrent_starts_never_exceed_the_free_tailorings(sessions, config, pg
     results = concurrently(sessions, 8, lambda db, i: analyses.start_analysis(
         db, config, uid, resume={"name": "Ada"}, jd={"raw_text": "A job"}, idempotency_key=str(i), now=NOW))
     assert sum(isinstance(r, analyses.Started) for r in results) == 2
+
+
+def test_claude_cap_is_per_utc_day_and_past_it_analyses_run_rules_only(sessions, config, pg_engine):
+    cfg = capped(config, 3, 5)
+    uid = new_user(pg_engine, credits=1)
+    yesterday = start_full(sessions, cfg, uid, now=NOW.replace(hour=0) - timedelta(seconds=1))
+    assert yesterday.claude  # counted on 20 October, not today
+    day = [start_full(sessions, cfg, uid, now=NOW + timedelta(minutes=i)) for i in range(4)]
+    assert [s.claude for s in day] == [True, True, True, False]
+    assert {s.claude_per_day for s in day} == {3}
+    over = day[-1].analysis
+    assert over.usable_until == over.created_at
+    assert run(sessions, lambda db: analyses.usable(db, uid, over.id, now=NOW + timedelta(minutes=5))) is None
+    # A replay of an over-cap start doesn't count again, and the analysis still downloads.
+    again = start_full(sessions, cfg, uid, now=NOW + timedelta(minutes=5), key=over.idempotency_key)
+    assert again.replay and not again.claude
+    assert pay(sessions, cfg, uid, over.id).decision.pays_with == "credit"
+    assert start_full(sessions, cfg, uid, now=NOW.replace(hour=23, minute=59)).claude is False
+    assert start_full(sessions, cfg, uid, now=NOW.replace(hour=0) + timedelta(days=1)).claude  # 00:00 UTC resets
+
+
+def test_a_rules_only_run_over_the_claude_cap_uses_no_free_tailoring(sessions, config, pg_engine):
+    cfg = capped(config, 1, 1, free_tailorings=2)
+    uid = new_user(pg_engine)
+    assert [start_full(sessions, cfg, uid).claude for _ in range(3)] == [True, False, False]
+    snap = run(sessions, lambda db: analyses.snapshot(db, cfg, uid, 0, NOW))
+    assert snap.free_used == 1
+
+
+def test_paid_users_get_the_higher_claude_cap(sessions, config, pg_engine):
+    cfg = capped(config, 1, 3)
+    for paid in (lambda uid: add_pass(pg_engine, uid), lambda uid: add_pro(pg_engine, uid)):
+        uid = new_user(pg_engine)
+        paid(uid)
+        runs = [start_full(sessions, cfg, uid) for _ in range(4)]
+        assert [s.claude for s in runs] == [True, True, True, False] and runs[0].claude_per_day == 3
+    expired = new_user(pg_engine)
+    add_pass(pg_engine, expired, starts=NOW - timedelta(days=40))
+    assert [start_full(sessions, cfg, expired).claude for _ in range(2)] == [True, False]
+
+
+def test_concurrent_starts_never_exceed_the_claude_cap(sessions, config, pg_engine):
+    cfg = capped(config, 4, 6)
+    uid = new_user(pg_engine)
+    results = concurrently(sessions, 12, lambda db, i: analyses.start_analysis(
+        db, cfg, uid, resume={"name": "Ada"}, jd={"raw_text": "A job"}, idempotency_key=f"k{i}", now=NOW))
+    assert all(isinstance(r, analyses.Started) for r in results)
+    assert sum(r.claude for r in results) == 4
+    assert sql(pg_engine, "SELECT count(*) FROM analyses WHERE user_id = :u AND usable_until > created_at",
+               u=uid) == 4
+    assert sql(pg_engine, "SELECT count(*) FROM analyses WHERE user_id = :u", u=uid) == 12
 
 
 # --- the HTTP surface ------------------------------------------------------------------------
@@ -508,3 +569,25 @@ def test_download_events_are_logged_without_resume_text(client, signed_in, input
     assert len(lines) == 1 and f"analysis={aid}" in lines[0] and "paid_with=credit" in lines[0]
     name = inputs["resume"]["name"]
     assert all(name not in r.getMessage() for r in caplog.records)
+
+
+def test_over_the_claude_cap_the_pipeline_is_rules_only_and_says_why(client, signed_in, inputs, pg_engine,
+                                                                    monkeypatch):
+    claude = FakeClaude()
+    monkeypatch.setattr(routes, "get_llm", lambda: claude)
+    monkeypatch.setitem(client.app.dependency_overrides, get_billing_config,
+                        lambda: capped(get_billing_config(), 1, 1))
+    give_credits(pg_engine, signed_in, 1)
+    first = client.post("/api/analyses", json=inputs).json()
+    assert (first["claude"], first["claude_per_day"]) == (True, 1)
+    res = client.post("/api/analyses", json=inputs)
+    assert res.status_code == 200
+    body = res.json()
+    assert (body["claude"], body["claude_per_day"]) == (False, 1)
+    aid = body["analysis_id"]
+    gap = client.post("/api/gap/analyze", json=inputs, headers={"X-Analysis-Id": aid}).json()
+    assert gap["notes"] == [routes.DAILY_LIMIT]
+    tailoring = tailored(client, inputs, aid, use_llm=True)
+    assert routes.DAILY_LIMIT in tailoring["notes"] and claude.seen == []
+    link = download(client, inputs, aid, tailoring)  # still downloads (and pays like any other)
+    assert link.json()["paid_with"] == "credit" and fetch(client, link).status_code == 200

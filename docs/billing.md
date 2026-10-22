@@ -324,6 +324,16 @@ download is what spends a credit. Code: `app/billing/entitlements.py` (decisions
   analysis, or with a resume or job description other than the pinned ones, every stage
   runs rules-only. Claude tailors once per analysis; the first result is stored on it
   (`tailored`, `llm_tailored`). `llm_usage.analysis_id` is the checked server-side id.
+- **Claude has a daily cap per user.** At most `[analyses].claude_analyses_per_day`
+  (10) analyses a day may use Claude, or `paid_claude_analyses_per_day` (30) with an
+  active pass or Pro. The count is the user's analyses started since 00:00 UTC that may
+  use Claude, taken in `start_analysis` under the user's row lock, so concurrent starts
+  can't go past it. Past the cap the analysis **still starts** (after the same
+  free-tailoring gate) and downloads and pays like any other, but is rules-only: its
+  `usable_until` is its `created_at`, it doesn't use up a free tailoring, the response
+  has `claude: false` with the cap in `claude_per_day`, and the pipeline's note and the
+  app say today's Claude analyses are used up until 00:00 UTC. Idempotent replays don't
+  count again. A `0` turns Claude off.
 - **Downloading** is two requests. `POST /api/downloads/{docx,pdf}` needs sign-in, CSRF
   and the analysis (`X-Analysis-Id`). Holding the user's row lock it decides what pays
   (`can_user_run`): a paid download of the **same analysis** less than
@@ -351,7 +361,9 @@ download is what spends a credit. Code: `app/billing/entitlements.py` (decisions
 - Concurrent clicks are safe: the row lock serializes them, so one pays and the rest
   fall in the window; credits never go below zero.
 - Credit-backed tailorings have no monthly cap of their own: a user with one credit can
-  keep tailoring (only Claude costs accrue). Add one if `/admin/billing` shows abuse.
+  keep tailoring. The daily Claude cap above bounds what that costs (about the cap times
+  one analysis's Claude cost per user per day); the daily LLM spend alert (`[alerts]`)
+  still watches the total.
 
 ---
 

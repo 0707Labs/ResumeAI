@@ -5,15 +5,19 @@ to find the caller's analysis.
 Signed out, or without a live analysis of your own, the pipeline still works rules-only
 (no Claude calls). Claude is used only for a request whose X-Analysis-Id names the
 caller's own analysis that is still usable, and whose resume and job description are
-the ones pinned on it. Downloading is what pays (see /api/downloads in routes.py).
+the ones pinned on it. An analysis started over the daily Claude cap is rules-only
+from the start (over_daily_cap tells the pipeline why). Downloading is what pays (see
+/api/downloads in routes.py).
 """
 
 import uuid
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.csrf import require_csrf
@@ -30,6 +34,10 @@ from app.models import JobDescription, Resume
 
 router = APIRouter(prefix="/api/analyses")
 
+# True for a request whose X-Analysis-Id names the caller's analysis that was started
+# over the daily Claude cap, so the rules-only note can say so.
+over_daily_cap: ContextVar[bool] = ContextVar("over_daily_cap", default=False)
+
 
 class StartIn(BaseModel):
     resume: Resume
@@ -43,6 +51,8 @@ class AnalysisOut(BaseModel):
     analysis_id: uuid.UUID
     usable_until: datetime  # Claude may be used for this analysis until then
     uses: Uses | None  # what allowed it (nothing is spent); None on a replay
+    claude: bool  # False: started over the daily Claude cap, so it runs rules-only
+    claude_per_day: int  # the daily Claude cap for this user (resets 00:00 UTC)
 
 
 class AllowanceOut(BaseModel):
@@ -69,7 +79,8 @@ async def start(
     """Start an analysis. Spends nothing (the clean download is what pays). Allowed by a
     free tailoring this month, or past those by a pass, Pro or a credit balance; 402
     no_credits otherwise. Send one Idempotency-Key per Analyze click; a retry with it
-    returns the same analysis."""
+    returns the same analysis. Over the daily Claude cap it still starts (and
+    downloads), with claude false."""
     try:
         started = await analyses.start_analysis(
             db, config, user.id, resume=body.resume.model_dump(mode="json"), jd=body.jd.model_dump(mode="json"),
@@ -79,7 +90,8 @@ async def start(
         raise HTTPException(status_code=402, detail=exc.decision.reason) from None
     await db.commit()
     return AnalysisOut(analysis_id=started.analysis.id, usable_until=started.analysis.usable_until,
-                       uses=started.decision.pays_with if started.decision else None)
+                       uses=started.decision.pays_with if started.decision else None,
+                       claude=started.claude, claude_per_day=started.claude_per_day)
 
 
 @router.get("/allowance")
@@ -99,12 +111,17 @@ async def billed_analysis(request: Request, db: AsyncSession = Depends(get_db)) 
     """The caller's usable analysis named by X-Analysis-Id, or None (rules-only).
     Also tags LLM usage rows with its id; an unchecked header never reaches llm_usage.
     Without the header no database is touched, so signed-out use needs no database."""
-    analysis = None
+    analysis, capped = None, False
     analysis_id = parse_analysis_id(request.headers.get("x-analysis-id"))
     if analysis_id is not None:
         signed_in = await resolve_session(db, request)
         if signed_in is not None and signed_in.user.status == "active":
             analysis = await analyses.usable(db, signed_in.user.id, analysis_id)
+            if analysis is None:
+                capped = await db.scalar(select(Analysis.id).where(
+                    Analysis.id == analysis_id, Analysis.user_id == signed_in.user.id,
+                    ~analyses.WITH_CLAUDE)) is not None
+    over_daily_cap.set(capped)
     # Set in the request's own context, so the sync stages run in the threadpool see it.
     current_analysis_id.set(analysis.id if analysis else None)
     return analysis

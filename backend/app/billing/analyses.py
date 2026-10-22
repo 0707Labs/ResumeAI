@@ -2,7 +2,9 @@
 
 start_analysis() pins a resume and job description on the server. It spends nothing:
 the monthly free tailorings allow it, or, past those, whatever a download would need (an
-active pass, Pro, or a credit balance; see app.billing.entitlements). pay_for_download()
+active pass, Pro, or a credit balance; see app.billing.entitlements). It may use Claude
+only while the user is under the daily Claude cap; past it the analysis starts
+rules-only. pay_for_download()
 runs when the user asks for the clean DOCX/PDF of an analysis: a paid download of the
 same analysis within redownload_free_days covers it ('window'); otherwise it is charged
 to a pass, Pro or credits (can_user_run), once, through the ledger.
@@ -11,8 +13,8 @@ Every function runs inside the caller's transaction and never commits. The downl
 route checks the file renders inside the same transaction, so a failed export charges
 nothing. Each function first locks the user's row (the same lock app.billing.ledger
 takes), so one user's starts and downloads are serialized: concurrent clicks can't
-overspend credits, the free tailorings or a fair-use cap, and can't pay twice for one
-analysis within the window.
+overspend credits, the free tailorings, a fair-use cap or the daily Claude cap, and
+can't pay twice for one analysis within the window.
 """
 
 import hashlib
@@ -22,7 +24,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing import ledger
@@ -32,8 +34,11 @@ from app.db.models import Analysis, Download, Pass, Subscription, User
 
 log = logging.getLogger("app.billing")
 
-# Runs that use up a free tailoring: all but those that ended rules-only.
-COUNTS = or_(Analysis.llm_tailored.is_(None), Analysis.llm_tailored.is_(True))
+# Analyses that may use Claude. One started over the daily cap is usable until the moment
+# it was created, so app.api.analyses never lets Claude run for it.
+WITH_CLAUDE = Analysis.usable_until > Analysis.created_at
+# Runs that use up a free tailoring: all but those that ended (or started) rules-only.
+COUNTS = and_(WITH_CLAUDE, or_(Analysis.llm_tailored.is_(None), Analysis.llm_tailored.is_(True)))
 PAID = Download.paid_with != "window"  # downloads that were charged to something
 
 
@@ -57,6 +62,12 @@ class Started:
     analysis: Analysis
     decision: Decision | None  # None for a replayed idempotency key
     replay: bool
+    claude_per_day: int  # the daily Claude cap that applies to this user now
+
+    @property
+    def claude(self) -> bool:
+        """False when the analysis was started over the daily Claude cap (rules-only)."""
+        return self.analysis.usable_until > self.analysis.created_at
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,10 @@ def inputs_digest(resume: dict, jd: dict) -> str:
     """sha256 of the parsed resume and job description, as JSON with sorted keys."""
     blob = json.dumps({"resume": resume, "jd": jd}, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def day_start(now: datetime) -> datetime:
+    return now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def month_start(now: datetime) -> datetime:
@@ -136,22 +151,30 @@ async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.
                          idempotency_key: str, now: datetime | None = None) -> Started:
     """Pin a resume and job description for this user. Spends nothing; raises
     NoEntitlement past the free tailorings without a pass, Pro or credits. The same
-    key returns the same analysis."""
+    key returns the same analysis. Claude may be used for it while the user has started
+    fewer than the daily cap of Claude analyses since 00:00 UTC (the paid cap with an
+    active pass or Pro); past the cap it starts rules-only (Started.claude is False) and
+    uses up no free tailoring."""
     now = now or datetime.now(UTC)
     balance = await _lock_user(db, user_id)
+    snap = await snapshot(db, config, user_id, balance, now)
+    cap = (config.analyses.paid_claude_analyses_per_day if snap.passes or snap.pro is not None
+           else config.analyses.claude_analyses_per_day)
     existing = await db.scalar(select(Analysis).where(
         Analysis.user_id == user_id, Analysis.idempotency_key == idempotency_key))
     if existing is not None:
-        return Started(existing, None, replay=True)
-    decision = can_start_tailoring(await snapshot(db, config, user_id, balance, now))
+        return Started(existing, None, replay=True, claude_per_day=cap)
+    decision = can_start_tailoring(snap)
     if not decision.allowed:
         raise NoEntitlement(decision)
+    used = int(await db.scalar(select(func.count()).select_from(Analysis).where(
+        Analysis.user_id == user_id, Analysis.created_at >= day_start(now), WITH_CLAUDE)))
+    usable_until = now + timedelta(hours=config.analyses.usable_hours) if used < cap else now
     row = Analysis(id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, resume=resume, jd=jd,
-                   inputs_sha256=inputs_digest(resume, jd), created_at=now,
-                   usable_until=now + timedelta(hours=config.analyses.usable_hours))
+                   inputs_sha256=inputs_digest(resume, jd), created_at=now, usable_until=usable_until)
     db.add(row)
     await db.flush()
-    return Started(row, decision, replay=False)
+    return Started(row, decision, replay=False, claude_per_day=cap)
 
 
 async def usable(db: AsyncSession, user_id: uuid.UUID, analysis_id: uuid.UUID,

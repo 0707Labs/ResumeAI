@@ -27,6 +27,7 @@ export type ApiErrorKind =
   | "tailoring_limit"
   | "sign_in_required"
   | "analysis_expired"
+  | "rate_limited"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -46,6 +47,7 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   sign_in_required: "Sign in to download your tailored resume. Your work here stays in this tab.",
   analysis_expired:
     "The free re-download period for this resume has passed, and we've deleted our copy of it. Tailor it again to download a new file.",
+  rate_limited: "That's a lot of requests in a short time. Please wait a minute and try again.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -77,6 +79,7 @@ export function classify(status: number, detail?: string): ApiErrorKind {
   if (status === 413) return "file_too_large";
   if (status === 422 && detail && /no text found|scanned/i.test(detail)) return "no_text";
   if (status === 422 && detail && /could not read/i.test(detail)) return "unreadable_file";
+  if (status === 429) return "rate_limited";
   if (status >= 400 && status < 500) return "invalid_input";
   return "server";
 }
@@ -138,14 +141,22 @@ function setAnalysisId(id: string | null): void {
   }
 }
 
+/** What we tell someone whose analysis started over the daily Claude cap. Exported for tests. */
+export function dailyLimitNote(perDay?: number): string {
+  const used = perDay === undefined ? "today's Claude analyses" : `today's ${perDay} Claude ${perDay === 1 ? "analysis" : "analyses"}`;
+  return `You've used ${used}, so this one uses our rules-based checks only (no AI rewriting). ` +
+    "Claude is available again from 00:00 UTC. Reviewing and downloading work as usual.";
+}
+
 /** Start a tailoring: the server pins this resume and job description to it. Spends
  * nothing (the download is what's paid). Signed out (401): no analysis, rules-only.
  * 402: past this month's free tailorings with no pass or credits, so the pricing dialog
- * opens and this throws. */
-async function startAnalysis(resume: S.Resume, jd: S.JobDescription): Promise<void> {
+ * opens and this throws. Returns a note to show when this analysis can't use Claude
+ * (over the daily cap), else null. */
+async function startAnalysis(resume: S.Resume, jd: S.JobDescription): Promise<string | null> {
   setAnalysisId(null);
   const res = await authPost("/api/analyses", { resume, jd }, { "Idempotency-Key": crypto.randomUUID() });
-  if (res.status === 401) return;
+  if (res.status === 401) return null;
   if (!res.ok) {
     if (res.status === 402) announceOutOfCredits({ reason: "tailoring" });
     const detail = await readDetail(res);
@@ -160,6 +171,7 @@ async function startAnalysis(resume: S.Resume, jd: S.JobDescription): Promise<vo
   const parsed = S.AnalysisStarted.safeParse(body);
   if (!parsed.success) throw new ApiError("bad_response", res.status);
   setAnalysisId(parsed.data.analysis_id);
+  return parsed.data.claude ? null : dailyLimitNote(parsed.data.claude_per_day);
 }
 
 const json = (body: unknown): RequestInit => {
@@ -237,10 +249,12 @@ export const api = {
 
   parseJD: (text: string) => request(S.JobDescription, "/api/jd/parse", json({ text })),
 
-  /** Starts a new analysis (when signed in; see startAnalysis), then runs the gap step. */
+  /** Starts a new analysis (when signed in; see startAnalysis), then runs the gap step.
+   * Over the daily Claude cap the gap step's "Rules only" note becomes dailyLimitNote. */
   analyze: async (resume: S.Resume, jd: S.JobDescription, useLLM = true) => {
-    await startAnalysis(resume, jd);
-    return request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
+    const limited = await startAnalysis(resume, jd);
+    const gap = await request(S.GapAnalysis, "/api/gap/analyze", json({ resume, jd, use_llm: useLLM }));
+    return limited && useLLM ? { ...gap, notes: [limited, ...gap.notes.filter((n) => !n.startsWith("Rules only"))] } : gap;
   },
 
   /** Explicit yes/no/skip per question id. "skip" clears an earlier answer. */

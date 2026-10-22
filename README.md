@@ -55,6 +55,13 @@ Calls use `claude-opus-5-5` with server-side refusal fallbacks enabled.
 7. **Export** DOCX or PDF. Only approved bullets that re-verify on the server use
    tailored wording.
 
+## Sign-in email
+
+Magic links go to `backend/.dev-outbox/` by default (`RT_MAILER=outbox`), for dev and
+the e2e tests. Production sends them through Amazon SES (`RT_MAILER=ses`), and the server
+refuses to start without a sender and keys. SES setup, the send-only IAM policy,
+SPF/DKIM/DMARC records and the go-live checklist are in [docs/email.md](docs/email.md).
+
 ## Billing (Dodo Payments)
 
 Payments go through Dodo Payments, the merchant of record (it handles tax and issues

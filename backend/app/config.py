@@ -38,8 +38,19 @@ class Settings:
     dev_rate_limit_scale: int = field(
         default_factory=lambda: max(1, min(int(os.environ.get("RT_DEV_RATE_LIMIT_SCALE", "1") or 1), 100))
     )
-    # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only).
-    mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox"))
+    # Where magic-link emails go: "outbox" writes them to backend/.dev-outbox/ (dev only),
+    # "ses" sends through Amazon SES (docs/email.md). The app refuses to start if "ses" lacks
+    # a sender or keys.
+    mailer: str = field(default_factory=lambda: os.environ.get("RT_MAILER", "outbox").strip().lower())
+    # Sender, e.g. "Resume Tailor <no-reply@mail.example.com>"; its domain must be verified in SES.
+    mail_from: str = field(default_factory=lambda: os.environ.get("RT_MAIL_FROM", "").strip())
+    ses_region: str = field(default_factory=lambda: os.environ.get("RT_SES_REGION", "ap-south-1").strip())
+    # Optional SES configuration set (bounce/complaint events, suppression overrides).
+    ses_configuration_set: str = field(default_factory=lambda: os.environ.get("RT_SES_CONFIGURATION_SET", "").strip())
+    # An IAM user allowed only ses:SendEmail on the sender identity. Session token: temporary creds only.
+    aws_access_key_id: str = field(default_factory=lambda: os.environ.get("AWS_ACCESS_KEY_ID", ""))
+    aws_secret_access_key: str = field(default_factory=lambda: os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
+    aws_session_token: str = field(default_factory=lambda: os.environ.get("AWS_SESSION_TOKEN", ""))
     # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.
     google_client_id: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_ID", ""))
     google_client_secret: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_SECRET", ""))

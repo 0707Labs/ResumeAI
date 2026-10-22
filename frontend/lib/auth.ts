@@ -191,6 +191,10 @@ const COPY: Record<string, Copy> = {
   },
   not_signed_in: { title: "Please sign in first" },
   rate_limited: { title: "Too many attempts", body: "Please wait a few minutes and try again." },
+  email_unavailable: {
+    title: "We couldn't send your email",
+    body: "Please try again in a few minutes, or sign in with Google or GitHub.",
+  },
   csrf_failed: { title: "Please refresh the page", body: "Your session changed in another tab." },
   backend_down: { title: "We can't reach the service", body: "Check your connection and try again." },
   invalid_input: { title: "Please check what you entered" },

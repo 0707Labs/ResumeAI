@@ -108,7 +108,7 @@ class Referrals(_Strict):
     invitee_reward_credits: Annotated[int, Field(ge=0)] = 0
     monthly_cap: PositiveInt = 10  # rewards per referrer per calendar month (UTC)
     # In invite-only mode a referral link also works as an invite, this many times per user.
-    invites_per_user: Annotated[int, Field(ge=0)] = 5
+    invites_per_user: Annotated[int, Field(ge=0, le=100)] = 10  # the SQL functions cap it at 100 too
     # Referred sign-ups from one network (IP) within review_window_hours: from this many on,
     # each new one waits in the admin queue instead of paying out.
     same_ip_review_threshold: PositiveInt = 3

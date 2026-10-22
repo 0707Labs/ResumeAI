@@ -390,9 +390,14 @@ Code: `app/billing/referrals.py`, `/api/referrals`, `/api/admin/referrals`; conf
   `monthly_cap` (10) rewards per referrer per calendar month; over it, the referral is
   rejected (`over_monthly_cap`). Rewards lock the referrer's row, so concurrent triggers
   can't exceed the cap.
-- **Invite-only mode:** a friend's link works as the invite, `invites_per_user` (5)
-  times per referrer. The invite page offers "Use my friend's invite"; the limit is
-  checked again when the account is created.
+- **Invites quota:** each user has `invites_per_user` (10) invite slots, shared by
+  email invites (`/app/invites`, bound to the friend's address, 30 days, no code to type)
+  and, in invite-only mode, sign-ups that use their referral link as the invite. The
+  counter (`users.invites_created`) is changed only by the `create_user_invite`,
+  `revoke_user_invite` and `take_invite_slot` Postgres functions (migration 0013), which
+  lock the user's row, so concurrent requests can't pass the limit. Revoking an unused
+  invite returns its slot. A friend who joins through an email invite is attributed to
+  the sender, so the referral reward follows.
 - **Live feedback:** the workspace header polls `/api/referrals/updates` every 30 s and
   on focus. It shows the balance and, once per reward, "Your friend joined. +1 credit".
 - **Admin queue** (`/admin/referrals`): approve a flagged one (it pays if its trigger

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import ip_ref, subject_ref
-from app.billing import ledger, referrals
+from app.billing import referrals
 from app.billing.config import get_billing_config
 from app.config import get_settings
 from app.db.models import (
@@ -83,10 +83,9 @@ async def complete_signup(
     config = get_billing_config()
     if by_referral and get_settings().invite_only:
         referrer = await referrals.referrer_for(db, referral_code)
-        if referrer is not None:
-            await ledger.lock_user(db, referrer.id)  # serializes use of this referrer's invites
-        if referrer is None or not config.referrals.enabled or await referrals.invites_left(
-                db, config, referrer.id) == 0:
+        # take_invite_slot locks the referrer's row: concurrent sign-ups can't exceed the quota.
+        if referrer is None or not config.referrals.enabled or not await referrals.take_invite_slot(
+                db, config, referrer.id):
             await db.rollback()
             await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id).values(referral_invite=False))
             await db.commit()
@@ -102,6 +101,7 @@ async def complete_signup(
     # re-checks the WHERE on the updated row, so the loser sees uses = max_uses.
     # Open signup (RT_INVITE_ONLY off) may arrive with no invite at all.
     now = datetime.now(UTC)
+    invited_by: uuid.UUID | None = None  # a friend's personal email invite: they're the referrer
     if invite_id is not None:
         consumed = (await db.execute(
             update(Invite)
@@ -113,8 +113,10 @@ async def complete_signup(
                 or_(Invite.email.is_(None), Invite.email == email),
             )
             .values(uses=Invite.uses + 1)
-            .returning(Invite.id)
-        )).scalar_one_or_none()
+            .returning(Invite.id, Invite.kind, Invite.created_by)
+        )).one_or_none()
+        if consumed is not None and consumed.kind == "personal":
+            invited_by = consumed.created_by
         if consumed is None:
             await db.rollback()
             # Send them back to the invite step.
@@ -153,7 +155,8 @@ async def complete_signup(
         )
         for p in purposes
     ])
-    await referrals.attribute(db, config, user, referral_code, ip_hmac=ip_hmac, used_as_invite=by_referral)
+    await referrals.attribute(db, config, user, referral_code, ip_hmac=ip_hmac, used_as_invite=by_referral,
+                              referrer_id=invited_by)
     await db.execute(delete(PendingAuth).where(PendingAuth.id == pending_id))
     await db.commit()
     return user

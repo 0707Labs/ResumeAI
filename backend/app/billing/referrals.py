@@ -24,7 +24,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.invites import ALPHABET
@@ -93,20 +93,30 @@ async def referrer_for(db: AsyncSession, code: str | None) -> User | None:
         User.referral_code == code, User.status == "active", User.deleted_at.is_(None)))
 
 
-async def invites_left(db: AsyncSession, config: BillingConfig, referrer_id: uuid.UUID) -> int:
-    used = await db.scalar(select(func.count()).select_from(Referral).where(
-        Referral.referrer_id == referrer_id, Referral.used_as_invite))
-    return max(config.referrals.invites_per_user - int(used), 0)
+async def invites_left(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID) -> int:
+    """Invite slots left: one quota for email invites and referral-link sign-ups."""
+    used = await db.scalar(select(User.invites_created).where(User.id == user_id))
+    return max(config.referrals.invites_per_user - int(used or 0), 0)
+
+
+async def take_invite_slot(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID) -> bool:
+    """Use one of the referrer's slots for a sign-up through their link (locks their row)."""
+    return bool(await db.scalar(text("SELECT take_invite_slot(:u, :n)"),
+                                {"u": user_id, "n": config.referrals.invites_per_user}))
 
 
 async def attribute(db: AsyncSession, config: BillingConfig, referee: User, code: str | None, *,
-                    ip_hmac: str | None, used_as_invite: bool = False, now: datetime | None = None) -> Referral | None:
-    """Record that `referee` (just created) came through `code`. Returns None when there's
-    nothing to record (no or unknown code, referrals off). Abuse is recorded as rejected
-    or flagged, so the admin queue sees it."""
+                    ip_hmac: str | None, used_as_invite: bool = False, now: datetime | None = None,
+                    referrer_id: uuid.UUID | None = None) -> Referral | None:
+    """Record that `referee` (just created) came through `code`, or through a personal
+    email invite from `referrer_id` (which wins over a link cookie). Returns None when
+    there's nothing to record (no or unknown referrer, referrals off). Abuse is recorded
+    as rejected or flagged, so the admin queue sees it."""
     if not config.referrals.enabled:
         return None
-    referrer = await referrer_for(db, code)
+    referrer = (await db.scalar(select(User).where(User.id == referrer_id, User.status == "active",
+                                                   User.deleted_at.is_(None)))
+                if referrer_id else await referrer_for(db, code))
     if referrer is None:
         return None
     if await db.scalar(select(Referral.id).where(Referral.referee_id == referee.id)) is not None:

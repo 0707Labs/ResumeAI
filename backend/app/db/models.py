@@ -95,10 +95,14 @@ class User(Base):
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # first-login wizard done/skipped
     avatar_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # no provider picture again
     phone: Mapped[str | None] = mapped_column(Text)  # optional, E.164
+    # Invite slots used (email invites + referral-link sign-ups). Changed only by the
+    # create_user_invite / revoke_user_invite / take_invite_slot functions (migration 0013).
+    invites_created: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("credits_balance >= 0", name="credits_balance"),
+        CheckConstraint("invites_created >= 0", name="invites_created"),
         CheckConstraint(_in("role", ROLES), name="role"),
         CheckConstraint(_in("status", ("active", "suspended")), name="status"),
         CheckConstraint("phone IS NULL OR phone ~ '^\\+[1-9][0-9]{6,14}$'", name="phone"),
@@ -163,12 +167,21 @@ class Invite(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="admin")  # admin | personal | waitlist
+    campaign: Mapped[str | None] = mapped_column(Text)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
     __table_args__ = (
         CheckConstraint("email IS NULL OR email = lower(email)", name="email_lower"),
         CheckConstraint("max_uses >= 1", name="max_uses"),
         CheckConstraint("uses >= 0 AND uses <= max_uses", name="uses"),
         CheckConstraint("bonus_credits IS NULL OR bonus_credits >= 0", name="bonus_credits"),
+        CheckConstraint(_in("kind", ("admin", "personal", "waitlist")), name="kind"),
+        CheckConstraint("campaign IS NULL OR length(campaign) <= 80", name="campaign_len"),
+        CheckConstraint("kind <> 'personal' OR (created_by IS NOT NULL AND email IS NOT NULL AND max_uses = 1)",
+                        name="personal"),
+        Index("ix_invites_created_by_created", "created_by", "created_at", postgresql_where=text("created_by IS NOT NULL")),
+        Index("ix_invites_batch_id", "batch_id", postgresql_where=text("batch_id IS NOT NULL")),
     )
 
 
@@ -862,4 +875,38 @@ class UserAvatar(Base):
         CheckConstraint("content_type = 'image/webp'", name="content_type"),
         CheckConstraint("octet_length(data) BETWEEN 1 AND 262144", name="size"),
         CheckConstraint(_in("source", ("provider", "upload")), name="source"),
+    )
+
+
+TICKET_CATEGORIES = ("support", "feedback", "fabrication_report", "grievance", "billing", "privacy")
+TICKET_STATUSES = ("open", "pending", "closed")
+
+
+class SupportTicket(Base):
+    """A message from the contact form. The user sees their own; staff work them in /admin."""
+
+    __tablename__ = "support_tickets"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
+    assignee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(_in("category", TICKET_CATEGORIES), name="category"),
+        CheckConstraint(_in("status", TICKET_STATUSES), name="status"),
+        CheckConstraint("length(subject) BETWEEN 1 AND 150", name="subject_len"),
+        CheckConstraint("length(body) BETWEEN 1 AND 5000", name="body_len"),
+        CheckConstraint("email = lower(email)", name="email_lower"),
+        Index("ix_support_tickets_user_created", "user_id", "created_at"),
+        Index("ix_support_tickets_open", "created_at", postgresql_where=text("status <> 'closed'")),
     )

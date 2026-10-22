@@ -32,11 +32,18 @@ SUBJECTS = {
 }
 
 
+MAGIC_LINK_LINES = ("Open this link within 15 minutes, in the same browser:",)
+
+
 @dataclass(frozen=True)
 class Mail:
     to: str
     subject: str
     link: str
+    lines: tuple[str, ...] = MAGIC_LINK_LINES  # plain text, shown before the link
+    button: str = "Continue to Resume Tailor"
+    footer: str = "Didn't ask for this? You can ignore this email."
+    footer_in_text: bool = False  # the magic-link text body stays exactly as it was (e2e reads it)
 
 
 class Mailer(Protocol):
@@ -52,7 +59,8 @@ class MailerError(Exception):
 
 
 def text_body(mail: Mail) -> str:
-    return f"Open this link within 15 minutes, in the same browser:\n{mail.link}\n"
+    text = "\n\n".join(mail.lines) + f"\n{mail.link}\n"
+    return text + f"\n{mail.footer}\n" if mail.footer_in_text else text
 
 
 def html_body(mail: Mail) -> str:
@@ -61,11 +69,11 @@ def html_body(mail: Mail) -> str:
     return (
         '<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
         'color:#1f2933;line-height:1.5">'
-        "<p>Open this link within 15 minutes, in the same browser:</p>"
-        f'<p><a href="{link}" style="display:inline-block;padding:10px 18px;background:#1f2933;'
-        'color:#ffffff;text-decoration:none;border-radius:6px">Continue to Resume Tailor</a></p>'
+        + "".join(f"<p>{html.escape(line)}</p>" for line in mail.lines)
+        + f'<p><a href="{link}" style="display:inline-block;padding:10px 18px;background:#1f2933;'
+        f'color:#ffffff;text-decoration:none;border-radius:6px">{html.escape(mail.button)}</a></p>'
         f"<p {muted}>Or paste this into your browser:<br>{link}</p>"
-        f"<p {muted}>Didn't ask for this? You can ignore this email.</p>"
+        f"<p {muted}>{html.escape(mail.footer)}</p>"
         "</body></html>"
     )
 
@@ -196,3 +204,21 @@ def set_mailer(mailer: Mailer | None) -> None:
 def magic_link_mail(to: str, token: str, purpose: Purpose) -> Mail:
     # The token rides in the fragment: never sent to a server, logged or leaked via Referer.
     return Mail(to=to, subject=SUBJECTS[purpose], link=f"{get_settings().public_url}/auth/email#token={token}")
+
+
+def invite_mail(to: str, inviter_name: str | None, expires_on: str) -> Mail:
+    """A friend's personal invite. No code to type: signing up with this address applies it."""
+    who = inviter_name or "A friend"
+    return Mail(
+        to=to,
+        subject=f"{who} invited you to Resume Tailor",
+        link=f"{get_settings().public_url}/signup",
+        lines=(
+            f"{who} invited you to Resume Tailor. It tailors your resume to a job without inventing "
+            "anything: it reorders and rewords what's already true, asks about gaps, and you approve every change.",
+            f"Sign up with this email address ({to}) and the invite is applied. It works until {expires_on}.",
+        ),
+        button="Accept the invite",
+        footer="Don't know them, or not interested? Ignore this email; we won't write again.",
+        footer_in_text=True,
+    )

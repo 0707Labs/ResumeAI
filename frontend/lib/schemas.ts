@@ -700,3 +700,56 @@ export const Consents = z.object({
   research_available: z.boolean(),
 });
 export type Consents = z.infer<typeof Consents>;
+
+// --- invites, downloads history, support (app/api/invites.py, downloads.py, support.py) ----------
+
+export const InviteStatus = z.enum(["sent", "expired", "revoked", "joined", "first_tailoring", "rewarded", "not_eligible"]);
+export const Invites = z.object({
+  limit: z.number().int(),
+  used: z.number().int(),
+  left: z.number().int(),
+  enabled: z.boolean(),
+  code: z.string(),
+  link: z.string(),
+  trigger: z.enum(["on_verified_signup", "on_first_tailoring"]),
+  reward_credits: z.number().int(),
+  credits_earned: z.number().int(),
+  invitees: z.array(z.object({
+    id: z.uuid(),
+    via: z.enum(["email", "link"]),
+    email: z.string(),
+    status: InviteStatus,
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+    can_revoke: z.boolean(),
+  })),
+});
+export type Invites = z.infer<typeof Invites>;
+export const InviteSent = z.object({ id: z.uuid(), email: z.string(), expires_at: z.string(), left: z.number().int() });
+
+export const DownloadItem = z.object({
+  id: z.uuid(),
+  analysis_id: z.uuid(),
+  file_name: z.string(),
+  format: z.enum(["docx", "pdf"]),
+  job_title: z.string().nullable(),
+  company: z.string().nullable(),
+  created_at: z.string(),
+  paid_with: z.enum(["pass", "pro", "credit", "window"]),
+  credits: z.number().int(),
+  expires_at: z.string(),
+  available: z.boolean(),
+});
+export type DownloadItem = z.infer<typeof DownloadItem>;
+export const DownloadPage = z.object({ items: z.array(DownloadItem), next_before: z.string().nullable() });
+
+export const TicketCategory = z.enum(["support", "feedback", "fabrication_report", "grievance", "billing", "privacy"]);
+export const Ticket = z.object({
+  id: z.uuid(),
+  category: TicketCategory,
+  subject: z.string(),
+  status: z.enum(["open", "pending", "closed"]),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Ticket = z.infer<typeof Ticket>;

@@ -12,7 +12,7 @@ test("referral: link → friend joins with it → first tailoring → referrer i
   await page.goto("/app/invites");
   const link = (await page.getByTestId("referral-link").textContent())!.trim();
   expect(link).toMatch(/\/\?ref=[A-Z2-9]{8}$/);
-  await expect(page.getByText(/works as an invite: 5 left/)).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "Invites used" })).toHaveAttribute("aria-valuenow", "0");
 
   // The friend, in their own browser.
   const friendContext = await browser.newContext({ baseURL });
@@ -36,7 +36,8 @@ test("referral: link → friend joins with it → first tailoring → referrer i
   // Joined, not yet rewarded (the trigger is the first tailoring).
   await page.reload();
   await expect(page.getByText(/Waiting for their first tailoring/)).toBeVisible();
-  await expect(page.getByText(/works as an invite: 4 left/)).toBeVisible();
+  // Joining through the link used one of the referrer's invite slots.
+  await expect(page.getByRole("progressbar", { name: "Invites used" })).toHaveAttribute("aria-valuenow", "1");
 
   // The friend's first tailoring (straight past the first-login steps).
   await friend.goto("/app/tailor");

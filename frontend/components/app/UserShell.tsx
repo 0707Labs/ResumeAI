@@ -8,22 +8,26 @@ import { Avatar } from "@/components/app/Avatar";
 import { ThemeToggle } from "@/components/AppShell";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
 import { CreditsLive } from "@/components/CreditsLive";
-import { CardIcon, FileIcon, GiftIcon, HomeIcon, LogOutIcon, MoreIcon, ShieldIcon, UserIcon, WandIcon } from "@/components/icons";
+import {
+  CardIcon, DownloadIcon, FileIcon, GiftIcon, HelpIcon, HomeIcon, LogOutIcon, MoreIcon, ShieldIcon, UserIcon, WandIcon,
+} from "@/components/icons";
 import { api } from "@/lib/api";
 import { isStaff } from "@/lib/roles";
 import type { Me, PlanStatus } from "@/lib/schemas";
 import type { Theme } from "@/lib/theme";
 import { planLabel, userApi } from "@/lib/user";
 
-/** Sections of the signed-in area. Downloads and Support join as they're built. The first
- * BOTTOM_BAR are on the phone bottom bar; the rest sit behind its "More". */
+/** Sections of the signed-in area. The first BOTTOM_BAR are on the phone bottom bar;
+ * the rest sit behind its "More". */
 export const USER_NAV = [
   { href: "/app/dashboard", label: "Dashboard", Icon: HomeIcon },
   { href: "/app/tailor", label: "Tailor", Icon: WandIcon },
   { href: "/app/resumes", label: "My Resumes", short: "Resumes", Icon: FileIcon },
+  { href: "/app/downloads", label: "Downloads", Icon: DownloadIcon },
   { href: "/app/billing", label: "Plan & Billing", short: "Billing", Icon: CardIcon },
   { href: "/app/invites", label: "Invites & Referrals", short: "Invites", Icon: GiftIcon },
   { href: "/app/profile", label: "Profile", Icon: UserIcon },
+  { href: "/app/support", label: "Support", Icon: HelpIcon },
 ] as const;
 const BOTTOM_BAR = 4;
 

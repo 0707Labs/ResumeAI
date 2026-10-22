@@ -82,3 +82,9 @@ export const LightbulbIcon = (p: IconProps) => (
 export const MoreIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></Icon>
 );
+export const DownloadIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></Icon>
+);
+export const HelpIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01" /></Icon>
+);

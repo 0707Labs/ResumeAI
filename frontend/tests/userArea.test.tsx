@@ -79,9 +79,9 @@ describe("UserShell", () => {
       expect(current.map((a) => a.getAttribute("href"))).toEqual(["/app/tailor"]);
     }
     expect(within(navs[0]).getAllByRole("link").map((a) => a.textContent))
-      .toEqual(["Dashboard", "Tailor", "My Resumes", "Plan & Billing", "Invites & Referrals", "Profile"]);
+      .toEqual(["Dashboard", "Tailor", "My Resumes", "Downloads", "Plan & Billing", "Invites & Referrals", "Profile", "Support"]);
     // The phone bar: four sections, the rest behind More.
-    expect(within(navs[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Dashboard", "Tailor", "Resumes", "Billing"]);
+    expect(within(navs[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Dashboard", "Tailor", "Resumes", "Downloads"]);
   });
 
   it("opens More on the phone bar, and marks it when a section behind it is current", async () => {

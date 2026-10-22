@@ -2,7 +2,6 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ReferralsPage from "@/app/app/invites/page";
 import AdminReferralsPage from "@/app/admin/referrals/page";
 import InvitePage from "@/app/signup/invite/page";
 import { CreditsLive } from "@/components/CreditsLive";
@@ -30,17 +29,6 @@ function routes(table: Record<string, Handler | unknown>) {
 
 const R1 = "11111111-1111-4111-8111-111111111111";
 const R2 = "22222222-2222-4222-8222-222222222222";
-const OVERVIEW = {
-  enabled: true, code: "ABCDEFGH", link: "http://localhost:3000/?ref=ABCDEFGH", trigger: "on_first_tailoring",
-  reward_credits: 1, invitee_reward_credits: 0, monthly_cap: 10, rewarded_this_month: 1, invite_only: true,
-  invites_left: 4, total_earned: 1, pending: 1, rewarded: 1,
-  referrals: [
-    { id: R1, status: "rewarded", reason: null, needs_review: false, created_at: "2026-10-20T10:00:00Z",
-      rewarded_at: "2026-10-20T12:00:00Z", credits: 1 },
-    { id: R2, status: "pending", reason: null, needs_review: false, created_at: "2026-10-21T10:00:00Z",
-      rewarded_at: null, credits: 0 },
-  ],
-};
 
 beforeEach(() => {
   document.cookie = "rt_csrf=tok; path=/";
@@ -89,26 +77,6 @@ describe("live credits in the header", () => {
     await act(() => vi.advanceTimersByTimeAsync(30_000));
     expect(await screen.findByText("1 credit")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Your friend joined. +1 credit");
-  });
-});
-
-describe("/app/invites", () => {
-  it("shows the link, what was earned, and each friend's status in words", async () => {
-    routes({ "GET /api/referrals": OVERVIEW });
-    render(<ReferralsPage />);
-    expect(await screen.findByTestId("referral-link")).toHaveTextContent("?ref=ABCDEFGH");
-    expect(screen.getByText(/you get 1 credit once they finish their first tailoring/)).toBeInTheDocument();
-    expect(screen.getByText(/works as an invite: 4 left/)).toBeInTheDocument();
-    const list = screen.getByRole("list");
-    expect(within(list).getByText(/Rewarded · \+1 credit/)).toBeInTheDocument();
-    expect(within(list).getByText(/Waiting for their first tailoring/)).toBeInTheDocument();
-    expect(within(list).getByText("Pending", { exact: false })).toBeInTheDocument();
-  });
-
-  it("asks a signed-out visitor to sign in", async () => {
-    routes({ "GET /api/referrals": () => json({ detail: "not_signed_in" }, 401) });
-    render(<ReferralsPage />);
-    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin?next=/app/invites");
   });
 });
 

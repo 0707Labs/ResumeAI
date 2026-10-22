@@ -81,6 +81,19 @@ export const userApi = {
   consents: () => call(S.Consents, "/api/account/consents"),
   setResearch: (granted: boolean) => call(S.Consents, "/api/account/consents/research", { method: "PUT", body: { granted } }),
   exportData: downloadExport,
+
+  invites: () => call(S.Invites, "/api/invites"),
+  sendInvite: (email: string) => call(S.InviteSent, "/api/invites", { method: "POST", body: { email } }),
+  revokeInvite: (id: string) => call(null, `/api/invites/${id}`, { method: "DELETE" }),
+
+  downloads: (before?: string | null) =>
+    call(S.DownloadPage, `/api/downloads${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+  redownload: (id: string) => call(S.DownloadLink, `/api/downloads/${id}/link`, { method: "POST" }),
+  deleteDownload: (id: string) => call(null, `/api/downloads/${id}`, { method: "DELETE" }),
+
+  tickets: () => call(S.Ticket.array(), "/api/support/tickets"),
+  sendTicket: (body: { category: S.Ticket["category"]; subject: string; body: string }) =>
+    call(S.Ticket, "/api/support/tickets", { method: "POST", body }),
 };
 
 export const SENIORITY_LABEL: Record<(typeof S.SENIORITY)[number], string> = {
@@ -125,6 +138,14 @@ export function userError(err: unknown): string {
     case "avatar_too_large": return "That picture is over 2 MB, or too large in pixels. Try a smaller one.";
     case "no_research_notice": return "The research notice isn't published yet, so this can't be switched on.";
     case "not_found": return "That isn't there any more. It may have been deleted.";
+    case "invite_limit": return "You've used all your invites. Revoke one nobody has used to free a slot.";
+    case "already_member": return "That address already has an account, so they can sign in now.";
+    case "already_invited": return "You've already invited that address; the invite is still open.";
+    case "own_email": return "That's your own address. Invite a friend instead.";
+    case "disposable_email": return "That looks like a throwaway address. Use your friend's real email.";
+    case "already_used": return "Your friend already used that invite, so it can't be revoked.";
+    case "email_unavailable": return "We couldn't send email just now. Nothing was used up; try again in a minute.";
+    case "file_expired": return "We no longer keep that file. Tailor again to download a new one.";
     case "invalid_input": return "Something in there didn't look right. Check the fields and try again.";
     case "backend_down": return "We can't reach the service right now. Please try again in a moment.";
     default: return "Something went wrong on our side. Please try again in a moment.";

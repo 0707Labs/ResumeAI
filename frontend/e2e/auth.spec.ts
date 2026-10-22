@@ -42,7 +42,7 @@ test("invite, consent, signed in; last sign-in method can't be removed", async (
   await page.getByRole("button", { name: "Account menu" }).click();
   await page.locator("#account-menu").getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/$/);  // back to the landing page, signed out
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 });
 
 test("no invite: no account, and the waitlist is pre-filled", async ({ page, request }) => {

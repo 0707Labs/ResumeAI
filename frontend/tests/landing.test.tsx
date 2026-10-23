@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -42,6 +42,43 @@ describe("site header", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeInTheDocument();
+  });
+
+  it("links How it works, Pricing and FAQ to their sections", () => {
+    stubFetch({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
+    render(<SiteHeader inviteOnly={false} initialTheme="system" />);
+    expect(screen.getByRole("link", { name: "How it works" })).toHaveAttribute("href", "/#how-it-works");
+    expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/#pricing");
+    expect(screen.getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/#faq");
+  });
+
+  it("opens a phone menu with the links and account actions, and Escape closes it", async () => {
+    stubFetch({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
+    render(<SiteHeader inviteOnly={false} initialTheme="system" />);
+    const toggle = screen.getByRole("button", { name: "Open menu" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("site-menu")).toBeNull();
+
+    await userEvent.click(toggle);
+    const menu = document.getElementById("site-menu")!;
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAccessibleName("Close menu");
+    for (const name of ["How it works", "Pricing", "FAQ", "Sign in", "Sign up"]) {
+      expect(within(menu).getByRole("link", { name })).toBeInTheDocument();
+    }
+    expect(within(menu).getByRole("link", { name: "How it works" })).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(document.getElementById("site-menu")).toBeNull();
+    expect(toggle).toHaveFocus();
+  });
+
+  it("closes the phone menu when a section link is followed", async () => {
+    stubFetch({ "GET /api/me": () => json({ detail: "not_signed_in" }, 401) });
+    render(<SiteHeader inviteOnly={false} initialTheme="system" />);
+    await userEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    await userEvent.click(within(document.getElementById("site-menu")!).getByRole("link", { name: "FAQ" }));
+    expect(document.getElementById("site-menu")).toBeNull();
   });
 
   it("swaps to Open workspace for a signed-in visitor", async () => {

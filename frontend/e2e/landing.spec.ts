@@ -47,6 +47,14 @@ test("landing: legal pages render and the page fits a phone", async ({ page }) =
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 
+  // The section links live in a menu on phones.
+  const banner = page.getByRole("banner");
+  await expect(banner.getByRole("link", { name: "FAQ" })).toBeHidden();
+  await banner.getByRole("button", { name: "Open menu" }).click();
+  await banner.locator("#site-menu").getByRole("link", { name: "FAQ" }).click();
+  await expect(page).toHaveURL(/#faq$/);
+  await expect(banner.locator("#site-menu")).toHaveCount(0);
+
   for (const [path, title] of [["/legal/terms", "Terms of Service"], ["/legal/privacy", "Privacy Policy"],
     ["/legal/refunds", "Refund Policy"], ["/legal/grievance", "Grievance redressal"]]) {
     await page.goto(path);

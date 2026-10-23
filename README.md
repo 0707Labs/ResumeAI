@@ -28,6 +28,9 @@ cd frontend && npm install && npm run dev
 
 Open http://localhost:3000 and click **Use the sample resume and JD** to try it.
 
+**Full local setup** (database, consent notices, your first account, the admin
+dashboard, what to test, and troubleshooting): [docs/local-testing.md](docs/local-testing.md).
+
 ### Claude (optional)
 
 Everything works rules-only. To let Claude review unclear gaps, rewrite bullets,

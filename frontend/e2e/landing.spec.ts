@@ -61,3 +61,15 @@ test("landing: legal pages render and the page fits a phone", async ({ page }) =
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
   }
 });
+
+test("landing: scroll reveals run only without a reduced-motion preference", async ({ page }) => {
+  const animation = () => page.locator("#faq .reveal").first().evaluate((el) => getComputedStyle(el).animationName);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  expect(await animation()).toBe("reveal");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await animation()).toBe("none");
+  // At rest the content is fully visible.
+  await expect(page.getByRole("heading", { level: 2, name: "Good to know" })).toHaveCSS("opacity", "1");
+});

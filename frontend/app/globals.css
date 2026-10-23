@@ -189,6 +189,29 @@ body {
   }
 }
 
+/*
+ * Scroll reveal: a 12px rise and fade as a block enters the viewport. Pure CSS
+ * (scroll-driven animations), so no library and no JS. It runs only when the browser
+ * supports view timelines and the visitor hasn't asked for reduced motion; everywhere
+ * else the content simply sits at rest. Transform and opacity never cause layout shift.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timing-function: var(--ease-reveal);
+      animation-timeline: view();
+      animation-range: entry 0% entry 160px;
+    }
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+
 /* Word diff: removed is struck through, added is underlined, so it reads without color. */
 del {
   background: var(--bad-bg);

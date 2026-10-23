@@ -101,7 +101,7 @@ function Section({ id, eyebrow, title, intro, children, tint = false }: {
     <section id={id} aria-labelledby={`${id}-title`} className={`scroll-mt-16 ${tint ? "bg-surface" : ""}`}>
       <div className="mx-auto max-w-(--container) px-(--gutter) py-(--space-section)">
         <SectionHead id={id} eyebrow={eyebrow} title={title} intro={intro} />
-        <div className="mt-10 sm:mt-12">{children}</div>
+        <div className="reveal mt-10 sm:mt-12">{children}</div>
       </div>
     </section>
   );
@@ -109,7 +109,7 @@ function Section({ id, eyebrow, title, intro, children, tint = false }: {
 
 function SectionHead({ id, eyebrow, title, intro }: { id: string; eyebrow?: string; title: string; intro?: React.ReactNode }) {
   return (
-    <div className="max-w-(--measure)">
+    <div className="reveal max-w-(--measure)">
       {eyebrow && <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">{eyebrow}</p>}
       <h2 id={`${id}-title`} className="mt-3 text-display font-semibold text-balance">{title}</h2>
       {intro && <p className="mt-4 text-lg text-muted">{intro}</p>}
@@ -214,7 +214,7 @@ function Honesty() {
         <div className="min-w-0">
           <SectionHead id="honesty" eyebrow="The verifier guarantee" title="Only what you've actually done"
             intro="Recruiters notice when a resume oversells, and so do interviewers. We make your real experience easier to see, and nothing more." />
-          <ul className="mt-10 space-y-6">
+          <ul className="reveal mt-10 space-y-6">
             {PROMISES.map(({ title, body }) => (
               <li key={title} className="flex gap-4">
                 <ShieldIcon className="mt-1 h-5 w-5 text-accent" />
@@ -226,7 +226,7 @@ function Honesty() {
             ))}
           </ul>
         </div>
-        <div className="min-w-0 self-start rounded-hero border border-border bg-surface">
+        <div className="reveal min-w-0 self-start rounded-hero border border-border bg-surface">
           <p className="border-b border-border px-6 py-4 font-semibold">What the verifier checks</p>
           <div className="grid gap-6 p-6 sm:grid-cols-2">
             <div>
@@ -417,7 +417,7 @@ function Faq({ items }: { items: { q: string; a: string }[] }) {
             ? <>Write to <a href={`mailto:${COMPANY.supportEmail}`} className="font-medium text-accent underline">{COMPANY.supportEmail}</a>.</>
             : <>See <Link href="/legal/grievance" className="font-medium text-accent underline">how to reach us</Link>.</>}</>
         } />
-        <div className="min-w-0 divide-y divide-border border-y border-border">
+        <div className="reveal min-w-0 divide-y divide-border border-y border-border">
           {items.map(({ q, a }) => (
             <details key={q} className="group py-5">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-base font-medium [&::-webkit-details-marker]:hidden">
@@ -439,7 +439,7 @@ function ClosingCta({ inviteOnly }: { inviteOnly: boolean }) {
   return (
     <section aria-labelledby="cta-title" className="bg-ink text-ink-fg">
       <div className="mx-auto max-w-(--container) px-(--gutter) py-(--space-section)">
-        <div className="max-w-2xl">
+        <div className="reveal max-w-2xl">
           <h2 id="cta-title" className="text-display font-semibold text-balance">
             Your real experience, framed for the job you want
           </h2>

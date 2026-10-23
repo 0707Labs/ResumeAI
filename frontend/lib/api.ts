@@ -193,6 +193,12 @@ const json = (body: unknown): RequestInit => {
   };
 };
 
+/** False when there's certainly no session: sign-in always sets rt_csrf and sign-out clears it.
+ * Lets public pages skip /api/me (and its 401) for visitors who never signed in. */
+export function mightBeSignedIn(): boolean {
+  return typeof document !== "undefined" && /(?:^|;\s*)(?:__Host-)?rt_csrf=/.test(document.cookie);
+}
+
 /** The double-submit CSRF token: the backend's rt_csrf cookie, fetched if not set yet. */
 export async function csrfToken(): Promise<string> {
   const fromCookie = /(?:^|;\s*)(?:__Host-)?rt_csrf=([^;]+)/.exec(typeof document === "undefined" ? "" : document.cookie)?.[1];

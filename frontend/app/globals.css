@@ -9,18 +9,23 @@
   /* Chart series (dataviz reference palette slots 1-2, validated on these surfaces). */
   --series-1: #2a78d6;
   --series-2: #eb6834;
-  --bg: #f7f7f5;
+  --bg: #f6f8fb;
   --surface: #ffffff;
-  --surface-2: #f1f1ee;
-  --border: #e2e2dc;
-  --border-strong: #c9c9c1;
-  --fg: #1c1d1f;
-  --muted: #5d5f63;
-  --accent: #2f5d62;
-  --accent-hover: #244a4e;
+  --surface-2: #eef2f7;
+  --border: #dde3eb;
+  --border-strong: #c3ccd8;
+  --fg: #0e1a2e;
+  --muted: #526075;
+  --accent: #0062d6;
+  --accent-hover: #0052b4;
   --accent-fg: #ffffff;
-  --accent-soft: #e5efef;
-  --brand: #0372f5; /* logo blue, for the wordmark */
+  --accent-soft: #e6f0fd;
+  --brand: #0372f5; /* logo blue, for the wordmark (4.45:1 on white, so not for text or buttons) */
+  /* Logo navy: the closing CTA band and other inverted surfaces. */
+  --ink: #0b1a3a;
+  --ink-fg: #e8edf5;
+  /* The "seam": dashed stitch tying a tailored line to its source bullet. */
+  --seam: #0372f5;
   --ok: #1f6b45;
   --ok-bg: #e7f4ec;
   --warn: #8a5a00;
@@ -34,31 +39,48 @@
   --google-fg: #1f1f1f;
   --github-bg: #24292f;
   --github-fg: #ffffff;
+  /* Layout, type and motion (same in both themes). */
+  --space-section: clamp(4rem, 3rem + 4vw, 7rem);
+  --gutter: 1rem;
+  --container: 72rem;
+  --measure: 40rem;
+  --ease-reveal: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-reveal: 400ms;
   color-scheme: light;
+}
+
+@media (min-width: 640px) {
+  :root { --gutter: 1.5rem; }
+}
+@media (min-width: 1024px) {
+  :root { --gutter: 2rem; }
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --series-1: #3987e5;
     --series-2: #d95926;
-    --bg: #141517;
-    --surface: #1c1d20;
-    --surface-2: #24262a;
-    --border: #33363b;
-    --border-strong: #4a4e55;
-    --fg: #ececea;
-    --muted: #a3a6ab;
-    --accent: #7fb7bc;
-    --accent-hover: #9ccbcf;
-    --accent-fg: #0f2224;
-    --accent-soft: #1f3335;
+    --bg: #0b1220;
+    --surface: #121a2b;
+    --surface-2: #1a2338;
+    --border: #263049;
+    --border-strong: #3a4663;
+    --fg: #e8edf5;
+    --muted: #9aa6ba;
+    --accent: #5aa0ff;
+    --accent-hover: #7db4ff;
+    --accent-fg: #06142b;
+    --accent-soft: #14264a;
     --brand: #5aa0ff; /* logo blue, for the wordmark */
+    --ink: #060b16;
+    --ink-fg: #e8edf5;
+    --seam: #5aa0ff;
     --ok: #7fd1a2;
-    --ok-bg: #16291f;
+    --ok-bg: #11281f;
     --warn: #f0c46c;
-    --warn-bg: #2e2513;
+    --warn-bg: #2a2214;
     --bad: #f2959a;
-    --bad-bg: #321a1c;
+    --bad-bg: #2e1a22;
     --focus: #8ab4ff;
     --google-bg: #131314;
     --google-border: #8e918f;
@@ -72,24 +94,27 @@
 :root[data-theme="dark"] {
   --series-1: #3987e5;
   --series-2: #d95926;
-  --bg: #141517;
-  --surface: #1c1d20;
-  --surface-2: #24262a;
-  --border: #33363b;
-  --border-strong: #4a4e55;
-  --fg: #ececea;
-  --muted: #a3a6ab;
-  --accent: #7fb7bc;
-  --accent-hover: #9ccbcf;
-  --accent-fg: #0f2224;
-  --accent-soft: #1f3335;
+  --bg: #0b1220;
+  --surface: #121a2b;
+  --surface-2: #1a2338;
+  --border: #263049;
+  --border-strong: #3a4663;
+  --fg: #e8edf5;
+  --muted: #9aa6ba;
+  --accent: #5aa0ff;
+  --accent-hover: #7db4ff;
+  --accent-fg: #06142b;
+  --accent-soft: #14264a;
   --brand: #5aa0ff; /* logo blue, for the wordmark */
+  --ink: #060b16;
+  --ink-fg: #e8edf5;
+  --seam: #5aa0ff;
   --ok: #7fd1a2;
-  --ok-bg: #16291f;
+  --ok-bg: #11281f;
   --warn: #f0c46c;
-  --warn-bg: #2e2513;
+  --warn-bg: #2a2214;
   --bad: #f2959a;
-  --bad-bg: #321a1c;
+  --bad-bg: #2e1a22;
   --focus: #8ab4ff;
   --google-bg: #131314;
   --google-border: #8e918f;
@@ -114,6 +139,9 @@
   --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
   --color-brand: var(--brand);
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
+  --color-seam: var(--seam);
   --color-ok: var(--ok);
   --color-ok-bg: var(--ok-bg);
   --color-warn: var(--warn);
@@ -126,6 +154,17 @@
   --color-google-fg: var(--google-fg);
   --color-github-bg: var(--github-bg);
   --color-github-fg: var(--github-fg);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Fluid display sizes; everything smaller uses Tailwind's own text-* steps. */
+  --text-hero: clamp(2.5rem, 1.7rem + 3.4vw, 3.75rem);
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.025em;
+  --text-display: clamp(2rem, 1.6rem + 1.8vw, 2.75rem);
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.02em;
+  /* New radius names, so Tailwind's rounded-sm/md/lg used across the app keep their sizes. */
+  --radius-card: 10px;
+  --radius-hero: 16px;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 

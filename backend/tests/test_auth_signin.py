@@ -402,6 +402,8 @@ def test_expired_pending_identity_cannot_continue(client, outbox, make_invite, p
 def test_tampered_pending_cookie_is_ignored(client, outbox):
     magic_link(client, outbox)
     value = client.cookies["rt_pending"]
+    # Delete first: httpx2 >= 2.16 keeps the server's cookie beside a domain-less one.
+    client.cookies.delete("rt_pending")
     client.cookies.set("rt_pending", value[:-1] + ("0" if value[-1] != "0" else "1"))
     assert client.get("/api/auth/pending").status_code == 404
 

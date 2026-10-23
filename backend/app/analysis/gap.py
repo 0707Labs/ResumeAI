@@ -16,7 +16,6 @@ from app.models import (
     GapItem,
     GapStatus,
     JobDescription,
-    Priority,
     Requirement,
     RequirementCategory,
     Resume,

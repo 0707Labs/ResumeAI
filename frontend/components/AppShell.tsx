@@ -158,6 +158,7 @@ export function ThemeToggle({ initial }: { initial: Theme }) {
     if (next === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", next);
     // Only the theme word is stored; nothing about you or your resume.
+    // eslint-disable-next-line react-hooks/immutability -- document.cookie in a click handler, not during render
     document.cookie = next === "system"
       ? `${THEME_COOKIE}=; path=/; max-age=0; SameSite=Lax`
       : `${THEME_COOKIE}=${next}; path=/; max-age=31536000; SameSite=Lax`;

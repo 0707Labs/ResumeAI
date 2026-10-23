@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1", "httpx>=0.28"]
+dev = ["pytest>=9.1", "httpx>=0.28", "ruff==0.17.2"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -37,3 +37,18 @@ app = ["samples/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Ruff's classic defaults (pyflakes + the E4/E7/E9 errors). Newer ruff releases widen the
+# default set, so it is pinned here rather than inherited.
+select = ["E4", "E7", "E9", "F"]
+# `l` for a line in short parser comprehensions.
+ignore = ["E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import pytest fixtures and take them as same-named arguments.
+"tests/*" = ["F811"]

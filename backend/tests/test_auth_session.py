@@ -67,6 +67,8 @@ def test_sign_in_rotates_session_and_csrf(client, user_id, pg_engine):
     assert second != first and client.cookies["rt_csrf"] != first_csrf
     assert [r.session_token_hash for r in session_rows(pg_engine)] == [hash_token(second)]
 
+    # Delete first: httpx2 >= 2.16 keeps the server's cookie beside a domain-less one.
+    client.cookies.delete("rt_session")
     client.cookies.set("rt_session", first)
     assert client.get("/api/me").status_code == 401
 

@@ -109,8 +109,8 @@ def _gaps(analysis: GapAnalysis, ats: ATSReport) -> list[MentorGap]:
         joiner = "or" if re.search(r"\bor\b", item.requirement_text, re.I) else "and"
         what = display_list(item.missing_keywords, joiner) or _short(item.requirement_text, 70)
         if kind == AnswerKind.CONFIRMED:
-            why = (f"You said you have this. Make sure a tailored bullet cites your answer, "
-                   f"or the ATS and the recruiter won't see it.")
+            why = ("You said you have this. Make sure a tailored bullet cites your answer, "
+                   "or the ATS and the recruiter won't see it.")
         elif kind == AnswerKind.DECLINED:
             why = ("You said you don't have this yet. Be ready to say so honestly and show "
                    "how you'd ramp up.")

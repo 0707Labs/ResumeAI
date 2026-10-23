@@ -6,7 +6,6 @@ import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 
 import anthropic
 import httpx2
@@ -24,7 +23,7 @@ from tests.conftest import TABLES, fixture_text
 from tests.test_admin_security import audit_rows, make_user, signed_in
 from tests.test_auth_signin import scalar
 from tests.test_billing_admin import response
-from tests.test_billing_webhooks import PACK, make_payment
+from tests.test_billing_webhooks import make_payment
 from tests.test_llm_client import Out, StubClient, resp
 
 

@@ -50,6 +50,20 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      # Transaction pooling with one server connection, for tests/test_rls_pooling.py.
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.26.1-p0
+        env:
+          DB_HOST: postgres
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          AUTH_TYPE: scram-sha-256
+          POOL_MODE: transaction
+          DEFAULT_POOL_SIZE: "1"
+          MAX_PREPARED_STATEMENTS: "200"
+        ports: ["6432:5432"]
+    env:
+      RT_TEST_PGBOUNCER_URL: postgresql+psycopg://postgres:postgres@localhost:6432/
     defaults:
       run:
         working-directory: backend

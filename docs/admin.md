@@ -69,7 +69,8 @@ The API is the only database client. Two Postgres roles:
 - **`rt_app`** (NOLOGIN). Once `current_user` identifies a signed-in caller, the request's
   DB session runs `SET LOCAL ROLE rt_app` and sets `app.user_id`
   (`app/db/rls.py`). Both are transaction-local, so they're re-applied at the start of
-  each later transaction in the request and can't leak through the connection pool.
+  each later transaction in the request and can't leak through the connection pool or a
+  transaction pooler (docs/deploy.md, "Database connections").
 
 What `rt_app` can do (`USER_TABLES` in the migration):
 

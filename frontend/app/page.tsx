@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ArrowRightIcon, CheckIcon, ErrorIcon, FileIcon, ShieldIcon, UploadIcon } from "@/components/icons";
+import { ArrowRightIcon, CheckIcon, ErrorIcon, HelpIcon, ShieldIcon, UploadIcon } from "@/components/icons";
 import { LandingView } from "@/components/site/LandingView";
 import { PublicPage } from "@/components/site/PublicPage";
-import { BeforeAfter } from "@/components/site/BeforeAfter";
+import { BeforeAfter, Seam } from "@/components/site/BeforeAfter";
 import { freePoints, planPoints, priceList } from "@/lib/billing";
+import { wordDiff } from "@/lib/diff";
 import type { Plans } from "@/lib/schemas";
 import { COMPANY, SITE_URL, getPlans, getPublicConfig } from "@/lib/site";
 
@@ -98,15 +99,21 @@ function Section({ id, eyebrow, title, intro, children, tint = false }: {
 }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={`scroll-mt-16 ${tint ? "bg-surface" : ""}`}>
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-        <div className="max-w-2xl">
-          {eyebrow && <p className="text-sm font-semibold tracking-wide text-accent">{eyebrow}</p>}
-          <h2 id={`${id}-title`} className="mt-2 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h2>
-          {intro && <p className="mt-4 text-lg text-muted">{intro}</p>}
-        </div>
+      <div className="mx-auto max-w-(--container) px-(--gutter) py-(--space-section)">
+        <SectionHead id={id} eyebrow={eyebrow} title={title} intro={intro} />
         <div className="mt-10 sm:mt-12">{children}</div>
       </div>
     </section>
+  );
+}
+
+function SectionHead({ id, eyebrow, title, intro }: { id: string; eyebrow?: string; title: string; intro?: React.ReactNode }) {
+  return (
+    <div className="max-w-(--measure)">
+      {eyebrow && <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">{eyebrow}</p>}
+      <h2 id={`${id}-title`} className="mt-3 text-display font-semibold text-balance">{title}</h2>
+      {intro && <p className="mt-4 text-lg text-muted">{intro}</p>}
+    </div>
   );
 }
 
@@ -153,23 +160,26 @@ function Hero({ inviteOnly }: { inviteOnly: boolean }) {
 
 const STEPS = [
   { Icon: UploadIcon, title: "Add your resume and the job", body: "Upload a PDF or Word file and paste the job description. We number every bullet so each change can be traced." },
-  { Icon: FileIcon, title: "Answer a few gap questions", body: "Requirements your resume doesn't show become quick yes-or-no questions. Nothing is filled in for you." },
+  { Icon: HelpIcon, title: "Answer a few gap questions", body: "Requirements your resume doesn't show become quick yes-or-no questions. Nothing is filled in for you." },
   { Icon: CheckIcon, title: "Review, score and download", body: "Accept or reject each rewritten line, see an ATS-style score with its breakdown, and get mentor-style advice." },
 ];
 
+/** Three steps joined by the seam: across from md up, down the left on phones. */
 function HowItWorks() {
   return (
     <Section id="how-it-works" eyebrow="How it works" title="From job post to tailored resume in minutes" tint>
-      <ol className="relative grid gap-10 md:grid-cols-3 md:gap-8">
-        <div aria-hidden="true" className="absolute left-[16%] right-[16%] top-6 hidden border-t-2 border-dashed border-border md:block" />
+      <ol className="grid gap-10 md:grid-cols-3 md:gap-8">
         {STEPS.map(({ Icon, title, body }, i) => (
-          <li key={title} className="relative flex flex-col items-start md:items-center md:text-center">
-            <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-sm">
+          <li key={title} className="relative pl-16 md:pl-0">
+            {i < STEPS.length - 1 && (
+              <span aria-hidden="true" className="absolute bottom-[-2.5rem] left-6 top-14 border-l-2 border-dashed border-seam/60 md:bottom-auto md:left-16 md:right-[-2rem] md:top-6 md:border-l-0 md:border-t-2" />
+            )}
+            <span className="absolute left-0 top-0 flex h-12 w-12 items-center justify-center rounded-card bg-accent-soft text-accent md:static">
               <Icon className="h-5 w-5" />
             </span>
-            <p className="mt-5 text-sm font-semibold text-accent">Step {i + 1}</p>
+            <p className="pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted md:mt-5 md:pt-0">Step {i + 1}</p>
             <h3 className="mt-1 text-lg font-semibold">{title}</h3>
-            <p className="mt-2 max-w-xs leading-relaxed text-muted">{body}</p>
+            <p className="mt-2 max-w-sm text-muted">{body}</p>
           </li>
         ))}
       </ol>
@@ -179,40 +189,63 @@ function HowItWorks() {
 
 const PROMISES = [
   { title: "Every line cites its source", body: "Each rewritten bullet names the original bullet it came from. No source, no rewrite." },
-  { title: "A separate verifier checks the result", body: "It compares the tailored resume with your original and blocks new tools, numbers, titles, employers, and inflated verbs like “helped” becoming “led”." },
-  { title: "You approve the diff", body: "You see before and after side by side and accept or reject each change. Nothing you didn't accept ends up in your file." },
+  { title: "A separate verifier checks the result", body: "It compares the tailored resume with your original, line by line, before you see it." },
+  { title: "You approve the diff", body: "You accept or reject each change. Nothing you didn't accept ends up in your file." },
+];
+
+const BLOCKED = [
+  "New tools or skills",
+  "New numbers, including rounding and “doubled”",
+  "New or self-given titles",
+  "Other employers' work",
+  "Stronger verbs or scope, like “helped” becoming “led”",
+];
+const ALLOWED = [
+  "Reordering lines so the relevant ones come first",
+  "Rewording for clarity",
+  "Using the job's terms when the fact is already yours",
+  "Bringing your existing numbers forward",
 ];
 
 function Honesty() {
   return (
     <section id="honesty" aria-labelledby="honesty-title" className="scroll-mt-16">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
-        <div>
-          <p className="text-sm font-semibold tracking-wide text-accent">The honesty guarantee</p>
-          <h2 id="honesty-title" className="mt-2 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Only what you&apos;ve actually done
-          </h2>
-          <p className="mt-4 text-lg text-muted">
-            Recruiters notice when a resume oversells, and so do interviewers. We make your real experience easier to
-            see, and nothing more.
-          </p>
-          <blockquote className="mt-8 border-l-4 border-accent pl-5 text-lg font-medium text-fg">
+      <div className="mx-auto grid max-w-(--container) gap-12 px-(--gutter) py-(--space-section) lg:grid-cols-[1fr_1.1fr] lg:gap-16">
+        <div className="min-w-0">
+          <SectionHead id="honesty" eyebrow="The verifier guarantee" title="Only what you've actually done"
+            intro="Recruiters notice when a resume oversells, and so do interviewers. We make your real experience easier to see, and nothing more." />
+          <ul className="mt-10 space-y-6">
+            {PROMISES.map(({ title, body }) => (
+              <li key={title} className="flex gap-4">
+                <ShieldIcon className="mt-1 h-5 w-5 text-accent" />
+                <div>
+                  <h3 className="font-semibold">{title}</h3>
+                  <p className="mt-1 text-muted">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="min-w-0 self-start rounded-hero border border-border bg-surface">
+          <p className="border-b border-border px-6 py-4 font-semibold">What the verifier checks</p>
+          <div className="grid gap-6 p-6 sm:grid-cols-2">
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-bad"><ErrorIcon />Blocked</h3>
+              <ul className="mt-3 space-y-2.5 text-sm">
+                {BLOCKED.map((t) => <li key={t} className="border-l-2 border-bad/40 pl-3">{t}</li>)}
+              </ul>
+            </div>
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ok"><CheckIcon />Allowed</h3>
+              <ul className="mt-3 space-y-2.5 text-sm">
+                {ALLOWED.map((t) => <li key={t} className="border-l-2 border-ok/40 pl-3">{t}</li>)}
+              </ul>
+            </div>
+          </div>
+          <blockquote className="border-t border-dashed border-seam px-6 py-5 font-medium text-fg">
             If it isn&apos;t in your resume or your own answers, it doesn&apos;t go in.
           </blockquote>
         </div>
-        <ul className="space-y-4">
-          {PROMISES.map(({ title, body }, i) => (
-            <li key={title} className="flex gap-4 rounded-2xl border border-border bg-surface p-6">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-                <ShieldIcon className="h-5 w-5" />
-              </span>
-              <div>
-                <h3 className="font-semibold"><span className="sr-only">{i + 1}. </span>{title}</h3>
-                <p className="mt-1.5 leading-relaxed text-muted">{body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );
@@ -222,36 +255,41 @@ const SAMPLE = [
   { before: "Worked on dashboards for the sales team using SQL and Tableau.",
     after: "Built SQL and Tableau dashboards for the sales team.", source: "b3",
     verdict: { ok: true, text: "Passed: same tools, same scope, clearer wording" } },
-  { before: "Cleaned up monthly reporting so it took less time.",
-    after: "Automated parts of monthly sales reporting, reducing manual effort.", source: "b5",
-    verdict: { ok: true, text: "Passed: mirrors the job's wording, no new number" } },
+  { before: "Rewrote slow report queries; refresh time went from 40 to 12 minutes.",
+    after: "Cut report refresh time from 40 to 12 minutes by rewriting slow queries.", source: "b2",
+    verdict: { ok: true, text: "Passed: same numbers, result moved first" } },
   { before: "Helped migrate reports to the new data warehouse.",
     after: "Led the migration of reports to the new data warehouse.", source: "b7",
     verdict: { ok: false, text: "Blocked: “helped” can't become “led”" } },
 ];
 
+/** The sample diff: original, the seam with its source id, then the word diff and the verifier's word. */
 function Sample() {
   return (
     <Section id="sample" tint eyebrow="See it in action" title="A sample before and after"
       intro="Made-up example: a data analyst resume tailored to an analytics engineer job that asks for SQL, dashboards and dbt.">
-      <div className="overflow-hidden rounded-2xl border border-border bg-bg">
-        <div className="hidden grid-cols-[1fr_1fr_15rem] gap-6 border-b border-border bg-surface-2 px-6 py-3 text-sm font-semibold text-muted md:grid">
-          <span>Your resume</span><span>Tailored</span><span>Verifier</span>
+      <div className="overflow-hidden rounded-hero border border-border bg-bg">
+        <div className="hidden grid-cols-[1fr_4.5rem_1fr] border-b border-border bg-surface-2 text-sm font-semibold text-muted sm:grid">
+          <span className="px-6 py-3">Your resume</span><span /><span className="px-6 py-3">Tailored, with changes marked</span>
         </div>
         <ul className="divide-y divide-border">
           {SAMPLE.map(({ before, after, source, verdict }) => (
-            <li key={source} className="grid gap-3 px-6 py-5 md:grid-cols-[1fr_1fr_15rem] md:gap-6">
-              <div>
-                <p className="text-xs font-semibold text-muted md:hidden">Your resume</p>
-                <p className="leading-relaxed text-muted">{before}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-muted md:hidden">Tailored</p>
-                <p className={`leading-relaxed ${verdict.ok ? "font-medium" : "text-muted line-through"}`}>{after}</p>
-                <p className="mt-1 text-xs text-muted">cites <span className="font-mono">{source}</span></p>
-              </div>
-              <div>
-                <p className={`inline-flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium ${verdict.ok ? "bg-ok-bg text-ok" : "bg-bad-bg text-bad"}`}>
+            <li key={source} className="grid p-5 sm:grid-cols-[1fr_4.5rem_1fr] sm:items-center sm:p-0">
+              <p className="text-muted sm:px-6 sm:py-5">
+                <span className="mb-1 block text-xs font-semibold sm:hidden">Your resume</span>
+                <span className="sr-only">Before: </span>{before}
+              </p>
+              <Seam id={source} />
+              <div className="sm:px-6 sm:py-5">
+                <p className="mb-1 text-xs font-semibold text-muted sm:hidden">Tailored</p>
+                <p className={verdict.ok ? "" : "opacity-70"}>
+                  <span className="sr-only">After, citing {source}: </span>
+                  {wordDiff(before, after).map((part, i) =>
+                    part.type === "added" ? <ins key={i}>{part.text}</ins>
+                      : part.type === "removed" ? <del key={i}>{part.text}</del>
+                        : <span key={i}>{part.text}</span>)}
+                </p>
+                <p className={`mt-3 inline-flex items-start gap-1.5 rounded-md px-2 py-1 text-sm font-medium ${verdict.ok ? "bg-ok-bg text-ok" : "bg-bad-bg text-bad"}`}>
                   {verdict.ok ? <CheckIcon className="mt-0.5 h-4 w-4" /> : <ErrorIcon className="mt-0.5 h-4 w-4" />} {verdict.text}
                 </p>
               </div>
@@ -259,21 +297,24 @@ function Sample() {
           ))}
         </ul>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-bg p-6">
-          <p className="text-sm font-semibold text-accent">Gap question</p>
+      <p className="mt-3 text-sm text-muted">
+        <del>Struck through</del> is removed, <ins>underlined</ins> is added. A blocked line never reaches your file.
+      </p>
+      <div className="mt-8 grid gap-4 md:grid-cols-2">
+        <div className="rounded-card border border-border bg-bg p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">Gap question</p>
           <p className="mt-2 text-lg font-medium">The job asks for dbt. Have you used it?</p>
-          <p className="mt-2 leading-relaxed text-muted">
+          <p className="mt-2 text-muted">
             Your resume doesn&apos;t mention dbt, so we ask instead of adding it. Say yes with a sentence of context and
             it can be used, citing your answer. Say no and the mentor suggests how to close the gap.
           </p>
         </div>
-        <div className="rounded-2xl border border-border bg-bg p-6">
-          <p className="text-sm font-semibold text-accent">ATS-style score</p>
+        <div className="rounded-card border border-border bg-bg p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-accent">ATS-style score</p>
           <div className="mt-3 space-y-4">
             {[["Before", 58], ["After", 74]].map(([label, value]) => (
               <div key={label}>
-                <div className="flex justify-between text-sm"><span className="text-muted">{label}</span><span className="font-semibold">{value}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-muted">{label}</span><span className="font-semibold tabular-nums">{value}</span></div>
                 <div className="mt-1.5 h-2.5 rounded-full bg-surface-2">
                   <div className={`h-full rounded-full ${label === "After" ? "bg-accent" : "bg-border-strong"}`} style={{ width: `${value}%` }} />
                 </div>
@@ -313,7 +354,7 @@ function Pricing({ plans, inviteOnly }: { plans: Plans | null; inviteOnly: boole
           })}
         </ul>
       ) : (
-        <p className="max-w-2xl rounded-2xl border border-border bg-surface p-5">
+        <p className="max-w-(--measure) rounded-card border border-border bg-surface p-5">
           Every account gets free tailorings each month. Credit packs and the Job Hunt Pass pay for the clean
           downloads when you&apos;re applying to a lot of jobs.
         </p>
@@ -338,7 +379,7 @@ function PriceCard({ name, tagline, amount, detail, points, cta, featured = fals
 }) {
   const id = `plan-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <li aria-labelledby={id} className={`relative flex flex-col rounded-2xl border bg-surface p-6 ${
+    <li aria-labelledby={id} className={`relative flex flex-col rounded-hero border bg-surface p-6 ${
       featured ? "border-accent ring-1 ring-accent" : "border-border"}`}>
       {featured && (
         <p className="absolute -top-3 left-6 rounded-full bg-accent px-3 py-0.5 text-xs font-semibold text-accent-fg">
@@ -348,7 +389,7 @@ function PriceCard({ name, tagline, amount, detail, points, cta, featured = fals
       <h3 id={id} className="text-lg font-semibold">{name}</h3>
       <p className="mt-0.5 text-sm text-muted">{tagline}</p>
       <p className="mt-5 flex items-baseline gap-2">
-        <span className="text-4xl font-semibold tracking-tight">{amount}</span>
+        <span className="text-4xl font-semibold tracking-tight tabular-nums">{amount}</span>
       </p>
       <p className="mt-1 text-sm text-muted">{detail}</p>
       <ul className="mt-5 flex-1 space-y-2.5 border-t border-border pt-5 text-sm">
@@ -359,7 +400,7 @@ function PriceCard({ name, tagline, amount, detail, points, cta, featured = fals
           </li>
         ))}
       </ul>
-      <Link href={cta.href} className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium ${
+      <Link href={cta.href} className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-card px-4 py-2 text-sm font-medium ${
         featured ? "bg-accent text-accent-fg hover:bg-accent-hover" : "border border-border-strong text-fg hover:bg-surface-2"}`}>
         {cta.label}
       </Link>
@@ -370,24 +411,20 @@ function PriceCard({ name, tagline, amount, detail, points, cta, featured = fals
 function Faq({ items }: { items: { q: string; a: string }[] }) {
   return (
     <section id="faq" aria-labelledby="faq-title" className="scroll-mt-16 bg-surface">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[1fr_2fr] lg:gap-16">
-        <div>
-          <p className="text-sm font-semibold tracking-wide text-accent">Questions</p>
-          <h2 id="faq-title" className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Good to know</h2>
-          <p className="mt-4 text-lg text-muted">
-            Anything else? {COMPANY.supportEmail
-              ? <>Write to <a href={`mailto:${COMPANY.supportEmail}`} className="font-medium text-accent underline">{COMPANY.supportEmail}</a>.</>
-              : <>See <Link href="/legal/grievance" className="font-medium text-accent underline">how to reach us</Link>.</>}
-          </p>
-        </div>
-        <div className="divide-y divide-border rounded-2xl border border-border bg-bg">
+      <div className="mx-auto grid max-w-(--container) gap-10 px-(--gutter) py-(--space-section) lg:grid-cols-[1fr_2fr] lg:gap-16">
+        <SectionHead id="faq" eyebrow="Questions" title="Good to know" intro={
+          <>Anything else? {COMPANY.supportEmail
+            ? <>Write to <a href={`mailto:${COMPANY.supportEmail}`} className="font-medium text-accent underline">{COMPANY.supportEmail}</a>.</>
+            : <>See <Link href="/legal/grievance" className="font-medium text-accent underline">how to reach us</Link>.</>}</>
+        } />
+        <div className="min-w-0 divide-y divide-border border-y border-border">
           {items.map(({ q, a }) => (
-            <details key={q} className="group px-6 py-5">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium [&::-webkit-details-marker]:hidden">
+            <details key={q} className="group py-5">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-base font-medium [&::-webkit-details-marker]:hidden">
                 {q}
                 <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-muted transition-transform group-open:rotate-45">+</span>
               </summary>
-              <p className="mt-3 leading-relaxed text-muted">{a}</p>
+              <p className="mt-2 max-w-(--measure) text-muted">{a}</p>
             </details>
           ))}
         </div>
@@ -396,29 +433,27 @@ function Faq({ items }: { items: { q: string; a: string }[] }) {
   );
 }
 
+/** The navy band that closes the page. Its own colours (ink, ink-fg) work in both themes. */
 function ClosingCta({ inviteOnly }: { inviteOnly: boolean }) {
+  const cta = inviteOnly ? { href: "/waitlist", label: "Request an invite" } : { href: "/signup", label: "Get started free" };
   return (
-    <section aria-labelledby="cta-title" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-      <div className="rounded-3xl bg-accent px-6 py-12 text-center text-accent-fg sm:px-12 sm:py-16">
-        <h2 id="cta-title" className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          Your real experience, framed for the job you want
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-lg opacity-90">
-          Tailoring and review are free to try. Pay only for the clean file you send.
-        </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          {inviteOnly ? (
-            <Link href="/waitlist" className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-surface px-6 py-3 font-medium text-fg hover:bg-surface-2">
-              Request an invite <ArrowRightIcon />
+    <section aria-labelledby="cta-title" className="bg-ink text-ink-fg">
+      <div className="mx-auto max-w-(--container) px-(--gutter) py-(--space-section)">
+        <div className="max-w-2xl">
+          <h2 id="cta-title" className="text-display font-semibold text-balance">
+            Your real experience, framed for the job you want
+          </h2>
+          <p className="mt-4 text-lg opacity-80">
+            Tailoring and review are free to try. Pay only for the clean file you send.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
+            <Link href={cta.href} className="inline-flex min-h-12 items-center gap-2 rounded-card bg-ink-fg px-6 py-3 font-medium text-ink hover:opacity-90">
+              {cta.label} <ArrowRightIcon />
             </Link>
-          ) : (
-            <Link href="/signup" className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-surface px-6 py-3 font-medium text-fg hover:bg-surface-2">
-              Get started free <ArrowRightIcon />
+            <Link href="#pricing" className="inline-flex min-h-12 items-center font-medium underline underline-offset-4 hover:opacity-80">
+              See pricing
             </Link>
-          )}
-          <Link href="#pricing" className="inline-flex min-h-12 items-center rounded-xl border border-current/30 px-6 py-3 font-medium hover:bg-white/10">
-            See pricing
-          </Link>
+          </div>
         </div>
       </div>
     </section>

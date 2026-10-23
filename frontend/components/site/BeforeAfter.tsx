@@ -65,7 +65,7 @@ export function BeforeAfter() {
 }
 
 /** The dashed stitch with the source id riding on it: horizontal beside, vertical when stacked. */
-function Seam({ id }: { id: string }) {
+export function Seam({ id }: { id: string }) {
   return (
     <span aria-hidden="true" className="relative flex h-10 items-center justify-start pl-3 sm:h-full sm:justify-center sm:pl-0">
       <span className="absolute inset-y-0 left-6 border-l-2 border-dashed border-seam sm:inset-x-0 sm:inset-y-auto sm:left-0 sm:top-1/2 sm:border-l-0 sm:border-t-2" />

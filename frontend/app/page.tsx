@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, ErrorIcon, FileIcon, ShieldIcon, UploadIcon } from "@/components/icons";
 import { LandingView } from "@/components/site/LandingView";
 import { PublicPage } from "@/components/site/PublicPage";
-import { SignUpButton } from "@/components/site/SignUpButton";
+import { BeforeAfter } from "@/components/site/BeforeAfter";
 import { freePoints, planPoints, priceList } from "@/lib/billing";
 import type { Plans } from "@/lib/schemas";
 import { COMPANY, SITE_URL, getPlans, getPublicConfig } from "@/lib/site";
@@ -110,8 +110,7 @@ function Section({ id, eyebrow, title, intro, children, tint = false }: {
   );
 }
 
-const PRIMARY = "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 font-medium text-accent-fg shadow-sm hover:bg-accent-hover";
-const SECONDARY = "inline-flex min-h-12 items-center justify-center rounded-xl border border-border-strong bg-surface px-6 py-3 font-medium text-fg hover:bg-surface-2";
+const PRIMARY = "inline-flex min-h-12 items-center justify-center gap-2 rounded-card bg-accent px-6 py-3 font-medium text-accent-fg shadow-sm hover:bg-accent-hover";
 
 function PrimaryCta({ inviteOnly }: { inviteOnly: boolean }) {
   return inviteOnly
@@ -121,82 +120,34 @@ function PrimaryCta({ inviteOnly }: { inviteOnly: boolean }) {
 
 function Hero({ inviteOnly }: { inviteOnly: boolean }) {
   return (
-    <section aria-labelledby="hero-title" className="relative overflow-hidden">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-gradient-to-b from-accent-soft/70 to-transparent" />
-      <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
-        <div>
-          <p className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-surface px-3 py-1 text-sm font-medium text-accent">
-            <ShieldIcon /> Honest by design
+    <section aria-labelledby="hero-title">
+      <div className="mx-auto grid max-w-(--container) items-center gap-12 px-(--gutter) pb-16 pt-12 sm:pb-24 sm:pt-20 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+        <div className="min-w-0">
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium text-accent">
+            <ShieldIcon /> Never invents experience
           </p>
-          <h1 id="hero-title" className="mt-6 text-4xl font-semibold leading-[1.08] tracking-tight text-balance sm:text-5xl lg:text-[3.4rem]">
+          <h1 id="hero-title" className="mt-4 text-hero font-semibold text-balance">
             Tailor your resume to any job, without ever inventing experience
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
+          <p className="mt-6 max-w-xl text-lg text-muted">
             Upload your resume and paste the job description. We reorder and reword what&apos;s already true, ask
             about the gaps, and show you every change before it counts.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-4">
             <PrimaryCta inviteOnly={inviteOnly} />
-            <Link href="#sample" className={SECONDARY}>See a sample</Link>
+            <Link href="#sample" className="inline-flex min-h-12 items-center gap-1.5 font-medium text-accent underline-offset-4 hover:underline">
+              See a full sample <ArrowRightIcon />
+            </Link>
           </div>
-          {inviteOnly && (
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted">
-              Have an invite code? <SignUpButton inviteOnly label="Sign up with your invite" variant="secondary" />
-            </div>
-          )}
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
             {["Every change cites your resume", "You approve each edit", "Free to try, no card"].map((t) => (
               <li key={t} className="flex items-center gap-1.5"><CheckIcon className="h-4 w-4 text-ok" />{t}</li>
             ))}
           </ul>
         </div>
-        <HeroPreview />
+        <BeforeAfter />
       </div>
     </section>
-  );
-}
-
-/** A still picture of the review screen, drawn with HTML (made-up data). */
-function HeroPreview() {
-  return (
-    <figure role="img" aria-label="Example of the review screen: a reworded bullet that passed the verifier, a stronger claim that was blocked, and the ATS-style score rising from 58 to 74."
-      className="relative mx-auto w-full max-w-xl">
-      <div aria-hidden="true" className="absolute -inset-4 -z-10 rounded-[2rem] bg-accent-soft/60 blur-2xl" />
-      <div aria-hidden="true" className="overflow-hidden rounded-2xl border border-border bg-surface shadow-xl">
-        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-4 py-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-border-strong" />
-          <span className="h-2.5 w-2.5 rounded-full bg-border-strong" />
-          <span className="h-2.5 w-2.5 rounded-full bg-border-strong" />
-          <span className="ml-3 truncate text-xs font-medium text-muted">Review · Data Analyst → Analytics Engineer</span>
-        </div>
-        <div className="space-y-3 p-4 sm:p-5">
-          <div className="rounded-xl border border-border p-4">
-            <p className="text-xs font-medium text-muted">Before</p>
-            <p className="mt-1 text-sm text-muted">Worked on dashboards for the sales team using SQL and Tableau.</p>
-            <p className="mt-3 text-xs font-medium text-muted">After <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono">cites b3</span></p>
-            <p className="mt-1 text-sm font-medium">Built SQL and Tableau dashboards for the sales team.</p>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1 rounded-md bg-ok-bg px-2 py-0.5 text-xs font-medium text-ok"><CheckIcon className="h-3.5 w-3.5" />Verified</span>
-              <span className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-fg"><CheckIcon className="h-3.5 w-3.5" />Approved</span>
-            </div>
-          </div>
-          <div className="rounded-xl border border-bad/30 bg-bad-bg/40 p-4">
-            <p className="text-sm text-muted line-through">Led the migration of reports to the new warehouse.</p>
-            <span className="mt-2 inline-flex items-center gap-1 rounded-md bg-bad-bg px-2 py-0.5 text-xs font-medium text-bad"><ErrorIcon className="h-3.5 w-3.5" />Blocked: “helped” can&apos;t become “led”</span>
-          </div>
-          <div className="rounded-xl border border-border p-4">
-            <div className="flex items-baseline justify-between text-sm">
-              <span className="font-medium">ATS-style score</span>
-              <span className="text-muted">58 → <span className="text-lg font-semibold text-fg">74</span></span>
-            </div>
-            <div className="relative mt-3 h-2 rounded-full bg-surface-2">
-              <div className="absolute inset-y-0 left-0 w-[74%] rounded-full bg-accent/30" />
-              <div className="absolute inset-y-0 left-0 w-[58%] rounded-full bg-accent" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </figure>
   );
 }
 

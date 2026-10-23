@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { ThemeToggle } from "@/components/AppShell";
+import { BrandLogo } from "@/components/BrandLogo";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { api } from "@/lib/api";
 import type { Theme } from "@/lib/theme";
@@ -29,9 +30,8 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
     <MaintenanceBanner />
     <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 text-base font-semibold text-fg">
-          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-xs font-bold text-accent-fg">RT</span>
-          Resume Tailor
+        <Link href="/" className="text-base font-semibold text-fg">
+          <BrandLogo />
         </Link>
         <nav aria-label="Main" className="flex flex-wrap items-center gap-2">
           <Link href="/#how-it-works" className={navCls}>How it works</Link>

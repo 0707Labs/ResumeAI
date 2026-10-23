@@ -12,11 +12,11 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, insert
+from sqlalchemy import Engine, create_engine, insert, select
 
 from app.billing.config import BillingConfig, get_billing_config
 from app.config import get_settings
-from app.db.models import LlmUsage
+from app.db.models import Analysis, LlmUsage
 
 log = logging.getLogger("app.billing")
 
@@ -54,8 +54,27 @@ def _engine() -> Engine:
                          connect_args={"connect_timeout": 3})
 
 
+# What each structured-output schema is in the pipeline, for the cost views. A schema not
+# listed shows under its own name.
+PIPELINE_STEPS = {
+    "_Verdicts": "gap_analysis",    # app/analysis/refine.py
+    "_LLMTailored": "tailor",       # app/tailoring/tailor.py
+    "_LLMRepaired": "tailor_repair",
+    "_Lines": "ats_semantic",       # app/scoring/semantic.py
+    "_Items": "mentor",             # app/mentor/polish.py
+}
+
+
+def pipeline_step(stage: str) -> str:
+    return PIPELINE_STEPS.get(stage, stage)
+
+
 def usage_row(stage: str, response: Any, config: BillingConfig | None = None) -> dict:
-    """Token counts from an Anthropic response; the model is the one that actually answered."""
+    """Token counts from an Anthropic response; the model is the one that actually answered.
+    A failed call (no response) is a row with no tokens and no cost."""
+    if response is None:
+        return {"analysis_id": current_analysis_id.get(), "stage": stage, "model": "unknown", "input_tokens": 0,
+                "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "cost_usd": Decimal(0)}
     usage = response.usage
     tokens = {
         "input_tokens": getattr(usage, "input_tokens", 0) or 0,
@@ -68,13 +87,18 @@ def usage_row(stage: str, response: Any, config: BillingConfig | None = None) ->
             "cost_usd": cost_usd(config or get_billing_config(), model, **tokens)}
 
 
-def record_llm_usage(stage: str, response: Any) -> None:
-    """Called by the LLM client after every Claude response, including refusals."""
+def record_llm_usage(stage: str, response: Any, *, latency_ms: int | None = None, status: str = "ok",
+                     error_code: str | None = None) -> None:
+    """Called by the LLM client after every Claude call: answered, refused, cut off, or
+    failed (response None). The user comes from the analysis the request is billed to."""
     try:
         row = usage_row(stage, response)
         if row["cost_usd"] is None:
             log.warning("no price for model %s in billing.toml; usage recorded without cost", row["model"])
+        user = (select(Analysis.user_id).where(Analysis.id == row["analysis_id"]).scalar_subquery()
+                if row["analysis_id"] else None)
         with _engine().begin() as conn:
-            conn.execute(insert(LlmUsage).values(**row))
+            conn.execute(insert(LlmUsage).values(**row, user_id=user, latency_ms=latency_ms, status=status,
+                                                 error_code=(error_code or None) and error_code[:80]))
     except Exception as exc:  # noqa: BLE001 - cost tracking must never break an analysis
         log.warning("could not record LLM usage: %s", exc.__class__.__name__)

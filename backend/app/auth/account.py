@@ -18,7 +18,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import subject_ref
-from app.db.models import Account, AuthSession, ConsentRecord, EmailToken, PendingAuth, User
+from app.db.models import (
+    Account, AuthSession, ConsentRecord, EmailToken, JobPreferences, PendingAuth, SavedResume, User, UserAvatar,
+)
+from app.db.rls import service_scope
 
 Provider = Literal["google", "github", "email"]
 
@@ -39,7 +42,14 @@ async def list_accounts(db: AsyncSession, user_id: uuid.UUID) -> list[Account]:
 
 async def link(db: AsyncSession, user: User, provider: Provider, provider_account_id: str,
                verified_email: str) -> Literal["linked", "already_linked"]:
-    """Add a login method to `user`. Commits."""
+    """Add a login method to `user`. Commits. Runs as the service role: whether another
+    account already owns this identity or address is a question about other users' rows."""
+    async with service_scope(db):
+        return await _link(db, user, provider, provider_account_id, verified_email)
+
+
+async def _link(db: AsyncSession, user: User, provider: Provider, provider_account_id: str,
+                verified_email: str) -> Literal["linked", "already_linked"]:
     owner = (await db.execute(select(Account.user_id).where(
         Account.provider == provider, Account.provider_account_id == provider_account_id
     ))).scalar_one_or_none()
@@ -83,7 +93,13 @@ async def unlink(db: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID) ->
 
 
 async def delete_account(db: AsyncSession, user: User) -> None:
-    """Delete the account and everything that lets anyone sign in to it. Commits."""
+    """Delete the account and everything that lets anyone sign in to it. Commits.
+    Runs as the service role: pending sign-ins and email tokens aren't user-owned rows."""
+    async with service_scope(db):
+        await _delete_account(db, user)
+
+
+async def _delete_account(db: AsyncSession, user: User) -> None:
     uid, email, now = user.id, user.email, datetime.now(UTC)
     identities = [tuple(r) for r in (await db.execute(
         select(Account.provider, Account.provider_account_id).where(Account.user_id == uid)
@@ -94,6 +110,10 @@ async def delete_account(db: AsyncSession, user: User) -> None:
     await db.execute(delete(PendingAuth).where(PendingAuth.verified_email == email))
     await db.execute(delete(EmailToken).where(or_(EmailToken.user_id == uid, EmailToken.email == email)))
     await db.execute(delete(Account).where(Account.user_id == uid))
+    # What the user wrote about themselves goes now too (the user row is only soft-deleted).
+    await db.execute(delete(SavedResume).where(SavedResume.user_id == uid))  # versions cascade
+    await db.execute(delete(JobPreferences).where(JobPreferences.user_id == uid))
+    await db.execute(delete(UserAvatar).where(UserAvatar.user_id == uid))
     await db.execute(delete(AuthSession).where(AuthSession.user_id == uid))
 
     granted = (await db.execute(text(
@@ -102,6 +122,6 @@ async def delete_account(db: AsyncSession, user: User) -> None:
     ref = subject_ref(email)
     db.add_all([ConsentRecord(user_id=uid, subject_ref=ref, notice_id=notice_id, purpose=purpose,
                               action="withdrawn", method="deletion") for purpose, notice_id in granted])
-    await db.execute(update(User).where(User.id == uid).values(deleted_at=now))
+    await db.execute(update(User).where(User.id == uid).values(deleted_at=now, phone=None))
     await db.commit()
 

@@ -33,6 +33,7 @@ def _now() -> datetime:
 class SignedIn:
     user: User
     token_hash: str
+    reauth_at: datetime | None = None  # last sign-in through an existing login method
 
 
 async def start_session(
@@ -57,6 +58,8 @@ async def start_session(
         created_at=now,
         last_seen_at=now,
         expires_at=now + SLIDING,
+        # Linking a new method also rotates, but proves nothing about the account's owner.
+        reauth_at=now if event == "login" else None,
     ))
     if event == "login":
         user.last_login_at = now
@@ -94,7 +97,7 @@ async def resolve_session(db: AsyncSession, request: Request) -> SignedIn | None
             .values(last_seen_at=now, expires_at=min(now + SLIDING, session.created_at + ABSOLUTE))
         )
         await db.commit()
-    return SignedIn(user=user, token_hash=token_hash)
+    return SignedIn(user=user, token_hash=token_hash, reauth_at=session.reauth_at)
 
 
 async def end_session(db: AsyncSession, request: Request, response: Response) -> uuid.UUID | None:

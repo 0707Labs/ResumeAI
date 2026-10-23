@@ -22,9 +22,14 @@ function SignIn() {
   const params = useSearchParams();
   const next = params.get("next") ?? undefined;
   const inviteOnly = useInviteOnly();
-  useSignedInRedirect(safeNext(next));
+  // reauth=1: a signed-in staff member confirming it's them before a sensitive change.
+  const reauth = params.get("reauth") === "1";
+  useSignedInRedirect(safeNext(next), { skip: reauth });
   return (
-    <AuthCard title="Sign in" intro="Welcome back. Pick the way you signed up, or get a link by email.">
+    <AuthCard title={reauth ? "Confirm it's you" : "Sign in"}
+      intro={reauth
+        ? "This change needs a fresh sign-in. Sign in again the way you usually do, and we'll take you back."
+        : "Welcome back. Pick the way you signed up, or get a link by email."}>
       <AuthErrorAlert error={params.get("error")} />
       <SignInOptions next={next} />
       <p className="text-sm text-muted">

@@ -75,5 +75,9 @@ def test_purchase_then_webhook_then_download(shopper, user_id, pg_engine):
     file = shopper.get(link.json()["url"])
     assert file.status_code == 200 and file.content[:2] == b"PK"
     assert scalar(pg_engine, "SELECT credits_balance FROM users WHERE id = :u", u=user_id) == 4
+    # /admin/quality counts: what the tailoring produced, and what the download carried (counts only).
+    generated, approved = (scalar(pg_engine, f"SELECT {c} FROM analyses WHERE id = :a", a=aid)
+                           for c in ("bullets_generated", "bullets_approved"))
+    assert generated == len(tailored["bullets"]) and approved == sum(b["review"] == "approved" for b in tailored["bullets"])
     again = ask()  # the same resume again: inside the re-download window
     assert again.json()["paid_with"] == "window" and again.json()["credits_balance"] == 4

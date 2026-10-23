@@ -28,6 +28,9 @@ cd frontend && npm install && npm run dev
 
 Open http://localhost:3000 and click **Use the sample resume and JD** to try it.
 
+**Full local setup** (database, consent notices, your first account, the admin
+dashboard, what to test, and troubleshooting): [docs/local-testing.md](docs/local-testing.md).
+
 ### Claude (optional)
 
 Everything works rules-only. To let Claude review unclear gaps, rewrite bullets,
@@ -61,6 +64,18 @@ Magic links go to `backend/.dev-outbox/` by default (`RT_MAILER=outbox`), for de
 the e2e tests. Production sends them through Amazon SES (`RT_MAILER=ses`), and the server
 refuses to start without a sender and keys. SES setup, the send-only IAM policy,
 SPF/DKIM/DMARC records and the go-live checklist are in [docs/email.md](docs/email.md).
+
+## Admin access
+
+Staff roles are `support`, `admin` and `superadmin`. To make the first superadmin, sign up
+normally, then run:
+
+```bash
+cd backend && ADMIN_BOOTSTRAP_EMAIL=you@example.com .venv/bin/python -m app.auth.cli bootstrap-admin
+```
+
+Roles, the audit log, step-up re-authentication and the database's row-level security
+(including the one-time `rt_app` role setup) are in [docs/admin.md](docs/admin.md).
 
 ## Billing (Dodo Payments)
 

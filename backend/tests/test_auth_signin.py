@@ -143,9 +143,9 @@ def test_new_user_without_invite_gets_no_account(client, outbox, notices, pg_eng
 
 
 def test_invite_only_is_on_unless_switched_off(client, monkeypatch):
-    assert client.get("/api/auth/config").json() == {"invite_only": True}
+    assert client.get("/api/auth/config").json() == {"invite_only": True, "maintenance_banner": None}
     monkeypatch.setenv("RT_INVITE_ONLY", "0")
-    assert client.get("/api/auth/config").json() == {"invite_only": False}
+    assert client.get("/api/auth/config").json() == {"invite_only": False, "maintenance_banner": None}
 
 
 def test_open_signup_skips_the_invite_step(client, outbox, notices, monkeypatch, pg_engine):

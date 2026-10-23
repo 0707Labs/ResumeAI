@@ -147,6 +147,12 @@ async def snapshot(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, 
                     credits_per_download=config.downloads.credits_per_download)
 
 
+def _label(value: object) -> str | None:
+    """A job title or company for lists: one line, at most 200 characters."""
+    text = " ".join(str(value).split()) if value else ""
+    return text[:200] or None
+
+
 async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.UUID, *, resume: dict, jd: dict,
                          idempotency_key: str, now: datetime | None = None) -> Started:
     """Pin a resume and job description for this user. Spends nothing; raises
@@ -171,7 +177,9 @@ async def start_analysis(db: AsyncSession, config: BillingConfig, user_id: uuid.
         Analysis.user_id == user_id, Analysis.created_at >= day_start(now), WITH_CLAUDE)))
     usable_until = now + timedelta(hours=config.analyses.usable_hours) if used < cap else now
     row = Analysis(id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key, resume=resume, jd=jd,
-                   inputs_sha256=inputs_digest(resume, jd), created_at=now, usable_until=usable_until)
+                   inputs_sha256=inputs_digest(resume, jd), created_at=now, usable_until=usable_until,
+                   job_title=_label(jd.get("title")), company=_label(jd.get("company")),
+                   entitlement=decision.pays_with)
     db.add(row)
     await db.flush()
     return Started(row, decision, replay=False, claude_per_day=cap)

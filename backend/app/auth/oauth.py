@@ -57,7 +57,7 @@ GITHUB_API = "https://api.github.com"
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 
 # Where a signed-in user may be sent back to. Relative paths only.
-NEXT_PREFIXES = ("/app", "/account", "/pricing", "/billing")
+NEXT_PREFIXES = ("/app", "/account", "/pricing", "/billing", "/admin")
 DEFAULT_NEXT = "/app"  # the tailoring workspace
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9/_-]*$")
 
@@ -75,6 +75,7 @@ class Identity:
     provider: OAuthProvider
     provider_account_id: str
     verified_email: str | None  # None: the provider asserted no verified email
+    picture_url: str | None = None  # their profile picture, imported by app.profile.avatars
 
 
 @dataclass(frozen=True)
@@ -219,7 +220,9 @@ async def _google_identity(token: dict, nonce: str) -> Identity:
     claims = decoded.claims
     email = claims.get("email")
     verified = claims.get("email_verified") is True and isinstance(email, str)
-    return Identity("google", str(claims["sub"]), email.strip().lower() if verified else None)
+    picture = claims.get("picture")
+    return Identity("google", str(claims["sub"]), email.strip().lower() if verified else None,
+                    picture if isinstance(picture, str) else None)
 
 
 async def _github_identity(client: AsyncOAuth2Client) -> Identity:
@@ -232,4 +235,6 @@ async def _github_identity(client: AsyncOAuth2Client) -> Identity:
     primary = next((e for e in emails.json()
                     if e.get("primary") is True and e.get("verified") is True and isinstance(e.get("email"), str)),
                    None)
-    return Identity("github", str(user.json()["id"]), primary["email"].strip().lower() if primary else None)
+    picture = user.json().get("avatar_url")
+    return Identity("github", str(user.json()["id"]), primary["email"].strip().lower() if primary else None,
+                    picture if isinstance(picture, str) else None)

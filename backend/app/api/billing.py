@@ -38,6 +38,13 @@ def billing_config() -> BillingConfig:
     return get_billing_config()
 
 
+async def live_billing(base: BillingConfig = Depends(billing_config), db: AsyncSession = Depends(get_db)) -> BillingConfig:
+    """billing.toml plus runtime settings (Pro on/off, the free allowance, referral rules)."""
+    from app.admin import settings as runtime
+
+    return await runtime.live_config(db, base)
+
+
 def payment_provider() -> PaymentProvider:
     try:
         return get_payment_provider()
@@ -68,7 +75,7 @@ class PlansOut(BaseModel):
 
 
 @router.get("/plans")
-def plans(config: BillingConfig = Depends(billing_config)) -> PlansOut:
+async def plans(config: BillingConfig = Depends(live_billing)) -> PlansOut:
     """Public: what we sell, straight from billing.toml. Pro appears only when its flag is on."""
     try:
         mode = get_payment_provider().mode
@@ -108,7 +115,7 @@ async def checkout(
     idempotency_key: str | None = Header(default=None, max_length=128),
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
-    config: BillingConfig = Depends(billing_config),
+    config: BillingConfig = Depends(live_billing),
     provider: PaymentProvider = Depends(payment_provider),
 ) -> CheckoutOut:
     """Create a hosted checkout and return its URL for the browser to open.
@@ -251,7 +258,7 @@ async def portal(user: User = Depends(current_user), db: AsyncSession = Depends(
         BillingCustomer.user_id == user.id, BillingCustomer.provider == provider.name))
     buyer = Buyer(user_id=user.id, email=user.email, name=user.name, provider_customer_id=customer_id)
     try:
-        url = await provider.get_portal_url(buyer, return_url=f"{get_settings().public_url}/account/billing")
+        url = await provider.get_portal_url(buyer, return_url=f"{get_settings().public_url}/app/billing")
     except PaymentError:
         raise HTTPException(status_code=502, detail="portal_failed") from None
     if url is None:

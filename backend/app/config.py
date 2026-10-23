@@ -51,6 +51,8 @@ class Settings:
     aws_access_key_id: str = field(default_factory=lambda: os.environ.get("AWS_ACCESS_KEY_ID", ""))
     aws_secret_access_key: str = field(default_factory=lambda: os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
     aws_session_token: str = field(default_factory=lambda: os.environ.get("AWS_SESSION_TOKEN", ""))
+    # Optional Slack incoming webhook for budget alerts (https://hooks.slack.com/... only).
+    slack_webhook_url: str = field(default_factory=lambda: os.environ.get("RT_SLACK_WEBHOOK_URL", "").strip())
     # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.
     google_client_id: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_ID", ""))
     google_client_secret: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLIENT_SECRET", ""))

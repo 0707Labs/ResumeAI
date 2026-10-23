@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { ThemeToggle } from "@/components/AppShell";
 import { BrandLogo } from "@/components/BrandLogo";
+import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { api } from "@/lib/api";
 import type { Theme } from "@/lib/theme";
 
@@ -25,6 +26,8 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
 
   const navCls = "hidden min-h-9 items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg md:flex";
   return (
+    <>
+    <MaintenanceBanner />
     <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link href="/" className="text-base font-semibold text-fg">
@@ -49,5 +52,6 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
         </nav>
       </div>
     </header>
+    </>
   );
 }

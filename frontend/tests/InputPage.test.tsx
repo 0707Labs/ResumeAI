@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, api } from "@/lib/api";
 import { STORAGE_KEY, useSession } from "@/lib/store";
-import InputPage from "@/app/app/page";
+import InputPage from "@/app/app/tailor/page";
 
 import { JD_TEXT, analysis, jd, resume } from "./fixtures";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
-  usePathname: () => "/app",
+  usePathname: () => "/app/tailor",
 }));
 
 beforeEach(() => {
@@ -52,7 +52,7 @@ describe("Step 1: input screen", () => {
     await fillJD(user);
     await user.click(screen.getByRole("button", { name: /analyze/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/analysis"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/tailor/analysis"));
     // The user's title overrides the parser's guess.
     expect(analyze.mock.calls[0][1].title).toBe("Senior Data Analyst");
     expect(useSession.getState().analysis).toEqual(analysis);
@@ -71,7 +71,7 @@ describe("Step 1: input screen", () => {
     await fillJD(user);
     await user.click(screen.getByRole("button", { name: /analyze/i }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/analysis"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/tailor/analysis"));
     expect(parseText).toHaveBeenCalledWith("Asha Rao\nExperience\n• Did things");
   });
 

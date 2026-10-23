@@ -16,6 +16,7 @@ from app.auth.events import log_auth_event
 from app.auth.signing import sign, unsign
 from app.auth.tokens import hash_token, new_token
 from app.db.models import PendingAuth
+from app.profile import avatars
 
 PENDING_TTL = timedelta(minutes=15)
 Provider = Literal["google", "github", "email"]
@@ -37,6 +38,7 @@ async def create_pending(
     provider: Provider,
     provider_account_id: str,
     verified_email: str | None,
+    picture_url: str | None = None,
 ) -> PendingAuth:
     """Replace this browser's pending identity with a new one and commit."""
     old = _token(request)
@@ -49,6 +51,7 @@ async def create_pending(
         provider=provider,
         provider_account_id=provider_account_id,
         verified_email=verified_email,
+        picture_url=picture_url if avatars.provider_picture_ok(picture_url) else None,
         expires_at=datetime.now(UTC) + PENDING_TTL,
     )
     db.add(pending)

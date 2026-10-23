@@ -22,6 +22,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin import settings as runtime
 from app.auth.account import AccountError, link
 from app.auth.csrf import require_csrf
 from app.auth.events import log_auth_event
@@ -35,9 +36,9 @@ from app.auth.signup import SignupError, complete_signup, current_notices
 from app.auth.tokens import hash_token, new_token
 from app.billing import referrals
 from app.billing.config import get_billing_config
-from app.config import get_settings
 from app.db.models import EmailToken, PendingAuth, Waitlist
 from app.db.session import get_db
+from app.profile import avatars
 
 router = APIRouter(prefix="/api")
 
@@ -87,6 +88,7 @@ class PublicConfig(BaseModel):
     """Flags the signed-out pages need (the landing page renders from these)."""
 
     invite_only: bool
+    maintenance_banner: str | None = None  # staff's notice for every page (/admin/settings)
 
 
 class InviteIn(BaseModel):
@@ -122,9 +124,9 @@ def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def after_verified_email() -> Literal["invite", "consent"]:
+async def after_verified_email(db: AsyncSession) -> Literal["invite", "consent"]:
     """A new, verified identity goes to the invite step, or straight to consent when signup is open."""
-    return "invite" if get_settings().invite_only else "consent"
+    return "invite" if await runtime.invite_only(db) else "consent"
 
 
 def per_key_limit(key: str, limit: int, window: int) -> None:
@@ -153,6 +155,7 @@ async def send_magic_link(db: AsyncSession, email: str, purpose: Literal["login"
 async def sign_in_or_gate(
     db: AsyncSession, request: Request, response: Response, *,
     provider: Literal["google", "github", "email"], provider_account_id: str, verified_email: str | None,
+    picture_url: str | None = None,
 ) -> AuthStep:
     """Shared ending of every sign-in: existing (or auto-linked) user signs in,
     anyone else becomes a pending identity at the invite (or verify-email) step."""
@@ -164,10 +167,11 @@ async def sign_in_or_gate(
     if resolved.user is not None:
         clear_pending(response)
         await start_session(db, request, response, resolved.user, provider=provider)
+        await avatars.import_provider_picture(db, resolved.user, picture_url)  # last: may roll back
         return AuthStep(next="signed_in")
-    await create_pending(db, request, response, provider=provider,
-                         provider_account_id=provider_account_id, verified_email=verified_email)
-    return AuthStep(next=after_verified_email() if verified_email else "verify_email")
+    await create_pending(db, request, response, provider=provider, provider_account_id=provider_account_id,
+                         verified_email=verified_email, picture_url=picture_url)
+    return AuthStep(next=await after_verified_email(db) if verified_email else "verify_email")
 
 
 # --- magic link ------------------------------------------------------------------------------
@@ -246,7 +250,7 @@ async def email_verify(body: TokenIn, request: Request, response: Response,
     await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id)
                      .values(kind="signup", verified_email=email))
     await db.commit()
-    return AuthStep(next=after_verified_email())
+    return AuthStep(next=await after_verified_email(db))
 
 
 async def _finish_email_link(db: AsyncSession, request: Request, response: Response,
@@ -272,8 +276,9 @@ async def _finish_email_link(db: AsyncSession, request: Request, response: Respo
 
 
 @router.get("/auth/config")
-async def public_config() -> PublicConfig:
-    return PublicConfig(invite_only=get_settings().invite_only)
+async def public_config(db: AsyncSession = Depends(get_db)) -> PublicConfig:
+    values = (await runtime.read_all(db)).values
+    return PublicConfig(invite_only=values.invite_only, maintenance_banner=values.maintenance_banner or None)
 
 
 @router.get("/auth/pending")
@@ -284,14 +289,14 @@ async def get_pending(request: Request, db: AsyncSession = Depends(get_db)) -> P
         raise _fail(404, "pending_expired")
     bound = bool(pending.verified_email) and await find_bound(db, pending.verified_email) is not None
     return PendingView(kind=pending.kind, provider=pending.provider, email=pending.verified_email,
-                       invite_required=get_settings().invite_only,
+                       invite_required=await runtime.invite_only(db),
                        invite_accepted=pending.invite_id is not None or pending.referral_invite,
                        has_bound_invite=bound, has_referral_invite=await _referral_invite(db, request))
 
 
 async def _referral_invite(db: AsyncSession, request: Request) -> bool:
-    config = get_billing_config()
-    if not (get_settings().invite_only and config.referrals.enabled):
+    config = await runtime.live_config(db, get_billing_config())
+    if not (await runtime.invite_only(db) and config.referrals.enabled):
         return False
     referrer = await referrals.referrer_for(db, request.cookies.get(referrals.COOKIE))
     return referrer is not None and await referrals.invites_left(db, config, referrer.id) > 0
@@ -345,7 +350,7 @@ async def signup_complete(body: CompleteIn, request: Request, response: Response
     pending = await load_pending(db, request, lock=True)
     if pending is None:
         raise _fail(400, "pending_expired")
-    provider = pending.provider
+    provider, picture_url = pending.provider, pending.picture_url
     try:
         user = await complete_signup(db, pending, notice_ids=dict(body.notice_ids),
                                      research_opt_in=body.research_opt_in, ip=_ip(request),
@@ -358,6 +363,7 @@ async def signup_complete(body: CompleteIn, request: Request, response: Response
     log_auth_event("signup_completed", user_id=user.id, provider=provider)
     clear_pending(response)
     await start_session(db, request, response, user, provider=provider)
+    await avatars.import_provider_picture(db, user, picture_url)  # last: may roll back
     return AuthStep(next="signed_in")
 
 

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
@@ -18,13 +18,16 @@ from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.signing import sign, unsign
 from app.billing import analyses, referrals
+from app.admin import settings as runtime
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import parse_analysis_id
 from app.config import get_settings
 from app.db.models import Analysis, Download, User
+from app.db.rls import service_scope
 from app.db.session import get_db
 from app.export.preview import render_preview
 from app.export.render import to_docx, to_pdf
+from app.admin import counters, quality
 from app.llm.client import LLM, get_llm
 from app.mentor import build_advice, polish
 from app.models import (
@@ -86,7 +89,7 @@ def ats_weights() -> dict[str, float]:
 async def parse_resume(file: UploadFile = File(...)) -> Resume:
     data = await file.read(MAX_BYTES + 1)
     try:
-        return parse_resume_file(data, file.filename or "")
+        parsed = parse_resume_file(data, file.filename or "")
     except ExtractionError as exc:
         if len(data) > MAX_BYTES:
             status = 413
@@ -94,7 +97,12 @@ async def parse_resume(file: UploadFile = File(...)) -> Resume:
             status = 415
         else:
             status = 422
+        counters.bump(f"resume_parse.failed.{status}")  # a count for /admin/quality; nothing about the file
         raise HTTPException(status_code=status, detail=str(exc)) from exc
+    counters.bump("resume_parse.ok")
+    for code in {w.code.value for w in parsed.parse_warnings}:
+        counters.bump(f"resume_parse.warning.{code}")
+    return parsed
 
 
 class JDInput(BaseModel):
@@ -161,8 +169,13 @@ async def tailor_resume(body: TailorRequest, billed: Analysis | None = Depends(b
         billed.tailored = result.model_dump(mode="json")
         billed.llm_tailored = llm is not None and not any(n.startswith(RULES_FALLBACK) for n in result.notes)
         billed.tailored_at = func.now()
+        for key, value in quality.tailor_counts(result).items():  # counts for /admin/quality
+            setattr(billed, key, value)
         if billed.user_id is not None:
-            await referrals.on_first_tailoring(db, config, billed.user_id)
+            async with service_scope(db):  # the reward goes to the referrer: another user's rows
+                # Rewards follow the runtime referral settings. Only here: signed-out,
+                # rules-only use never touches the database.
+                await referrals.on_first_tailoring(db, await runtime.live_config(db, config), billed.user_id)
         await db.commit()
     return result
 
@@ -226,9 +239,7 @@ class ScoreResponse(BaseModel):
     delta: float | None = None
 
 
-@router.post("/api/ats/score")
-def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis)) -> ScoreResponse:
-    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
+def _score(body: ScoreRequest, llm) -> ScoreResponse:
     before = score(body.resume, body.jd, llm=llm)
     if body.tailored is None:
         return ScoreResponse(before=before)
@@ -236,6 +247,22 @@ def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analy
     after = score(apply_tailoring(body.resume, checked, approved_only=body.approved_only),
                   body.jd, llm=llm)
     return ScoreResponse(before=before, after=after, delta=round(after.total - before.total, 1))
+
+
+@router.post("/api/ats/score")
+async def ats_score(body: ScoreRequest, billed: Analysis | None = Depends(billed_analysis),
+                    db: AsyncSession = Depends(get_db)) -> ScoreResponse:
+    """For a signed-in analysis the latest scores are kept on it (numbers only) for the
+    dashboard and resume lists."""
+    pinned = pinned_to(billed, body.resume, body.jd)
+    llm, _ = claude_for(body.use_llm, pinned)
+    result = await run_in_threadpool(_score, body, llm)
+    if pinned is not None:
+        pinned.ats_before = round(result.before.total, 1)
+        if result.after is not None:
+            pinned.ats_after = round(result.after.total, 1)
+        await db.commit()
+    return result
 
 
 class MentorRequest(BaseModel):
@@ -246,13 +273,25 @@ class MentorRequest(BaseModel):
     use_llm: bool = True
 
 
-@router.post("/api/mentor")
-def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysis)) -> MentorAdvice:
+def _mentor(body: MentorRequest, llm) -> MentorAdvice:
     analysis = body.analysis or analyze(body.resume, body.jd)
     ats = body.ats or score(body.resume, body.jd)
     advice = build_advice(body.resume, body.jd, analysis, ats)
-    llm, _ = claude_for(body.use_llm, pinned_to(billed, body.resume, body.jd))
     return polish(advice, llm) if llm is not None else advice
+
+
+@router.post("/api/mentor")
+async def mentor(body: MentorRequest, billed: Analysis | None = Depends(billed_analysis),
+                 db: AsyncSession = Depends(get_db)) -> MentorAdvice:
+    """For a signed-in analysis the first suggested action is kept as the dashboard's
+    mentor tip (cleared by the retention purge with the rest of the analysis text)."""
+    pinned = pinned_to(billed, body.resume, body.jd)
+    llm, _ = claude_for(body.use_llm, pinned)
+    advice = await run_in_threadpool(_mentor, body, llm)
+    if pinned is not None and advice.actions:
+        pinned.mentor_tip = advice.actions[0].text[:1000]
+        await db.commit()
+    return advice
 
 
 _SAMPLES = Path(__file__).resolve().parent.parent / "samples"
@@ -365,7 +404,9 @@ async def request_download(
         raise HTTPException(status_code=404, detail="analysis_not_found") from None
     except analyses.AnalysisPurged:
         raise HTTPException(status_code=410, detail="analysis_expired") from None
-    final = _final(Resume.model_validate(row.resume), body.tailored, body.analysis, row.jd.get("raw_text", ""))
+    resume = Resume.model_validate(row.resume)
+    checked = reverify(body.tailored, resume, body.analysis, row.jd.get("raw_text", ""))
+    final = apply_tailoring(resume, checked, approved_only=True)
     try:
         paid = await analyses.pay_for_download(db, config, user.id, analysis_id, fmt=fmt,
                                                final_resume=final.model_dump(mode="json"))
@@ -381,6 +422,8 @@ async def request_download(
         await db.rollback()
         raise
     download = paid.download
+    # What the user approved and rejected, as counts for /admin/quality (the latest download wins).
+    await db.execute(update(Analysis).where(Analysis.id == analysis_id).values(**quality.download_counts(checked)))
     await db.commit()
     expires = datetime.now(UTC) + timedelta(seconds=config.downloads.url_ttl_seconds)
     token = sign(_LINK, f"{download.id}:{int(expires.timestamp())}")

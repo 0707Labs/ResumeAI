@@ -1,12 +1,12 @@
-"""Continue with Google / GitHub, and "Connect" from /account.
+"""Continue with Google / GitHub, and "Connect" from /app/profile.
 
 GET /api/auth/{provider}/start[?intent=link]  -> 302 to the provider (state + PKCE + nonce in a signed cookie)
 GET /api/auth/{provider}/callback             -> 302 to where the user goes next:
     signed in                    -> the `next` page (allowlisted), default /app
     new, verified email          -> /signup/invite, or /signup/consent when signup is open (no user row yet)
     new, no verified email       -> /signup/verify-email
-    linked (intent=link)         -> /account?linked=<provider>
-    failure                      -> /signin?error=<code>  (link flows: /account?error=<code>)
+    linked (intent=link)         -> /app/profile?linked=<provider>
+    failure                      -> /signin?error=<code>  (link flows: /app/profile?error=<code>)
 
 Both are top-level browser navigations (GETs), so CSRF is covered by `state`."""
 
@@ -24,6 +24,7 @@ from app.auth.events import log_auth_event
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import SignedIn, resolve_session, start_session
 from app.db.session import get_db
+from app.profile import avatars
 
 router = APIRouter(prefix="/api/auth")
 
@@ -32,7 +33,7 @@ NEXT_STEP = {"invite": "/signup/invite", "consent": "/signup/consent", "verify_e
 
 def _failed(provider: str, code: str, intent: str = "login") -> RedirectResponse:
     log_auth_event("oauth_failed", outcome="denied", provider=provider, reason=code)  # type: ignore[arg-type]
-    page = "/account" if intent == "link" else "/signin"
+    page = "/app/profile" if intent == "link" else "/signin"
     return RedirectResponse(f"{page}?error={code}", status_code=302)
 
 
@@ -91,6 +92,7 @@ async def callback(
         step = await sign_in_or_gate(
             db, request, response, provider=identity.provider,
             provider_account_id=identity.provider_account_id, verified_email=identity.verified_email,
+            picture_url=identity.picture_url,
         )
     except HTTPException as exc:
         return fail(str(exc.detail))
@@ -115,5 +117,6 @@ async def _finish_link(db, request, response, flow, identity, fail) -> RedirectR
         return fail(exc.code)
     if result == "linked":
         await start_session(db, request, response, user, provider=identity.provider, event="account_linked")
-    response.headers["location"] = f"/account?linked={identity.provider}"
+        await avatars.import_provider_picture(db, user, identity.picture_url)  # last: may roll back
+    response.headers["location"] = f"/app/profile?linked={identity.provider}"
     return response

@@ -13,9 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.signing import ip_ref, subject_ref
+from app.admin import settings as runtime
 from app.billing import ledger, referrals
 from app.billing.config import get_billing_config
-from app.config import get_settings
 from app.db.models import (
     Account,
     ConsentNotice,
@@ -77,16 +77,17 @@ async def complete_signup(
     if pending.kind != "signup" or not pending.verified_email:
         raise SignupError("email_unverified")
     by_referral = pending.invite_id is None and pending.referral_invite
-    if pending.invite_id is None and not by_referral and get_settings().invite_only:
-        raise SignupError("invite_required")
     pending_id, email, invite_id = pending.id, pending.verified_email, pending.invite_id
-    config = get_billing_config()
-    if by_referral and get_settings().invite_only:
+    # billing.toml plus what staff changed at runtime (invite-only, quota, rewards, starter credits).
+    current = await runtime.read_all(db, get_billing_config())
+    config, invite_only = runtime.apply(get_billing_config(), current.values), current.values.invite_only
+    if invite_id is None and not by_referral and invite_only:
+        raise SignupError("invite_required")
+    if by_referral and invite_only:
         referrer = await referrals.referrer_for(db, referral_code)
-        if referrer is not None:
-            await ledger.lock_user(db, referrer.id)  # serializes use of this referrer's invites
-        if referrer is None or not config.referrals.enabled or await referrals.invites_left(
-                db, config, referrer.id) == 0:
+        # take_invite_slot locks the referrer's row: concurrent sign-ups can't exceed the quota.
+        if referrer is None or not config.referrals.enabled or not await referrals.take_invite_slot(
+                db, config, referrer.id):
             await db.rollback()
             await db.execute(update(PendingAuth).where(PendingAuth.id == pending_id).values(referral_invite=False))
             await db.commit()
@@ -102,6 +103,8 @@ async def complete_signup(
     # re-checks the WHERE on the updated row, so the loser sees uses = max_uses.
     # Open signup (RT_INVITE_ONLY off) may arrive with no invite at all.
     now = datetime.now(UTC)
+    invited_by: uuid.UUID | None = None  # a friend's personal email invite: they're the referrer
+    invite_bonus = 0  # an admin code's bonus credits
     if invite_id is not None:
         consumed = (await db.execute(
             update(Invite)
@@ -113,8 +116,12 @@ async def complete_signup(
                 or_(Invite.email.is_(None), Invite.email == email),
             )
             .values(uses=Invite.uses + 1)
-            .returning(Invite.id)
-        )).scalar_one_or_none()
+            .returning(Invite.id, Invite.kind, Invite.created_by, Invite.bonus_credits)
+        )).one_or_none()
+        if consumed is not None and consumed.kind == "personal":
+            invited_by = consumed.created_by
+        if consumed is not None:
+            invite_bonus = consumed.bonus_credits or 0
         if consumed is None:
             await db.rollback()
             # Send them back to the invite step.
@@ -153,7 +160,16 @@ async def complete_signup(
         )
         for p in purposes
     ])
-    await referrals.attribute(db, config, user, referral_code, ip_hmac=ip_hmac, used_as_invite=by_referral)
+    await referrals.attribute(db, config, user, referral_code, ip_hmac=ip_hmac, used_as_invite=by_referral,
+                              referrer_id=invited_by)
+    # Starter credits ([signup].bonus_credits or its runtime setting) and an invite code's
+    # bonus, through the ledger like every credit; keyed so each is granted once.
+    if config.signup.bonus_credits > 0:
+        await ledger.grant(db, user.id, config.signup.bonus_credits, reason="signup_bonus",
+                           idempotency_key=f"signup-bonus:{user.id}", note="starter credits")
+    if invite_bonus > 0:
+        await ledger.grant(db, user.id, invite_bonus, reason="signup_bonus", idempotency_key=f"invite-bonus:{user.id}",
+                           reference_id=str(invite_id), note="invite code bonus")
     await db.execute(delete(PendingAuth).where(PendingAuth.id == pending_id))
     await db.commit()
     return user

@@ -12,7 +12,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import select, update
+from sqlalchemy import null, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,7 +50,7 @@ async def process_webhook(db: AsyncSession, provider: PaymentProvider, config: B
             update(ProcessedWebhookEvent).where(
                 ProcessedWebhookEvent.provider == provider.name,
                 ProcessedWebhookEvent.event_id == event.event_id,
-            ).values(processed_at=datetime.now(UTC), outcome=outcome)
+            ).values(processed_at=datetime.now(UTC), outcome=outcome, payload=null())  # SQL NULL, not JSON null
         )
         await db.commit()
     except Exception as exc:
@@ -72,10 +72,12 @@ async def _record_failure(db: AsyncSession, provider: str, event: WebhookEvent, 
         failures = await db.scalar(
             insert(ProcessedWebhookEvent).values(
                 provider=provider, event_id=event.event_id, event_type=event.type,
-                occurred_at=event.occurred_at, failures=1, last_error=error,
+                occurred_at=event.occurred_at, failures=1, last_error=error, payload=dict(event.data),
             ).on_conflict_do_update(
                 index_elements=["provider", "event_id"],
-                set_={"failures": ProcessedWebhookEvent.failures + 1, "last_error": error},
+                # The verified data, kept while failing so staff can replay it (cleared on success).
+                set_={"failures": ProcessedWebhookEvent.failures + 1, "last_error": error,
+                      "payload": dict(event.data)},
             ).returning(ProcessedWebhookEvent.failures)
         ) or 0
         await db.commit()
@@ -83,3 +85,19 @@ async def _record_failure(db: AsyncSession, provider: str, event: WebhookEvent, 
         await db.rollback()
     log.error("webhook %s %s failed: %s", event.type, event.event_id, error)
     return failures
+
+
+class NotReplayable(Exception):
+    """The delivery is processed already, or has no stored payload."""
+
+
+async def replay(db: AsyncSession, provider: PaymentProvider, config: BillingConfig, event_id: str) -> Result:
+    """Run a failed delivery again from its stored, already-verified data. Idempotent:
+    the same path as a live delivery, so a processed event is never applied twice."""
+    row = await db.scalar(select(ProcessedWebhookEvent).where(
+        ProcessedWebhookEvent.provider == provider.name, ProcessedWebhookEvent.event_id == event_id))
+    if row is None or row.processed_at is not None or row.payload is None:
+        raise NotReplayable(event_id)
+    event = WebhookEvent(event_id=row.event_id, type=row.event_type, occurred_at=row.occurred_at, data=row.payload)
+    await db.rollback()  # release the read; process_webhook takes its own lock
+    return await process_webhook(db, provider, config, event)

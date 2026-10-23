@@ -7,7 +7,9 @@ import { E2E_WEBHOOK_SECRET } from "./e2e/helpers";
 // so a backend you started with ANTHROPIC_API_KEY set will make the spec fail its
 // rules-only check; stop it first.
 // E2E_WEB_URL / E2E_API_URL run a second copy beside servers you already have on
-// :3000/:8000 (e.g. http://127.0.0.1:3100 and http://127.0.0.1:8100).
+// :3000/:8000 (e.g. http://localhost:3100 and http://localhost:8100). Use localhost, not
+// 127.0.0.1: Next's dev server blocks its scripts for other hosts, so pages never hydrate.
+// Stop any `next dev` already running in this folder first; Next allows one per folder.
 const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
 const API = process.env.E2E_API_URL ?? "http://localhost:8000";
 const port = (url: string) => new URL(url).port;

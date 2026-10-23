@@ -3,6 +3,8 @@
     python -m app.billing.cli check-alerts
     python -m app.billing.cli adjust-credits USER_ID DELTA --note "why" [--key KEY]
     python -m app.billing.cli purge-expired
+    python -m app.billing.cli refresh-aggregates [--days N]
+    python -m app.billing.cli budget-check
 
 check-alerts prints current alerts (failing webhooks, daily LLM spend over the threshold,
 unpriced models) and exits 1 if there are any, so a cron job can notify on it.
@@ -16,6 +18,13 @@ prints how many rows it cleared. Safe to run any time and as often as you like; 
 daily from cron, e.g.
 
     15 3 * * * cd /srv/resume-tailor/backend && .venv/bin/python -m app.billing.cli purge-expired
+
+refresh-aggregates recomputes the dashboard's daily Claude-cost and revenue rollups for
+the last N days (default 3; app.billing.aggregates). budget-check sends the 50/80/100%
+Claude budget alerts once each (app.billing.budget). Suggested cron:
+
+    */15 * * * * ... python -m app.billing.cli refresh-aggregates
+    */5 * * * *  ... python -m app.billing.cli budget-check
 """
 
 import argparse
@@ -23,7 +32,7 @@ import asyncio
 import sys
 import uuid
 
-from app.billing import ledger
+from app.billing import aggregates, budget, ledger
 from app.billing.admin import alerts
 from app.billing.config import get_billing_config
 from app.billing.retention import purge_expired
@@ -66,6 +75,27 @@ async def purge() -> int:
     return 0
 
 
+async def refresh_aggregates(days: int) -> int:
+    try:
+        async with get_sessionmaker()() as db:
+            out = await aggregates.refresh(db, get_billing_config(), days)
+    finally:
+        await get_engine().dispose()
+    print(f"Refreshed from {out['from']}: {out['llm_rows']} cost rows, {out['revenue_rows']} revenue rows.")
+    return 0
+
+
+async def budget_check() -> int:
+    try:
+        async with get_sessionmaker()() as db:
+            sent = await budget.check_and_alert(db)
+    finally:
+        await get_engine().dispose()
+    for period, threshold in sent:
+        print(f"Alerted: {period} at {threshold}%")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.billing.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -76,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
     adj.add_argument("--note", required=True)
     adj.add_argument("--key", help="idempotency key (reuse it to retry safely)")
     sub.add_parser("purge-expired", help="clear resume text past its [retention] period (run daily)")
+    agg = sub.add_parser("refresh-aggregates", help="recompute the dashboard's daily rollups")
+    agg.add_argument("--days", type=int, default=3)
+    sub.add_parser("budget-check", help="send Claude budget alerts (50/80/100%%), once each")
     args = parser.parse_args(argv)
     if args.command == "check-alerts":
         return asyncio.run(check_alerts())
@@ -86,6 +119,12 @@ def main(argv: list[str] | None = None) -> int:
                                           args.key or f"admin:{uuid.uuid4()}"))
     if args.command == "purge-expired":
         return asyncio.run(purge())
+    if args.command == "refresh-aggregates":
+        if not 1 <= args.days <= 2000:
+            parser.error("--days must be between 1 and 2000")
+        return asyncio.run(refresh_aggregates(args.days))
+    if args.command == "budget-check":
+        return asyncio.run(budget_check())
     return 2
 
 

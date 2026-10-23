@@ -60,12 +60,12 @@ export function CreditsLive() {
   return (
     <>
       {balance !== null && (
-        <Link href="/account/billing" data-testid="credits-balance"
+        <Link href="/app/billing" data-testid="credits-balance"
           className="flex min-h-9 items-center rounded-lg px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-fg">
           {balance} credit{balance === 1 ? "" : "s"}
         </Link>
       )}
-      <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-20 right-4 z-50 md:bottom-4">
         {notice && (
           <div className="pointer-events-auto rounded-xl border border-ok/30 bg-ok-bg px-4 py-3 text-sm font-medium text-ok shadow-lg">
             {notice}

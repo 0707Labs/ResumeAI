@@ -10,25 +10,29 @@ transaction. Every token is stored only as a sha256 hash.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Numeric,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Identity,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING = {
@@ -49,6 +53,7 @@ LEDGER_REASONS = (
     "referral", "admin_adjust", "purchase_reversal",
 )
 CONSENT_PURPOSES = ("service", "research", "age_18_plus", "waitlist")
+ROLES = ("user", "support", "admin", "superadmin")  # app.auth.roles maps them to capabilities
 
 
 class Base(DeclarativeBase):
@@ -88,14 +93,23 @@ class User(Base):
     # same transaction as the ledger row. Its row lock serializes a user's credit changes.
     credits_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     referral_code: Mapped[str | None] = mapped_column(Text, unique=True)  # made on first use
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # first-login wizard done/skipped
+    avatar_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # no provider picture again
+    phone: Mapped[str | None] = mapped_column(Text)  # optional, E.164
+    # Invite slots used (email invites + referral-link sign-ups). Changed only by the
+    # create_user_invite / revoke_user_invite / take_invite_slot functions (migration 0013).
+    invites_created: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("credits_balance >= 0", name="credits_balance"),
-        CheckConstraint(_in("role", ("user", "admin")), name="role"),
+        CheckConstraint("invites_created >= 0", name="invites_created"),
+        CheckConstraint(_in("role", ROLES), name="role"),
         CheckConstraint(_in("status", ("active", "suspended")), name="status"),
+        CheckConstraint("phone IS NULL OR phone ~ '^\\+[1-9][0-9]{6,14}$'", name="phone"),
         Index("users_email_live", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
         Index("users_deleted_at", "deleted_at", postgresql_where=text("deleted_at IS NOT NULL")),
+        Index("ix_users_staff", "role", postgresql_where=text("role <> 'user'")),
     )
 
 
@@ -134,6 +148,7 @@ class AuthSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    reauth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # step-up for superadmin actions
 
 
 class Invite(Base):
@@ -153,12 +168,21 @@ class Invite(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="admin")  # admin | personal | waitlist
+    campaign: Mapped[str | None] = mapped_column(Text)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
     __table_args__ = (
         CheckConstraint("email IS NULL OR email = lower(email)", name="email_lower"),
         CheckConstraint("max_uses >= 1", name="max_uses"),
         CheckConstraint("uses >= 0 AND uses <= max_uses", name="uses"),
         CheckConstraint("bonus_credits IS NULL OR bonus_credits >= 0", name="bonus_credits"),
+        CheckConstraint(_in("kind", ("admin", "personal", "waitlist")), name="kind"),
+        CheckConstraint("campaign IS NULL OR length(campaign) <= 80", name="campaign_len"),
+        CheckConstraint("kind <> 'personal' OR (created_by IS NOT NULL AND email IS NOT NULL AND max_uses = 1)",
+                        name="personal"),
+        Index("ix_invites_created_by_created", "created_by", "created_at", postgresql_where=text("created_by IS NOT NULL")),
+        Index("ix_invites_batch_id", "batch_id", postgresql_where=text("batch_id IS NOT NULL")),
     )
 
 
@@ -243,11 +267,12 @@ class Waitlist(Base):
     )
     created_at: Mapped[datetime] = _created_at()
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="email_lower"),
         CheckConstraint("source IS NULL OR length(source) <= 100", name="source_len"),
-        CheckConstraint(_in("status", ("waiting", "invited", "converted")), name="status"),
+        CheckConstraint(_in("status", ("waiting", "invited", "converted", "rejected")), name="status"),
         Index("ix_waitlist_status_created", "status", "created_at"),
     )
 
@@ -271,6 +296,7 @@ class PendingAuth(Base):
     )
     # Invite-only mode: a referral link stands in for the invite (checked again at sign-up).
     referral_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    picture_url: Mapped[str | None] = mapped_column(Text)  # the provider's picture, imported after sign-up
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = _created_at()
 
@@ -284,6 +310,8 @@ class PendingAuth(Base):
         # verified one may carry an invite.
         CheckConstraint("kind = 'needs_email' OR verified_email IS NOT NULL", name="signup_has_email"),
         CheckConstraint("invite_id IS NULL OR kind = 'signup'", name="invite_only_signup"),
+        CheckConstraint("picture_url IS NULL OR (picture_url LIKE 'https://%' AND length(picture_url) <= 1000)",
+                        name="picture_url"),
     )
 
 
@@ -478,11 +506,14 @@ class ProcessedWebhookEvent(Base):
     outcome: Mapped[str | None] = mapped_column(Text)
     failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text)
+    # The verified event data, kept only while the delivery is failing (staff can replay it).
+    payload: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (
         CheckConstraint("outcome IS NULL OR " + _in("outcome", ("processed", "ignored", "flagged")),
                         name="outcome"),
         CheckConstraint("(processed_at IS NULL) = (outcome IS NULL)", name="outcome_when_processed"),
+        CheckConstraint("payload IS NULL OR processed_at IS NULL", name="payload_while_failing"),
         Index("ix_processed_webhook_events_failing", "received_at",
               postgresql_where=text("processed_at IS NULL")),
     )
@@ -540,6 +571,10 @@ class BillingReview(Base):
     )
 
 
+LLM_STATUSES = ("ok", "refused", "truncated", "invalid", "error", "rate_limited")
+ENTITLEMENTS = ("free", "pass", "pro", "credit")
+
+
 class LlmUsage(Base):
     """One row per Claude call: tokens and cost, for spend tracking and cost per analysis.
     analysis_id is the server-side analyses.id the call was billed to (set only after the
@@ -558,8 +593,17 @@ class LlmUsage(Base):
     cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6))  # NULL: model not priced in billing.toml
     created_at: Mapped[datetime] = _created_at()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="ok")  # see LLM_STATUSES
+    error_code: Mapped[str | None] = mapped_column(Text)
 
-    __table_args__ = (Index("ix_llm_usage_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_llm_usage_created_at", "created_at"),
+        CheckConstraint(_in("status", LLM_STATUSES), name="status"),
+        CheckConstraint("error_code IS NULL OR length(error_code) <= 80", name="error_code_len"),
+        Index("ix_llm_usage_user_created", "user_id", "created_at", postgresql_where=text("user_id IS NOT NULL")),
+    )
 
 
 DOWNLOAD_FORMATS = ("docx", "pdf")
@@ -593,15 +637,42 @@ class Analysis(Base):
     usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+    # Metadata for lists and the dashboard (0011). mentor_tip is text, so the purge clears it.
+    resume_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"))
+    job_title: Mapped[str | None] = mapped_column(Text)
+    company: Mapped[str | None] = mapped_column(Text)
+    ats_before: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    ats_after: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    mentor_tip: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # deleting purges at once
+    entitlement: Mapped[str | None] = mapped_column(Text)  # what allowed the run: free, pass, pro, credit
+    # Verifier counts for /admin/quality (0016), metadata only: set when Claude/rules tailor
+    # (generated, blocked rewrites, bullets with a warning) and at each paid download
+    # (approved, rejected, warnings approved anyway). They survive the purge.
+    bullets_generated: Mapped[int | None] = mapped_column(Integer)
+    bullets_blocked: Mapped[int | None] = mapped_column(Integer)
+    bullets_flagged: Mapped[int | None] = mapped_column(Integer)
+    bullets_approved: Mapped[int | None] = mapped_column(Integer)
+    bullets_rejected: Mapped[int | None] = mapped_column(Integer)
+    flag_overrides: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
         CheckConstraint("(tailored_at IS NULL) = (llm_tailored IS NULL) AND (tailored IS NULL OR tailored_at IS NOT NULL)"
                         " AND (purged_at IS NOT NULL OR (tailored IS NULL) = (tailored_at IS NULL))", name="tailored"),
         CheckConstraint("(purged_at IS NULL) = (resume IS NOT NULL) AND (purged_at IS NULL) = (jd IS NOT NULL)"
-                        " AND (purged_at IS NULL OR tailored IS NULL)", name="purged"),
+                        " AND (purged_at IS NULL OR tailored IS NULL) AND (purged_at IS NULL OR mentor_tip IS NULL)",
+                        name="purged"),
+        CheckConstraint("(ats_before IS NULL OR ats_before BETWEEN 0 AND 100)"
+                        " AND (ats_after IS NULL OR ats_after BETWEEN 0 AND 100)", name="ats"),
+        CheckConstraint("(job_title IS NULL OR length(job_title) <= 200) AND (company IS NULL OR length(company) <= 200)"
+                        " AND (mentor_tip IS NULL OR length(mentor_tip) <= 1000)", name="meta_len"),
+        CheckConstraint("deleted_at IS NULL OR purged_at IS NOT NULL", name="deleted"),
+        CheckConstraint("entitlement IS NULL OR " + _in("entitlement", ENTITLEMENTS), name="entitlement"),
         Index("ix_analyses_user_created", "user_id", "created_at"),
         Index("ix_analyses_unpurged_created", "created_at", postgresql_where=text("purged_at IS NULL")),
+        Index("ix_analyses_resume_id", "resume_id", postgresql_where=text("resume_id IS NOT NULL")),
     )
 
 
@@ -688,4 +759,297 @@ class Referral(Base):
         Index("ix_referrals_referrer_created", "referrer_id", "created_at"),
         Index("ix_referrals_review", "created_at", postgresql_where=text("needs_review")),
         Index("ix_referrals_ip", "ip_hmac", "created_at", postgresql_where=text("ip_hmac IS NOT NULL")),
+    )
+
+
+class AdminAuditLog(Base):
+    """One row per staff mutation, written in the mutation's own transaction (app.admin.audit).
+    Append-only by trigger; no foreign keys, so entries outlive what they describe.
+    before/after are summaries (ids, amounts, flags), never resume or JD text or secrets."""
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # NULL = system
+    actor_role: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)  # "<area>.<verb>", e.g. "credits.adjust"
+    target_type: Mapped[str | None] = mapped_column(Text)
+    target_id: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    before: Mapped[dict | None] = mapped_column(JSONB)
+    after: Mapped[dict | None] = mapped_column(JSONB)
+    ip_hmac: Mapped[str | None] = mapped_column(Text)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("actor_role", ("system", *ROLES)), name="actor_role"),
+        CheckConstraint("action ~ '^[a-z_]+\\.[a-z_]+$'", name="action"),
+        CheckConstraint("reason IS NULL OR length(reason) <= 500", name="reason_len"),
+        CheckConstraint("user_agent IS NULL OR length(user_agent) <= 300", name="ua_len"),
+        Index("ix_admin_audit_log_created_at", "created_at"),
+        Index("ix_admin_audit_log_actor_created", "actor_id", "created_at"),
+        Index("ix_admin_audit_log_target", "target_type", "target_id", "created_at"),
+    )
+
+
+class AppSetting(Base):
+    """Runtime switches that override env/billing.toml defaults (app.admin.settings)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (CheckConstraint("key ~ '^[a-z][a-z0-9_]{0,63}$'", name="key"),)
+
+
+SENIORITY_LEVELS = ("intern", "junior", "mid", "senior", "lead", "principal")
+WORK_MODES = ("remote", "hybrid", "onsite")
+EMPLOYMENT_TYPES = ("full_time", "part_time", "contract", "internship", "freelance")
+RESUME_SOURCES = ("upload", "paste", "edit")
+
+
+class JobPreferences(Base):
+    """What the user is looking for (onboarding step 2, profile tab). One row per user."""
+
+    __tablename__ = "job_preferences"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    target_roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    seniority: Mapped[str | None] = mapped_column(Text)
+    industries: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    locations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    work_modes: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    employment_types: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]"))
+    notice_period_days: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("seniority IS NULL OR " + _in("seniority", SENIORITY_LEVELS), name="seniority"),
+        CheckConstraint("work_modes <@ ARRAY[" + ", ".join(repr(v) for v in WORK_MODES) + "]::text[]",
+                        name="work_modes"),
+        CheckConstraint("employment_types <@ ARRAY[" + ", ".join(repr(v) for v in EMPLOYMENT_TYPES) + "]::text[]",
+                        name="employment_types"),
+        CheckConstraint("notice_period_days IS NULL OR notice_period_days BETWEEN 0 AND 365", name="notice_period"),
+        CheckConstraint("text_list_ok(target_roles, 10, 80)", name="target_roles"),
+        CheckConstraint("text_list_ok(industries, 10, 80)", name="industries"),
+        CheckConstraint("text_list_ok(locations, 10, 80)", name="locations"),
+    )
+
+
+class SavedResume(Base):
+    """A base resume the user keeps (not purged; the user deletes it). Content lives in versions."""
+
+    __tablename__ = "resumes"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("length(title) BETWEEN 1 AND 120", name="title"),
+        Index("ix_resumes_user_created", "user_id", "created_at"),
+        Index("ix_resumes_one_default", "user_id", unique=True, postgresql_where=text("is_default")),
+    )
+
+
+class ResumeVersion(Base):
+    """One version of a saved resume: the parsed Resume JSON, bullet ids included.
+    Never updated (trigger); an edit or re-upload adds the next version."""
+
+    __tablename__ = "resume_versions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    file_name: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        UniqueConstraint("resume_id", "version"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(_in("source", RESUME_SOURCES), name="source"),
+        CheckConstraint("file_name IS NULL OR length(file_name) <= 200", name="file_name"),
+    )
+
+
+class UserAvatar(Base):
+    """The user's picture, re-encoded by us (app.profile.avatars): WebP, at most 256 KB."""
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("content_type = 'image/webp'", name="content_type"),
+        CheckConstraint("octet_length(data) BETWEEN 1 AND 262144", name="size"),
+        CheckConstraint(_in("source", ("provider", "upload")), name="source"),
+    )
+
+
+TICKET_CATEGORIES = ("support", "feedback", "fabrication_report", "grievance", "billing", "privacy")
+TICKET_STATUSES = ("open", "pending", "closed")
+
+
+class SupportTicket(Base):
+    """A message from the contact form. The user sees their own; staff work them in /admin."""
+
+    __tablename__ = "support_tickets"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
+    assignee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("analyses.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(_in("category", TICKET_CATEGORIES), name="category"),
+        CheckConstraint(_in("status", TICKET_STATUSES), name="status"),
+        CheckConstraint("length(subject) BETWEEN 1 AND 150", name="subject_len"),
+        CheckConstraint("length(body) BETWEEN 1 AND 5000", name="body_len"),
+        CheckConstraint("email = lower(email)", name="email_lower"),
+        Index("ix_support_tickets_user_created", "user_id", "created_at"),
+        Index("ix_support_tickets_open", "created_at", postgresql_where=text("status <> 'closed'")),
+    )
+
+
+class SupportTicketMessage(Base):
+    """A staff reply (emailed to the user) or an internal note (never shown to them)."""
+
+    __tablename__ = "support_ticket_messages"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", ("reply", "internal_note")), name="kind"),
+        CheckConstraint("length(body) BETWEEN 1 AND 5000", name="body_len"),
+        Index("ix_support_ticket_messages_ticket_created", "ticket_id", "created_at"),
+    )
+
+
+class DailyLlmCost(Base):
+    """One day's Claude usage per pipeline step, model and entitlement (refresh-aggregates)."""
+
+    __tablename__ = "daily_llm_costs"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    stage: Mapped[str] = mapped_column(Text, primary_key=True)
+    model: Mapped[str] = mapped_column(Text, primary_key=True)
+    entitlement: Mapped[str] = mapped_column(Text, primary_key=True)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    wasted_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    unpriced_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class DailyRevenue(Base):
+    """One day's payments per product and currency (refresh-aggregates)."""
+
+    __tablename__ = "daily_revenue"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    product_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    currency: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    payments: Mapped[int] = mapped_column(Integer, nullable=False)
+    gross_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refunded_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    disputes: Mapped[int] = mapped_column(Integer, nullable=False)
+    settled_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refunded_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    fees_usd_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unsettled: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AggregateRun(Base):
+    __tablename__ = "aggregate_runs"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BudgetAlert(Base):
+    """A budget threshold already alerted for a period, so each goes out once."""
+
+    __tablename__ = "budget_alerts"
+
+    period: Mapped[str] = mapped_column(Text, primary_key=True)
+    threshold: Mapped[int] = mapped_column(Integer, primary_key=True)
+    spend_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    budget_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    sent_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (CheckConstraint("threshold IN (50, 80, 100)", name="threshold"),)
+
+
+INTEGRATION_STATUSES = ("healthy", "degraded", "failing", "not_configured")
+
+
+class DailyCounter(Base):
+    """A plain per-day count (parse failures by code, landing views). No user, IP or content."""
+
+    __tablename__ = "daily_counters"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+
+    __table_args__ = (CheckConstraint("name ~ '^[a-z][a-z0-9_.:]{0,79}$'", name="name"),)
+
+
+class IntegrationCheck(Base):
+    """The last health check of one integration (app.admin.integrations)."""
+
+    __tablename__ = "integration_checks"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(Text)  # sanitized: never a message or a secret
+    detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    checked_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        CheckConstraint(_in("status", INTEGRATION_STATUSES), name="status"),
+        CheckConstraint("error_code IS NULL OR length(error_code) <= 120", name="error_len"),
     )

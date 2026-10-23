@@ -54,7 +54,7 @@ def test_llm_client_reports_every_response_including_refusals():
     seen = []
     refusal = response()
     refusal.stop_reason = "refusal"
-    llm = ClaudeLLM(client=StubClient(refusal), on_usage=lambda stage, r: seen.append(stage))
+    llm = ClaudeLLM(client=StubClient(refusal), on_usage=lambda stage, r, **kw: seen.append(stage))
     with pytest.raises(Exception):
         llm.parse(system="s", user="u", schema=Out)
     assert seen == ["Out"]

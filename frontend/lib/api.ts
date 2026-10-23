@@ -28,6 +28,9 @@ export type ApiErrorKind =
   | "sign_in_required"
   | "analysis_expired"
   | "rate_limited"
+  | "forbidden"
+  | "reauth_required"
+  | "analyses_paused"
   | "server";
 
 const FRIENDLY: Record<ApiErrorKind, string> = {
@@ -48,6 +51,10 @@ const FRIENDLY: Record<ApiErrorKind, string> = {
   analysis_expired:
     "The free re-download period for this resume has passed, and we've deleted our copy of it. Tailor it again to download a new file.",
   rate_limited: "That's a lot of requests in a short time. Please wait a minute and try again.",
+  forbidden: "Your account can't do that.",
+  reauth_required: "This change needs a fresh sign-in. Sign in again to confirm it's you.",
+  analyses_paused:
+    "New analyses are paused for a short while on our side. Your resume and job description are still here; try again later.",
   server: "Something went wrong on our side. Please try again in a moment.",
 };
 
@@ -80,6 +87,9 @@ export function classify(status: number, detail?: string): ApiErrorKind {
   if (status === 422 && detail && /no text found|scanned/i.test(detail)) return "no_text";
   if (status === 422 && detail && /could not read/i.test(detail)) return "unreadable_file";
   if (status === 429) return "rate_limited";
+  if (status === 401 && detail === "reauth_required") return "reauth_required";
+  if (status === 403 && detail === "forbidden") return "forbidden";
+  if (status === 503 && detail === "analyses_paused") return "analyses_paused";
   if (status >= 400 && status < 500) return "invalid_input";
   return "server";
 }

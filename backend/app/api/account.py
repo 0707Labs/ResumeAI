@@ -1,15 +1,18 @@
-"""/account: linked login methods and account deletion.
+"""/app/profile: linked login methods and account deletion.
 
 Connecting Google/GitHub starts at GET /api/auth/{provider}/start?intent=link
 (app/api/oauth.py); adding email sign-in sends a magic link bound to this user."""
 
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.signin import FIFTEEN_MIN, Accepted, EmailIn, per_key_limit, send_magic_link
@@ -20,8 +23,12 @@ from app.auth.deps import current_user
 from app.auth.events import log_auth_event
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import end_session
-from app.db.models import User
+from app.auth.signing import ip_ref, subject_ref
+from app.auth.signup import current_notices
+from app.db.models import ConsentNotice, ConsentRecord, User
+from app.db.rls import service_scope
 from app.db.session import get_db
+from app.profile.export import export_user
 
 router = APIRouter(prefix="/api/account")
 
@@ -74,7 +81,8 @@ async def link_email(body: EmailIn, user: User = Depends(current_user),
                      db: AsyncSession = Depends(get_db)) -> Accepted:
     """Email a link that adds email sign-in for this address to this account."""
     per_key_limit(f"email_addr:{hashlib.sha256(body.email.encode()).hexdigest()}", 3, FIFTEEN_MIN)
-    await send_magic_link(db, body.email, "link", user_id=user.id)
+    async with service_scope(db):  # email_tokens belong to the sign-in flow, not to the user
+        await send_magic_link(db, body.email, "link", user_id=user.id)
     return Accepted()
 
 
@@ -87,3 +95,70 @@ async def delete(body: DeleteIn, request: Request, response: Response, user: Use
     await delete_account(db, user)
     await end_session(db, request, response)
     log_auth_event("account_deleted", user_id=user_id)
+
+
+# --- privacy: consent history, the optional research consent, export ---------------------------
+
+
+class ConsentEntry(BaseModel):
+    purpose: Literal["service", "research", "age_18_plus", "waitlist"]
+    action: Literal["granted", "withdrawn"]
+    method: str
+    notice_version: str
+    notice_url: str
+    at: datetime
+
+
+class Consents(BaseModel):
+    history: list[ConsentEntry]  # newest first
+    research: bool  # the optional "help improve the product" consent, now
+    research_available: bool  # a research notice is published, so it can be granted
+
+
+async def _research_now(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    action = await db.scalar(text("SELECT action FROM current_consents WHERE user_id = :u AND purpose = 'research'"),
+                             {"u": user_id})
+    return action == "granted"
+
+
+@router.get("/consents")
+async def consents(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> Consents:
+    rows = (await db.execute(
+        select(ConsentRecord, ConsentNotice).join(ConsentNotice, ConsentNotice.id == ConsentRecord.notice_id)
+        .where(ConsentRecord.user_id == user.id).order_by(ConsentRecord.id.desc()).limit(200))).all()
+    return Consents(
+        history=[ConsentEntry(purpose=c.purpose, action=c.action, method=c.method, notice_version=n.version,
+                              notice_url=n.body_url, at=c.created_at) for c, n in rows],
+        research=await _research_now(db, user.id),
+        research_available="research" in await current_notices(db))
+
+
+class ResearchIn(BaseModel):
+    granted: bool
+
+
+@router.put("/consents/research", dependencies=[Depends(rate_limit("consent_change", 10, 60)), Depends(require_csrf)])
+async def set_research(body: ResearchIn, request: Request, user: User = Depends(current_user),
+                       db: AsyncSession = Depends(get_db)) -> Consents:
+    """Grant or withdraw the optional research consent. Recorded against the current notice
+    (append-only, like every consent); asking for the state it's already in records nothing."""
+    if await _research_now(db, user.id) != body.granted:
+        notice = (await current_notices(db)).get("research")
+        if notice is None:
+            raise HTTPException(status_code=409, detail="no_research_notice")
+        db.add(ConsentRecord(user_id=user.id, subject_ref=subject_ref(user.email), notice_id=notice.id,
+                             purpose="research", action="granted" if body.granted else "withdrawn",
+                             method="account_settings",
+                             ip_hmac=ip_ref(request.client.host if request.client else None)))
+        await db.commit()
+    return await consents(user, db)
+
+
+@router.post("/export", dependencies=[Depends(rate_limit("data_export", 3, 3600)), Depends(require_csrf)])
+async def export(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Everything we hold about you, as a JSON file (see app.profile.export)."""
+    doc = await export_user(db, user)
+    log_auth_event("data_exported", user_id=user.id)
+    name = f"resume-tailor-export-{datetime.now(UTC):%Y%m%d}.json"
+    return JSONResponse(jsonable_encoder(doc), headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})

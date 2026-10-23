@@ -10,6 +10,7 @@ from the start (over_daily_cap tells the pipeline why). Downloading is what pays
 /api/downloads in routes.py).
 """
 
+import logging
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -24,14 +25,17 @@ from app.auth.csrf import require_csrf
 from app.auth.deps import current_user
 from app.auth.ratelimit import rate_limit
 from app.auth.sessions import resolve_session
-from app.billing import analyses
+from app.billing import analyses, budget
+from app.admin import settings as runtime
 from app.billing.config import BillingConfig, get_billing_config
 from app.billing.costs import current_analysis_id, parse_analysis_id
 from app.billing.entitlements import can_start_tailoring
 from app.db.models import Analysis, User
+from app.db.rls import user_scope
 from app.db.session import get_db
 from app.models import JobDescription, Resume
 
+log = logging.getLogger("app.billing")
 router = APIRouter(prefix="/api/analyses")
 
 # True for a request whose X-Analysis-Id names the caller's analysis that was started
@@ -74,13 +78,18 @@ async def start(
     idempotency_key: str | None = Header(default=None, max_length=128),
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
-    config: BillingConfig = Depends(get_billing_config),
+    config: BillingConfig = Depends(runtime.live_billing_config),
 ) -> AnalysisOut:
     """Start an analysis. Spends nothing (the clean download is what pays). Allowed by a
     free tailoring this month, or past those by a pass, Pro or a credit balance; 402
     no_credits otherwise. Send one Idempotency-Key per Analyze click; a retry with it
     returns the same analysis. Over the daily Claude cap it still starts (and
     downloads), with claude false."""
+    # Staff paused analyses, or a Claude budget is used up with the kill switch on
+    # (app.billing.budget). Running analyses finish; new ones wait for the reset.
+    if (paused := await budget.pause_reason(db)) is not None:
+        log.warning("analysis refused: %s", paused)
+        raise HTTPException(status_code=503, detail="analyses_paused")
     try:
         started = await analyses.start_analysis(
             db, config, user.id, resume=body.resume.model_dump(mode="json"), jd=body.jd.model_dump(mode="json"),
@@ -98,7 +107,7 @@ async def start(
 async def allowance(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
-    config: BillingConfig = Depends(get_billing_config),
+    config: BillingConfig = Depends(runtime.live_billing_config),
 ) -> AllowanceOut:
     now = datetime.now(UTC)
     snap = await analyses.snapshot(db, config, user.id, user.credits_balance, now)
@@ -116,6 +125,7 @@ async def billed_analysis(request: Request, db: AsyncSession = Depends(get_db)) 
     if analysis_id is not None:
         signed_in = await resolve_session(db, request)
         if signed_in is not None and signed_in.user.status == "active":
+            await user_scope(db, signed_in.user.id)
             analysis = await analyses.usable(db, signed_in.user.id, analysis_id)
             if analysis is None:
                 capped = await db.scalar(select(Analysis.id).where(

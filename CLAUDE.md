@@ -52,10 +52,13 @@ backend/
   alembic/         migrations; hand-written, they own the schema (models must match)
   tests/           pytest; fixtures/ holds sample resumes + JDs
 frontend/
-  app/             routes: / (landing), /app workspace (input, /app/analysis, /app/review, /app/score,
-                   /app/mentor, /app/export), /signin, /signup/*, /legal/*; proxy.ts + app/app/layout.tsx
-                   guard /app; next.config.ts redirects /login and the old step paths
-  components/      AppShell, UploadDropzone, ResumePreview, ui, icons (+ later steps)
+  app/             routes: / (landing), /signin, /signup/*, /legal/*, /pricing; signed-in area /app
+                   (UserShell: /app/welcome first login, /app/dashboard, /app/tailor + /analysis /review
+                   /score /mentor /export, /app/billing, /app/invites, /app/profile); /admin (AdminShell).
+                   proxy.ts + app/app/layout.tsx and app/admin/layout.tsx guard them; next.config.ts
+                   redirects /login, /account/*, and the old step paths
+  components/      AppShell (public pages), app/ (UserShell, states, PreferencesForm), admin/, UploadDropzone,
+                   ResumePreview, ui, icons
   lib/             schemas.ts (zod mirrors of pydantic; types inferred), api.ts,
                    store.ts (zustand, sessionStorage), theme.ts, diff.ts
   tests/           vitest + Testing Library; contract.test.ts hits the real backend
@@ -79,6 +82,8 @@ frontend/
 - Frontend checks: `npm test`, `npm run typecheck`, `npm run build`;
   `npm run test:contract` with the backend running validates every endpoint against the zod schemas
 - E2E: `npm run test:e2e` (Playwright, Chromium; one-time `npx playwright install chromium`).
+  On this Mac set `PLAYWRIGHT_BROWSERS_PATH=$HOME/0707Labs/.playwright-browsers` for install and runs:
+  the default `~/Library/Caches/ms-playwright` gets cleared (docs/testing.md).
   Starts the backend in rules-only mode (empty ANTHROPIC_API_KEY) on :8000 and `npm run dev` on :3000,
   reusing servers already running there; a backend with a real key fails the spec's rules-only check.
   `E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://127.0.0.1:8100` runs a separate pair instead.
@@ -125,6 +130,19 @@ frontend/
 - Every sign-in goes through `app.auth.sessions.start_session` (rotates session + CSRF cookie).
 - State-changing auth/account endpoints depend on `rate_limit(...)` and `require_csrf`.
 - Log auth events only via `log_auth_event`: user_id at most, never email, IP, code or token.
+
+## Admin and data-access conventions (docs/admin.md)
+- Every /api/admin route depends on `require("<capability>")` (app/auth/roles.py), never a role
+  name; mutations also take `require_csrf` and an admin rate limit. tests/test_admin_security.py
+  enforces this for every route.
+- Every staff mutation calls `app.admin.audit.record()` before its commit (same transaction).
+  Summaries only: ids, counts, amounts, flags; never resume/JD text, ticket bodies or secrets.
+- Signed-in requests run as Postgres role `rt_app` with RLS (`current_user` switches it).
+  Work that touches other users' rows goes in a small `async with service_scope(db):` block.
+  Under RLS a cross-user UPDATE matches nothing instead of failing: test cross-user writes.
+- New user-owned tables: add them to the rt_app grants + `own_rows` policy in their migration.
+  Staff/config/cost tables get no rt_app grant.
+- Admin responses carry metadata only; no resume or JD text, no secret values.
 - No user row exists before invite redemption + required consent (one transaction).
 - Frontend auth calls live in lib/auth.ts (AuthError codes -> copy via authMessage). Provider
   buttons follow Google/GitHub branding (official marks, brand colour tokens in globals.css).

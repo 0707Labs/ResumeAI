@@ -390,9 +390,14 @@ Code: `app/billing/referrals.py`, `/api/referrals`, `/api/admin/referrals`; conf
   `monthly_cap` (10) rewards per referrer per calendar month; over it, the referral is
   rejected (`over_monthly_cap`). Rewards lock the referrer's row, so concurrent triggers
   can't exceed the cap.
-- **Invite-only mode:** a friend's link works as the invite, `invites_per_user` (5)
-  times per referrer. The invite page offers "Use my friend's invite"; the limit is
-  checked again when the account is created.
+- **Invites quota:** each user has `invites_per_user` (10) invite slots, shared by
+  email invites (`/app/invites`, bound to the friend's address, 30 days, no code to type)
+  and, in invite-only mode, sign-ups that use their referral link as the invite. The
+  counter (`users.invites_created`) is changed only by the `create_user_invite`,
+  `revoke_user_invite` and `take_invite_slot` Postgres functions (migration 0013), which
+  lock the user's row, so concurrent requests can't pass the limit. Revoking an unused
+  invite returns its slot. A friend who joins through an email invite is attributed to
+  the sender, so the referral reward follows.
 - **Live feedback:** the workspace header polls `/api/referrals/updates` every 30 s and
   on focus. It shows the balance and, once per reward, "Your friend joined. +1 credit".
 - **Admin queue** (`/admin/referrals`): approve a flagged one (it pays if its trigger
@@ -442,3 +447,60 @@ them, so change both together. Code: `app/billing/retention.py`; migration
 - **Not covered:** Postgres keeps old row versions until (auto)vacuum reclaims them, and
   database backups keep text for as long as backups are retained. Keep backup retention
   in line with the Privacy Policy.
+
+---
+
+## 12. Claude costs, budgets and the dashboard rollups
+
+Code: `app/billing/costs.py` (recording), `app/billing/budget.py` (budgets, kill switch,
+alerts), `app/billing/aggregates.py` (rollups), `/api/admin/costs`, `/api/admin/revenue`;
+migration `0015_costs_revenue`.
+
+- **Every call is recorded**, answered or not: one `llm_usage` row with the model that
+  answered, tokens, cost (from `[llm_prices.*]`), the user (from the analysis), latency,
+  and a status: `ok`, `refused`, `truncated`, `invalid` (didn't match the schema),
+  `error` or `rate_limited` (with a short `error_code` like `api_429`). Calls that got an
+  answer we couldn't use count as *wasted* spend. Schema names map to pipeline steps in
+  `costs.PIPELINE_STEPS` (gap analysis, tailor, tailor repair, ATS semantic, mentor).
+- **What allowed each analysis** (`analyses.entitlement`: free, pass, pro, credit) is
+  kept, so costs split by plan and the free tier's burn shows.
+- **Budgets** are runtime settings (superadmin, `/admin/costs`): `daily_budget_usd`
+  (default `[alerts].daily_llm_spend_usd`), `monthly_budget_usd` (default 30x daily) and
+  `budget_kill_switch` (default on). Spend is counted from 00:00 UTC and the 1st of the
+  month, UTC.
+- **Kill switch:** when a budget is used up and the switch is on, `POST /api/analyses`
+  answers **503 `analyses_paused`** and the workspace says tailoring is paused. Analyses
+  already running finish. It lifts by itself when the day or month turns, or when staff
+  raise the budget. `analyses_paused` (a manual switch) pauses the same way. Signed-out,
+  rules-only use never touches Claude, so it isn't affected.
+- **Alerts** at 50%, 80% and 100% of each budget, once per period
+  (`budget_alerts`): email to active admins and superadmins, and a Slack message when
+  `RT_SLACK_WEBHOOK_URL` is set (only `https://hooks.slack.com/` URLs are used).
+- **Per-user caps** stay as in section 9 (`claude_analyses_per_day` /
+  `paid_claude_analyses_per_day`); the costs page shows them.
+- **Rollups** (`daily_llm_costs`, `daily_revenue`) feed the dashboard. Each run
+  recomputes the last N days and replaces them, so late webhooks and refunds land on the
+  next run. Revenue uses the same per-payment arithmetic as `/admin/billing`.
+- **Refunds from the admin** (`POST /api/admin/revenue/payments/{id}/refund`,
+  billing.write) call Dodo through the provider interface and are audited; Dodo's
+  webhook then updates the payment and takes back credits as in section 6. A partial
+  refund needs the product's Dodo id in `billing.toml`. Disputes have no API: answer
+  them in Dodo's dashboard.
+
+- **Admin pages:** `/admin/revenue` (billing.read; refunds need billing.write) shows
+  gross, refunds, fees and net, a daily trend, product and currency splits,
+  subscriptions, referral liability and the payments list. `/admin/costs` (costs.read)
+  shows budget meters, spend by day/week/month, by step, model and plan, per-analysis
+  average and p95, margin, top users and the price table. Budget fields, the kill switch
+  and the manual pause are editable there by a superadmin. Both pages say when the rollup
+  last ran and warn if it never has. Charts use the `--series-1/2` tokens, and each one
+  has a table view.
+
+Cron (same environment as the app):
+
+```
+*/15 * * * * cd /srv/resume-tailor/backend && .venv/bin/python -m app.billing.cli refresh-aggregates
+*/5 * * * *  cd /srv/resume-tailor/backend && .venv/bin/python -m app.billing.cli budget-check
+```
+
+Run `refresh-aggregates --days 400` once after deploying to fill history.

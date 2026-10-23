@@ -60,7 +60,10 @@ export async function signUp(page: Page, tag: string): Promise<string> {
   await page.getByRole("checkbox", { name: /18 years of age or older/ }).check();
   await page.getByRole("checkbox", { name: /Terms of Service and Privacy Policy/ }).check();
   await page.getByRole("button", { name: "Create my account" }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  // A new account lands on the first-login steps; the specs skip them.
+  await expect(page).toHaveURL(/\/app\/welcome$/);
+  await page.getByRole("button", { name: "Skip setup" }).click();
+  await expect(page).toHaveURL(/\/app\/dashboard$/);
   return email;
 }
 

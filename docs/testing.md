@@ -20,8 +20,40 @@ real backend in rules-only mode.
 | Referrer's balance updates | `test_referrals.py::test_live_updates_show_a_new_reward_once` | `referrals.test.tsx` (header balance, polling, one-time notice) | `referral.spec.ts`: header shows "1 credit" and "Your friend joined. +1 credit" once |
 | Same-network review, admin approve, reject and reverse | `test_referrals.py::test_many_signups_from_one_network_wait_for_review`, `::test_admin_queue_approves_rejects_and_reverses` | `referrals.test.tsx` (admin queue) | — |
 | Invite-only: a referral link is the invite, within the limit | `test_referrals.py::test_invite_only_a_referral_link_works_as_an_invite_up_to_the_limit` | `referrals.test.tsx` (invite page) | `referral.spec.ts` |
+| One invite quota (10) for email invites and link sign-ups; the 11th is refused, also with 25 concurrent requests | `test_invites_support.py::test_the_eleventh_invite_is_refused_under_concurrency`, `::test_link_sign_ups_and_email_invites_share_the_quota_under_concurrency`, `::test_link_sign_ups_use_the_same_quota` | `invitesSupport.test.tsx` (quota, send, revoke) | `referral.spec.ts` (a link sign-up uses a slot) |
+| Users never see each other's downloads, invites, tickets, resumes or tailorings | `test_invites_support.py::test_users_never_see_each_others_*`, `test_profile.py::test_user_a_cannot_touch_user_bs_resumes_or_tailorings`, `test_admin_security.py::test_rt_app_sees_only_its_own_rows` | — | — |
 | Free tailorings, then the pricing dialog | `test_analyses.py::test_past_the_free_tailorings_starting_needs_a_pass_pro_or_credits` | `protection.test.tsx` (allowance note) | `limits.spec.ts`, `happy-path.spec.ts` step 7 |
 | Preview protection | `test_export.py::test_preview_is_images_only_never_the_text`, `::test_preview_is_watermarked_and_masked`, `::test_downloads_carry_a_quiet_reference_to_the_download` | `Export.test.tsx` | `happy-path.spec.ts` (no resume text on the page) |
+
+## Where Playwright's browser lives
+
+On this Mac something clears `~/Library/Caches`, which is where Playwright keeps its
+browsers by default, so e2e failed with `Executable doesn't exist ... chrome-headless-shell`
+twice. Keep the browser outside that folder by setting `PLAYWRIGHT_BROWSERS_PATH`, for
+both the install and every run (all worktrees can share one copy):
+
+```bash
+export PLAYWRIGHT_BROWSERS_PATH="$HOME/0707Labs/.playwright-browsers"
+npx playwright install chromium   # once, or after a Playwright upgrade (~95 MB)
+npm run test:e2e
+```
+
+Put the `export` in your shell profile to make it stick. Without it Playwright falls
+back to `~/Library/Caches/ms-playwright`, which works until the cache is cleared.
+
+## Running e2e beside other servers
+
+Playwright reuses whatever already listens on :3000 and :8000, even another checkout's
+app, which fails in confusing ways (wrong routes, magic links that never arrive). Check
+with `lsof -iTCP:3000 -iTCP:8000 -sTCP:LISTEN`; if those ports are taken, run a second copy:
+
+```bash
+E2E_WEB_URL=http://localhost:3100 E2E_API_URL=http://localhost:8100 npm run test:e2e
+```
+
+Use `localhost`, not `127.0.0.1`: Next's dev server blocks its scripts for other hosts,
+so pages never become interactive and every sign-in step times out. Next also allows one
+`next dev` per folder, so stop any dev server already running in `frontend/` first.
 
 ## E2E and the magic-link rate limit
 

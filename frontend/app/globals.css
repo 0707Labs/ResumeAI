@@ -6,6 +6,9 @@
  * come with an icon and a word in the UI; color is never the only signal.
  */
 :root {
+  /* Chart series (dataviz reference palette slots 1-2, validated on these surfaces). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
   --bg: #f7f7f5;
   --surface: #ffffff;
   --surface-2: #f1f1ee;
@@ -36,6 +39,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --series-1: #3987e5;
+    --series-2: #d95926;
     --bg: #141517;
     --surface: #1c1d20;
     --surface-2: #24262a;
@@ -65,6 +70,8 @@
 }
 
 :root[data-theme="dark"] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
   --bg: #141517;
   --surface: #1c1d20;
   --surface-2: #24262a;
@@ -93,6 +100,8 @@
 }
 
 @theme inline {
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);

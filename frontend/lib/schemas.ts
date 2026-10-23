@@ -291,8 +291,13 @@ export const Me = z.object({
   id: z.uuid(),
   email: z.string(),
   name: z.string().nullable(),
-  role: z.enum(["user", "admin"]),
+  role: z.enum(["user", "support", "admin", "superadmin"]),
   status: z.enum(["active", "suspended"]),
+  // What the UI may offer (app/auth/roles.py); strings, so a new backend capability can't
+  // break parsing. The API checks again on every call.
+  capabilities: z.array(z.string()),
+  onboarded: z.boolean(),
+  avatar_url: z.string().nullable(),  // same-origin /api/profile/avatar?v=...; null: initials
 });
 export const CsrfToken = z.object({ csrf_token: z.string().min(1) });
 
@@ -327,7 +332,7 @@ export const ProviderAvailability = z.object({ google: z.boolean(), github: z.bo
 export const AuthStep = z.object({ next: z.enum(["signed_in", "invite", "consent", "verify_email", "linked"]) });
 export const Accepted = z.object({ status: z.literal("ok") });
 /** Flags the signed-out pages need (GET /api/auth/config). */
-export const PublicConfig = z.object({ invite_only: z.boolean() });
+export const PublicConfig = z.object({ invite_only: z.boolean(), maintenance_banner: z.string().nullable().optional() });
 export const PendingSignIn = z.object({
   kind: z.enum(["signup", "needs_email"]),
   provider: Provider,
@@ -562,3 +567,402 @@ export type PaymentStatus = z.infer<typeof PaymentStatus>;
 export type BillingSummary = z.infer<typeof BillingSummary>;
 export type LedgerPage = z.infer<typeof LedgerPage>;
 export type AdminOverview = z.infer<typeof AdminOverview>;
+
+// --- user area (app/api/profile.py) ----------------------------------------------------------------
+
+export const SENIORITY = ["intern", "junior", "mid", "senior", "lead", "principal"] as const;
+export const WORK_MODES = ["remote", "hybrid", "onsite"] as const;
+export const EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", "internship", "freelance"] as const;
+
+export const Preferences = z.object({
+  target_roles: z.array(z.string()),
+  seniority: z.enum(SENIORITY).nullable(),
+  industries: z.array(z.string()),
+  locations: z.array(z.string()),
+  work_modes: z.array(z.enum(WORK_MODES)),
+  employment_types: z.array(z.enum(EMPLOYMENT_TYPES)),
+  notice_period_days: z.number().int().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type Preferences = z.infer<typeof Preferences>;
+export type PreferencesIn = Omit<Preferences, "updated_at">;
+
+export const ResumeSummary = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  is_default: z.boolean(),
+  version: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type ResumeSummary = z.infer<typeof ResumeSummary>;
+
+export const PlanStatus = z.object({
+  kind: z.enum(["pass", "pro", "credits", "free"]),
+  credits: z.number().int(),
+  pass_expires_at: z.string().nullable(),
+  pass_days_left: z.number().int().nullable(),
+  pass_downloads_left: z.number().int().nullable(),
+  pro_period_end: z.string().nullable(),
+  free_allowance: z.number().int(),
+  free_left: z.number().int(),
+  resets_at: z.string(),
+});
+export type PlanStatus = z.infer<typeof PlanStatus>;
+
+export const Dashboard = z.object({
+  name: z.string().nullable(),
+  plan: PlanStatus,
+  recent: z.array(z.object({
+    id: z.uuid(),
+    job_title: z.string().nullable(),
+    company: z.string().nullable(),
+    created_at: z.string(),
+    ats_before: z.number().nullable(),
+    ats_after: z.number().nullable(),
+    status: z.enum(["started", "tailored", "downloaded"]),
+  })),
+  last_tip: z.object({
+    text: z.string(),
+    job_title: z.string().nullable(),
+    company: z.string().nullable(),
+    created_at: z.string(),
+  }).nullable(),
+  referrals: z.object({
+    enabled: z.boolean(),
+    invites_per_user: z.number().int(),
+    invites_left: z.number().int(),
+    joined: z.number().int(),
+    rewarded: z.number().int(),
+    credits_earned: z.number().int(),
+  }),
+  has_resume: z.boolean(),
+  has_preferences: z.boolean(),
+});
+export type Dashboard = z.infer<typeof Dashboard>;
+
+export const Profile = z.object({
+  name: z.string().nullable(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  avatar_source: z.enum(["provider", "upload"]).nullable(),
+});
+export type Profile = z.infer<typeof Profile>;
+
+const ResumeSource = z.enum(["upload", "paste", "edit"]);
+export const ResumeDetail = ResumeSummary.extend({
+  shown_version: z.number().int(),
+  source: ResumeSource,
+  resume: Resume,
+});
+export type ResumeDetail = z.infer<typeof ResumeDetail>;
+
+export const VersionSummary = z.object({
+  version: z.number().int(),
+  source: ResumeSource,
+  file_name: z.string().nullable(),
+  created_at: z.string(),
+});
+export type VersionSummary = z.infer<typeof VersionSummary>;
+
+export const TailoringSummary = z.object({
+  id: z.uuid(),
+  job_title: z.string().nullable(),
+  company: z.string().nullable(),
+  created_at: z.string(),
+  ats_before: z.number().nullable(),
+  ats_after: z.number().nullable(),
+  status: z.enum(["started", "tailored", "downloaded"]),
+  resume_id: z.uuid().nullable(),
+  content_available: z.boolean(),
+});
+export type TailoringSummary = z.infer<typeof TailoringSummary>;
+export const TailoringPage = z.object({ items: z.array(TailoringSummary), next_before: z.string().nullable() });
+export type TailoringPage = z.infer<typeof TailoringPage>;
+export const TailoringDetail = TailoringSummary.extend({
+  resume: Resume.nullable(),
+  jd: JobDescription.nullable(),
+  tailored: TailoredResume.nullable(),
+});
+export type TailoringDetail = z.infer<typeof TailoringDetail>;
+
+export const Consents = z.object({
+  history: z.array(z.object({
+    purpose: z.enum(["service", "research", "age_18_plus", "waitlist"]),
+    action: z.enum(["granted", "withdrawn"]),
+    method: z.string(),
+    notice_version: z.string(),
+    notice_url: z.string(),
+    at: z.string(),
+  })),
+  research: z.boolean(),
+  research_available: z.boolean(),
+});
+export type Consents = z.infer<typeof Consents>;
+
+// --- invites, downloads history, support (app/api/invites.py, downloads.py, support.py) ----------
+
+export const InviteStatus = z.enum(["sent", "expired", "revoked", "joined", "first_tailoring", "rewarded", "not_eligible"]);
+export const Invites = z.object({
+  limit: z.number().int(),
+  used: z.number().int(),
+  left: z.number().int(),
+  enabled: z.boolean(),
+  code: z.string(),
+  link: z.string(),
+  trigger: z.enum(["on_verified_signup", "on_first_tailoring"]),
+  reward_credits: z.number().int(),
+  credits_earned: z.number().int(),
+  invitees: z.array(z.object({
+    id: z.uuid(),
+    via: z.enum(["email", "link"]),
+    email: z.string(),
+    status: InviteStatus,
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+    can_revoke: z.boolean(),
+  })),
+});
+export type Invites = z.infer<typeof Invites>;
+export const InviteSent = z.object({ id: z.uuid(), email: z.string(), expires_at: z.string(), left: z.number().int() });
+
+export const DownloadItem = z.object({
+  id: z.uuid(),
+  analysis_id: z.uuid(),
+  file_name: z.string(),
+  format: z.enum(["docx", "pdf"]),
+  job_title: z.string().nullable(),
+  company: z.string().nullable(),
+  created_at: z.string(),
+  paid_with: z.enum(["pass", "pro", "credit", "window"]),
+  credits: z.number().int(),
+  expires_at: z.string(),
+  available: z.boolean(),
+});
+export type DownloadItem = z.infer<typeof DownloadItem>;
+export const DownloadPage = z.object({ items: z.array(DownloadItem), next_before: z.string().nullable() });
+
+export const TicketCategory = z.enum(["support", "feedback", "fabrication_report", "grievance", "billing", "privacy"]);
+export const Ticket = z.object({
+  id: z.uuid(),
+  category: TicketCategory,
+  subject: z.string(),
+  status: z.enum(["open", "pending", "closed"]),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Ticket = z.infer<typeof Ticket>;
+
+// --- admin console (app/api/admin_users.py, admin_invites.py, admin_support.py, admin.py) --------
+
+const Role = z.enum(["user", "support", "admin", "superadmin"]);
+export const AdminUserRow = z.object({
+  id: z.uuid(), name: z.string().nullable(), email: z.string(), role: Role,
+  status: z.enum(["active", "suspended", "deleted"]), plan: z.enum(["free", "credits", "pass", "pro"]),
+  credits: z.number().int(), created_at: z.string(), last_active_at: z.string().nullable(),
+  tailorings: z.number().int(), downloads: z.number().int(), referrals: z.number().int(), llm_cost_usd: z.number(),
+});
+export type AdminUserRow = z.infer<typeof AdminUserRow>;
+const page = <T extends z.ZodType>(item: T) =>
+  z.object({ items: z.array(item), total: z.number().int(), page: z.number().int(), page_size: z.number().int() });
+export const AdminUserPage = page(AdminUserRow);
+export type AdminUserPage = z.infer<typeof AdminUserPage>;
+const Rec = z.record(z.string(), z.unknown());
+export const AdminUserDetail = z.object({
+  user: AdminUserRow, phone: z.string().nullable(), onboarded: z.boolean(), providers: z.array(Rec),
+  plan: Rec.nullable(), ledger: z.array(Rec).nullable(), payments: z.array(Rec).nullable(),
+  tailorings: z.array(Rec), downloads: z.array(Rec), invites_sent: z.array(Rec), invited_with: Rec.nullable(),
+  referrals: z.array(Rec), referred_by: Rec.nullable(), tickets: z.array(Rec), audit: z.array(Rec),
+  can: z.object({ users_write: z.boolean(), credits_adjust: z.boolean(), passes_grant: z.boolean(), users_delete: z.boolean() }),
+});
+export type AdminUserDetail = z.infer<typeof AdminUserDetail>;
+
+export const AdminInviteRow = z.object({
+  id: z.uuid(), code_hint: z.string(), kind: z.enum(["admin", "personal", "waitlist"]), campaign: z.string().nullable(),
+  note: z.string().nullable(), email: z.string().nullable(), uses: z.number().int(), max_uses: z.number().int(),
+  bonus_credits: z.number().int().nullable(), expires_at: z.string().nullable(), created_at: z.string(),
+  created_by_email: z.string().nullable(), batch_id: z.uuid().nullable(),
+  status: z.enum(["active", "exhausted", "expired", "revoked"]),
+});
+export type AdminInviteRow = z.infer<typeof AdminInviteRow>;
+export const AdminInvitePage = page(AdminInviteRow);
+export type AdminInvitePage = z.infer<typeof AdminInvitePage>;
+export const GeneratedCodes = z.object({ batch_id: z.uuid(), codes: z.array(z.string()), expires_at: z.string().nullable() });
+export type GeneratedCodes = z.infer<typeof GeneratedCodes>;
+export const InviteFunnel = z.array(z.object({
+  kind: z.enum(["admin", "personal", "waitlist"]), created: z.number().int(), redeemed: z.number().int(),
+  first_tailoring: z.number().int(),
+}));
+export type InviteFunnel = z.infer<typeof InviteFunnel>;
+export const WaitlistRow = z.object({
+  id: z.uuid(), email: z.string(), source: z.string().nullable(),
+  status: z.enum(["waiting", "invited", "converted", "rejected"]), created_at: z.string(), invited_at: z.string().nullable(),
+});
+export type WaitlistRow = z.infer<typeof WaitlistRow>;
+export const WaitlistPage = page(WaitlistRow);
+export type WaitlistPage = z.infer<typeof WaitlistPage>;
+export const ApproveResult = z.object({ approved: z.number().int(), skipped: z.number().int(), failed: z.number().int() });
+
+export const AdminTicketRow = z.object({
+  id: z.uuid(), user_id: z.uuid().nullable(), email: z.string(), category: TicketCategory, subject: z.string(),
+  status: z.enum(["open", "pending", "closed"]), assignee_id: z.uuid().nullable(), assignee_email: z.string().nullable(),
+  analysis_id: z.uuid().nullable(), created_at: z.string(), updated_at: z.string(),
+});
+export type AdminTicketRow = z.infer<typeof AdminTicketRow>;
+export const AdminTicketPage = page(AdminTicketRow);
+export type AdminTicketPage = z.infer<typeof AdminTicketPage>;
+export const TicketMessage = z.object({
+  id: z.uuid(), kind: z.enum(["reply", "internal_note"]), body: z.string(), author_email: z.string().nullable(),
+  emailed_at: z.string().nullable(), created_at: z.string(),
+});
+export type TicketMessage = z.infer<typeof TicketMessage>;
+export const AdminTicketDetail = AdminTicketRow.extend({
+  body: z.string(), messages: z.array(TicketMessage),
+  staff: z.array(z.object({ id: z.uuid(), email: z.string(), role: Role })),
+});
+export type AdminTicketDetail = z.infer<typeof AdminTicketDetail>;
+
+export const AdminSettings = z.object({
+  values: z.object({
+    invite_only: z.boolean(), analyses_paused: z.boolean(), maintenance_banner: z.string().nullable(),
+    invites_per_user: z.number().int(), signup_bonus_credits: z.number().int(), referrals_enabled: z.boolean(),
+    referral_trigger: z.enum(["on_verified_signup", "on_first_tailoring"]), referral_reward_credits: z.number().int(),
+    referral_monthly_cap: z.number().int(), daily_budget_usd: z.number(), monthly_budget_usd: z.number(),
+    budget_kill_switch: z.boolean(), pro_enabled: z.boolean(), free_analyses_per_month: z.number().int(),
+    llm_models: z.record(z.string(), z.object({ model: z.string(), max_tokens: z.number().int(), effort: z.enum(["low", "medium", "high"]) })),
+  }),
+  overridden: z.array(z.string()),
+  defaults: z.record(z.string(), z.unknown()),
+});
+export type AdminSettings = z.infer<typeof AdminSettings>;
+export type SettingKey = keyof AdminSettings["values"];
+
+// --- Admin revenue and costs (app/api/admin_money.py) ---
+
+export const AdminRevenue = z.object({
+  as_of: z.string().nullable(), days: z.number().int(),
+  totals: z.object({
+    gross_usd: z.number(), refunds_usd: z.number(), fees_usd: z.number(), net_usd: z.number(), net_after_fees_usd: z.number(),
+    payments: z.number().int(), disputes: z.number().int(), unsettled: z.number().int(),
+  }),
+  fees_are_estimates: z.boolean(),
+  by_product: z.array(z.object({ product_key: z.string(), kind: z.string(), payments: z.number().int(), gross_usd: z.number(),
+    refunds_usd: z.number(), fees_usd: z.number(), net_usd: z.number() })),
+  by_currency: z.array(z.object({ currency: z.string(), payments: z.number().int(), gross_minor: z.number().int(),
+    refunded_minor: z.number().int() })),
+  daily: z.array(z.object({ day: z.string(), gross_usd: z.number(), net_usd: z.number() })),
+  subscriptions: z.object({ active: z.number().int(), by_status: z.record(z.string(), z.number().int()),
+    cancelled_in_window: z.number().int(), churn_rate: z.number().nullable(), renewals_due_7d: z.number().int() }),
+  referral_liability: z.object({ credits_granted_in_window: z.number().int(), credits_granted_total: z.number().int(),
+    est_value_usd: z.number(), per_credit_usd: z.number() }),
+});
+export type AdminRevenue = z.infer<typeof AdminRevenue>;
+
+export const AdminPaymentRow = z.object({
+  id: z.uuid(), user_id: z.uuid().nullable(), user_email: z.string().nullable(), product_key: z.string(), kind: z.string(),
+  status: z.string(), mode: z.string(), currency: z.string().nullable(), amount_minor: z.number().int().nullable(),
+  refunded_amount_minor: z.number().int(), provider_payment_id: z.string().nullable(), disputed: z.boolean(),
+  created_at: z.string(), paid_at: z.string().nullable(),
+});
+export type AdminPaymentRow = z.infer<typeof AdminPaymentRow>;
+export const AdminPaymentPage = page(AdminPaymentRow);
+export const RefundResult = z.object({ provider_refund_id: z.string().nullable(), status: z.string().nullable() });
+
+const CostGroup = z.array(z.object({ key: z.string(), cost_usd: z.number(), calls: z.number().int() }));
+export const AdminCosts = z.object({
+  as_of: z.string().nullable(), days: z.number().int(), granularity: z.enum(["day", "week", "month"]),
+  total_usd: z.number(), calls: z.number().int(), failed_calls: z.number().int(), error_rate: z.number().nullable(),
+  wasted_usd: z.number(), unpriced_calls: z.number().int(), free_tier_usd: z.number(),
+  series: z.array(z.object({ period: z.string(), cost_usd: z.number(), calls: z.number().int() })),
+  by_step: CostGroup, by_model: CostGroup, by_plan: CostGroup,
+  per_analysis: z.object({ analyses: z.number().int(), avg_usd: z.number().nullable(), p95_usd: z.number().nullable() }),
+  top_users: z.array(z.object({ user_id: z.uuid(), email: z.string(), cost_usd: z.number(), calls: z.number().int() })),
+  margin: z.object({ net_revenue_usd: z.number(), analyses: z.number().int(), cost_usd: z.number(),
+    revenue_per_analysis_usd: z.number().nullable(), cost_per_analysis_usd: z.number().nullable() }),
+  budget: z.object({ today_usd: z.number(), month_usd: z.number(), daily_budget_usd: z.number(), monthly_budget_usd: z.number(),
+    kill_switch: z.boolean(), paused: z.enum(["manual", "daily_budget", "monthly_budget"]).nullable(), analyses_paused: z.boolean() }),
+  per_user_daily_caps: z.object({ free: z.number().int().nullable(), paid: z.number().int().nullable() }),
+  prices: z.array(z.object({ model: z.string(), input: z.number(), output: z.number(), cache_read: z.number().nullable(),
+    cache_write: z.number().nullable() })),
+});
+export type AdminCosts = z.infer<typeof AdminCosts>;
+
+// --- Admin overview, integrations, quality, settings (app/api/admin_ops.py, admin.py) ---
+
+export const AdminHome = z.object({
+  days: z.number().int(), as_of: z.string().nullable(),
+  users: z.object({ total: z.number().int(), new_7d: z.number().int(), new_30d: z.number().int(), dau: z.number().int(),
+    wau: z.number().int(), mau: z.number().int(), waitlist: z.number().int(), paid: z.number().int() }),
+  tailorings: z.object({ d7: z.number().int(), d30: z.number().int() }),
+  open_tickets: z.number().int(),
+  revenue: z.object({ revenue_30d_usd: z.number(), fees_30d_usd: z.number(), mrr_equivalent_usd: z.number(),
+    active_pro: z.number().int(), credits_sold_30d: z.number().int(), credits_consumed_30d: z.number().int() }).nullable(),
+  costs: z.object({ llm_cost_30d_usd: z.number(), gross_margin: z.number().nullable().optional() }).nullable(),
+  series: z.array(z.object({ day: z.string(), signups: z.number().int(), revenue_usd: z.number().nullable(),
+    cost_usd: z.number().nullable() })),
+  funnel: z.object({ landing_views: z.number().int(), signups: z.number().int(), first_tailoring: z.number().int(),
+    downloaded: z.number().int(), paid: z.number().int() }),
+});
+export type AdminHome = z.infer<typeof AdminHome>;
+
+export const IntegrationStatus = z.enum(["healthy", "degraded", "failing", "not_configured", "configured"]);
+export const Integration = z.object({
+  name: z.string(), status: IntegrationStatus, checkable: z.boolean(), checked_at: z.string().nullable(),
+  last_ok_at: z.string().nullable(), error_code: z.string().nullable(), check_detail: z.record(z.string(), z.unknown()),
+  facts: z.record(z.string(), z.unknown()),
+  secrets: z.array(z.object({ name: z.string(), set: z.boolean(), hint: z.string().nullable() })),
+});
+export type Integration = z.infer<typeof Integration>;
+export const Integrations = z.array(Integration);
+export const CheckOut = Integration.pick({ name: true, status: true, checked_at: true, last_ok_at: true, error_code: true,
+  check_detail: true });
+
+export const WebhookRow = z.object({
+  id: z.string(), provider: z.string(), event_type: z.string(), occurred_at: z.string(), received_at: z.string(),
+  processed_at: z.string().nullable(), status: z.string(), failures: z.number().int(), last_error: z.string().nullable(),
+  replayable: z.boolean(),
+});
+export type WebhookRow = z.infer<typeof WebhookRow>;
+export const WebhookPage = z.object({ items: z.array(WebhookRow), total: z.number().int(), page: z.number().int(),
+  page_size: z.number().int() });
+
+export const AdminQuality = z.object({
+  days: z.number().int(),
+  verifier: z.object({
+    totals: z.record(z.string(), z.number().int()),
+    rates: z.object({ flagged: z.number().nullable(), blocked: z.number().nullable(), override: z.number().nullable() }),
+    trend: z.array(z.object({ day: z.string(), generated: z.number().int(), flagged: z.number().int(), blocked: z.number().int(),
+      overrides: z.number().int() })),
+  }),
+  parsing: z.object({ attempts: z.number().int(), ok: z.number().int(), failed: z.record(z.string(), z.number().int()),
+    failure_rate: z.number().nullable(), warnings: z.record(z.string(), z.number().int()) }),
+  ats_lift: z.object({ buckets: z.array(z.object({ label: z.string(), count: z.number().int() })), median: z.number().nullable() }),
+  fabrication_reports: z.array(z.object({ id: z.uuid(), subject: z.string(), status: z.string(), analysis_id: z.uuid().nullable(),
+    created_at: z.string() })),
+});
+export type AdminQuality = z.infer<typeof AdminQuality>;
+
+export const AdminConfig = z.object({
+  products: z.array(z.object({ key: z.string(), name: z.string(), kind: z.string(), enabled: z.boolean(),
+    credits: z.number().int().nullable(), pass_days: z.number().int().nullable(), fair_use_cap: z.number().int().nullable(),
+    interval: z.string().nullable(), prices: z.record(z.string(), z.number().int()) })),
+  free_analyses_per_month: z.number().int(), credits_per_download: z.number().int(), redownload_free_days: z.number().int(),
+  claude_per_day: z.object({ free: z.number().int(), paid: z.number().int() }),
+  retention: z.object({ analysis_days: z.number().int(), download_days: z.number().int().nullable() }),
+  llm_prices: z.array(z.string()),
+  notices: z.array(z.object({ purpose: z.string(), version: z.string(), language: z.string(), published_at: z.string(),
+    current: z.boolean(), body_url: z.string() })),
+});
+export type AdminConfig = z.infer<typeof AdminConfig>;
+
+export const AuditEntry = z.object({
+  id: z.number().int(), actor_id: z.uuid().nullable(), actor_email: z.string().nullable(), actor_role: z.string(),
+  action: z.string(), target_type: z.string().nullable(), target_id: z.string().nullable(), reason: z.string().nullable(),
+  before: z.record(z.string(), z.unknown()).nullable(), after: z.record(z.string(), z.unknown()).nullable(), created_at: z.string(),
+});
+export type AuditEntry = z.infer<typeof AuditEntry>;
+export const AuditPage = z.object({ entries: z.array(AuditEntry), next_before_id: z.number().int().nullable() });
+export const StaffMember = z.object({ id: z.uuid(), email: z.string(), name: z.string().nullable(), role: Role,
+  last_login_at: z.string().nullable() });
+export type StaffMember = z.infer<typeof StaffMember>;

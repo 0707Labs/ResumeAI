@@ -63,6 +63,34 @@ describe("proxy", () => {
       expect(visit(path).headers.get("location")).toBeNull();
     }
   });
+
+  describe("127.0.0.1 in development", () => {
+    const at = (url: string) => proxy(new NextRequest(url, { headers: { host: new URL(url).host } }));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("moves the visit to localhost, same port, path and query", async () => {
+      vi.stubEnv("NODE_ENV", "development");
+      for (const [from, to] of [
+        ["http://127.0.0.1:3000/signin", "http://localhost:3000/signin"],
+        ["http://127.0.0.1:3100/app/tailor/review?step=2&x=1", "http://localhost:3100/app/tailor/review?step=2&x=1"],
+        ["http://[::1]:3000/", "http://localhost:3000/"],
+      ]) {
+        const res = at(from);
+        expect(res.headers.get("location")).toBeNull();  // a 307 would loop: Next relativizes it
+        const page = await res.text();
+        expect(page).toContain(`<meta http-equiv="refresh" content="0;url=${to.replace(/&/g, "&amp;")}">`);
+        expect(page).toContain(`<a href="${to.replace(/&/g, "&amp;")}">`);
+      }
+      const plain = at("http://localhost:3000/signin");
+      expect(plain.headers.get("location")).toBeNull();
+      expect(plain.headers.get("x-middleware-next")).toBe("1");  // passed through untouched
+    });
+
+    it("does nothing in production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      expect(at("http://127.0.0.1:3000/signin").headers.get("x-middleware-next")).toBe("1");
+    });
+  });
 });
 
 describe("post-sign-in destination", () => {

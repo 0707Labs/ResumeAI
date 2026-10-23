@@ -33,7 +33,10 @@ beforeEach(() => {
   router.replace.mockReset();
   sessionStorage.clear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.cookie = "rt_csrf=; path=/; max-age=0";
+});
 
 describe("site header", () => {
   it("offers Sign in and a plain Sign up link when signup is open", async () => {
@@ -42,6 +45,13 @@ describe("site header", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/signin");
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeInTheDocument();
+  });
+
+  it("doesn't ask /api/me when there's no sign-in cookie (no 401 for new visitors)", () => {
+    const fetchMock = stubFetch({ "GET /api/auth/config": () => json({ invite_only: true }) });
+    render(<SiteHeader inviteOnly={false} initialTheme="system" />);
+    expect(fetchMock.mock.calls.map(([url]) => String(url)).filter((u) => u.endsWith("/api/me"))).toEqual([]);
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("links How it works, Pricing and FAQ to their sections", () => {
@@ -82,6 +92,7 @@ describe("site header", () => {
   });
 
   it("swaps to Open workspace for a signed-in visitor", async () => {
+    document.cookie = "rt_csrf=t; path=/";
     stubFetch({ "GET /api/me": () => json(ME) });
     render(<SiteHeader inviteOnly initialTheme="system" />);
     expect(await screen.findByRole("link", { name: "Open workspace" })).toHaveAttribute("href", "/app");

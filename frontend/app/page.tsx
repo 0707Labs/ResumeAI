@@ -282,7 +282,7 @@ function Sample() {
               <Seam id={source} />
               <div className="sm:px-6 sm:py-5">
                 <p className="mb-1 text-xs font-semibold text-muted sm:hidden">Tailored</p>
-                <p className={verdict.ok ? "" : "opacity-70"}>
+                <p>
                   <span className="sr-only">After, citing {source}: </span>
                   {wordDiff(before, after).map((part, i) =>
                     part.type === "added" ? <ins key={i}>{part.text}</ins>

@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/AppShell";
 import { BrandLogo } from "@/components/BrandLogo";
 import { CloseIcon, MenuIcon } from "@/components/icons";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
-import { api } from "@/lib/api";
+import { api, mightBeSignedIn } from "@/lib/api";
 import { SITE_NAV } from "@/lib/site";
 import type { Theme } from "@/lib/theme";
 
@@ -25,6 +25,7 @@ export function SiteHeader({ inviteOnly, initialTheme }: { inviteOnly: boolean; 
   const toggle = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (!mightBeSignedIn()) return;
     let live = true;
     api.me().then((m) => { if (live) setSignedIn(!!m); }).catch(() => {});
     return () => { live = false; };

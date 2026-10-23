@@ -1,5 +1,6 @@
 // Small inline icon set (no icon font, no network). Decorative by default:
 // pass a `label` when the icon carries meaning on its own.
+// Many paths come from Lucide (ISC); the notice is in docs/assets.md.
 import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement> & { label?: string };

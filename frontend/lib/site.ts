@@ -44,5 +44,12 @@ export const COMPANY = {
   grievanceEmail: process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_EMAIL ?? "",
 } as const;
 
+/** The landing page's sections, shared by the header and footer. */
+export const SITE_NAV = [
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#pricing", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
+] as const;
+
 /** Absolute site URL for canonical links, Open Graph and the sitemap. */
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");

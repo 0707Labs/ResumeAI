@@ -8,15 +8,10 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { CloseIcon, MenuIcon } from "@/components/icons";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { api } from "@/lib/api";
+import { SITE_NAV } from "@/lib/site";
 import type { Theme } from "@/lib/theme";
 
 import { SignUpButton } from "./SignUpButton";
-
-export const SITE_NAV = [
-  { href: "/#how-it-works", label: "How it works" },
-  { href: "/#pricing", label: "Pricing" },
-  { href: "/#faq", label: "FAQ" },
-] as const;
 
 /**
  * Header for the public pages. Renders "Sign in / Sign up" on the server (crawlers

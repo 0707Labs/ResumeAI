@@ -27,7 +27,7 @@ from app.auth.ratelimit import rate_limit
 from app.auth.sessions import resolve_session
 from app.billing import analyses, budget
 from app.admin import settings as runtime
-from app.billing.config import BillingConfig, get_billing_config
+from app.billing.config import BillingConfig
 from app.billing.costs import current_analysis_id, parse_analysis_id
 from app.billing.entitlements import can_start_tailoring
 from app.db.models import Analysis, User

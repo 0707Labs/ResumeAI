@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:contract": "CONTRACT=1 vitest run tests/contract.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint": "eslint ."
   },
   "dependencies": {
     "next": "16.3.8",
@@ -31,6 +32,8 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.8",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",

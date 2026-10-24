@@ -71,7 +71,7 @@ frontend/
 - Run API: `cd backend && .venv/bin/uvicorn app.main:app --reload` (port 8000)
 - Database: Postgres via `RT_DATABASE_URL` (default: local socket, db `resume_tailor`).
   `createdb resume_tailor && cd backend && .venv/bin/alembic upgrade head`.
-  The app connects lazily, so the rules-only pipeline and e2e run without a DB.
+  The app connects lazily, so the rules-only pipeline runs without a DB (/health is then 503).
   DB tests create and drop a throwaway `rt_test_*` database (`RT_TEST_ADMIN_DATABASE_URL`);
   they skip if Postgres is unreachable, except under `CI`.
 - Invites and consent notices (until the admin UI exists): `cd backend && .venv/bin/python -m app.auth.cli

@@ -136,10 +136,10 @@ take the backend's address from `BACKEND_URL` (`frontend/lib/backend.ts`).
 |---|---|---|---|
 | Local | unset (`http://localhost:8000`) | unset (`http://localhost:3000`) | unset |
 | CI | `http://localhost:8000` (`next build`); Playwright sets its own | unset | unset |
-| Staging | `http://backend.railway.internal:8000` (staging environment) | `https://staging.<app-domain>` | `https://staging.<app-domain>` |
-| Production | `http://backend.railway.internal:8000` (production environment) | `https://<app-domain>` | `https://<app-domain>` |
+| Staging | `http://api.railway.internal:8000` (staging environment) | `https://staging.<app-domain>` | `https://staging.<app-domain>` |
+| Production | `http://api.railway.internal:8000` (production environment) | `https://<app-domain>` | `https://<app-domain>` |
 
-`backend` is the backend service's name and `8000` the port it listens on (set `PORT=8000` on
+`api` is the backend service's name and `8000` the port it listens on (set `PORT=8000` on
 the service so the address stays fixed). Each Railway environment has its own private network,
 so the same hostname reaches staging's backend from staging and production's from production.
 `<app-domain>` is a placeholder until the domains are chosen. Whatever it becomes, `RT_PUBLIC_URL`
@@ -175,14 +175,89 @@ GitHub OAuth apps allow one callback URL each, so staging and production need se
 apps (or a single app whose callback is the production one, leaving staging on Google and
 magic links).
 
-### Open: client IPs behind the proxy (fix in the Railway step)
+### Client IPs behind the proxy
 
-Rate limits and the audit log key on `request.client.host`. Behind the Next.js proxy that is the
-frontend server's address, not the visitor's, unless uvicorn trusts the proxy's
-`X-Forwarded-For`. What the proxy sends was checked with `next start`: Next passes an incoming
-`X-Forwarded-For` through unchanged and adds nothing when there is none, so the visitor's address
-reaches the backend only if Railway's edge sets it. Uvicorn trusts forwarded headers only from
-127.0.0.1 by default, so on Railway every visitor would share one rate-limit bucket (for example
-5 magic links per 15 minutes for the whole site). The Railway step sets uvicorn's
-`--forwarded-allow-ips` to the frontend's private address and checks the IP the backend sees
-in staging.
+Rate limits and the audit log key on the visitor's address. Behind the proxy the connection
+comes from the Next.js server, so the address has to come from `X-Forwarded-For`. Next passes
+that header through unchanged and adds nothing (checked with `next start`); Railway's edge adds
+the visitor's address. `python -m app.serve` (the image's command) therefore trusts the header
+only from private and loopback addresses, plain and IPv4-mapped (`::ffff:10.0.0.0/104`), and
+uvicorn takes the rightmost address that isn't trusted. A visitor can't connect from a private
+address, so a forged header sent to the backend's public domain is ignored, and a forged
+address in front of the edge's is skipped. `backend/tests/test_serve.py` runs uvicorn's own
+middleware with these settings. `FORWARDED_ALLOW_IPS` replaces the list if ever needed.
+
+**Check it in staging** (Railway's edge behaviour is the one thing tests can't show). Open the
+staging site, then look at the `api` service's logs: each access line starts with the client
+address and should be your public IP (`curl https://api.ipify.org`). Then send
+`curl -H "X-Forwarded-For: 198.51.100.1" https://staging.<app-domain>/health`: the log must
+still show your address, not `198.51.100.1`. If it shows a private `10.x`/`fd..` address for
+every request, the edge isn't adding `X-Forwarded-For` and the trust list needs revisiting.
+
+## Railway
+
+One Railway project with two environments, `staging` and `production`, each with the same
+services. Everything is built from this repository with the Dockerfiles; nothing is built by
+Nixpacks or Railpack.
+
+| Service | Root directory | Config file (absolute path) | What runs |
+|---|---|---|---|
+| `api` | `/backend` | `/backend/railway.json` | `python -m app.serve`; pre-deploy `python -m alembic upgrade head`; health check `/health` |
+| `web` | `/frontend` | `/frontend/railway.json` | `node server.js` (Next standalone); health check `/robots.txt` |
+| `cron-refresh-aggregates` | `/backend` | `/backend/railway/cron-refresh-aggregates.json` | `python -m app.billing.cli refresh-aggregates`, `*/15 * * * *` |
+| `cron-budget-check` | `/backend` | `/backend/railway/cron-budget-check.json` | `python -m app.billing.cli budget-check`, `*/5 * * * *` |
+| `cron-purge-expired` | `/backend` | `/backend/railway/cron-purge-expired.json` | `python -m app.billing.cli purge-expired`, `15 3 * * *` (08:45 IST) |
+| `cron-expire-invites` | `/backend` | `/backend/railway/cron-expire-invites.json` | `python -m app.auth.cli expire-invites`, `30 3 * * *` (09:00 IST) |
+| `Postgres` | Railway's Postgres template (15 or later) | | |
+
+- **Config files don't follow the root directory**: set each service's config-file path to the
+  absolute path above (Settings, "Config-as-code"). Settings in the file override the dashboard.
+- **Images.** `backend/Dockerfile` is two stages (dependencies, then a slim runtime) and runs as
+  uid 10001 with a read-only app directory; `frontend/Dockerfile` builds Next's standalone server
+  and runs as `node`. Both listen on `$PORT`. CI's `docker` job builds both, runs the migrations
+  and all four cron commands in the API image against Postgres, checks `/health` over IPv4 and
+  IPv6, and checks that the web image proxies `/health` to the API.
+- **Cron services** reuse the API image with a different start command and no health check.
+  Railway runs them on UTC, at most every 5 minutes, and skips a run while the previous one is
+  still going. Each command exits when done (`restartPolicyType: NEVER`; the next tick is the
+  retry). All four are safe to run twice.
+- **Migrations** run only in the `api` service's pre-deploy step, with
+  `RT_MIGRATION_DATABASE_URL` when there's a pooler. A failed migration fails the deploy and the
+  old version keeps serving. The `web` and cron services deploy independently and may run
+  against the new schema with old code for a few minutes, so migrations must stay additive (add
+  columns and tables; drop them a release later).
+- **One replica, one worker** for `api`: rate limits are kept in process memory. Scaling out
+  needs a shared limiter first.
+- **`/health`** returns 200 when `SELECT 1` answers within 3 s, else 503
+  (`{"status": "unavailable", "database": "unreachable"}`). Railway uses it to decide whether a
+  new deploy goes live, so a wrong `RT_DATABASE_URL` fails the deploy instead of replacing a
+  working one.
+- **Ports.** Set `PORT=8000` on `api` so the private address in `BACKEND_URL` stays fixed; the
+  server listens on IPv4 and IPv6 (the private network is IPv6). Railway sets `web`'s port itself.
+- **Public domains.** `web` gets the app domain. `api` gets a Railway domain only for Dodo's
+  webhooks (`https://<api-domain>/api/billing/webhooks/dodo`); browsers never use it.
+
+### Variables
+
+Use Railway's shared variables for anything several backend services need, and reference the
+Postgres service's variables instead of pasting passwords.
+
+| Variable | `api` | crons | `web` | Notes |
+|---|---|---|---|---|
+| `RT_DATABASE_URL` | ✓ | ✓ | | `postgresql+psycopg://…` (Database connections, above) |
+| `RT_MIGRATION_DATABASE_URL` | ✓ | | | only with a pooler |
+| `RT_PUBLIC_URL`, `CORS_ORIGINS` | ✓ | ✓ | | the app domain; `budget-check` puts links in alerts |
+| `RT_AUTH_SECRET` | ✓ | | | `python -c "import secrets; print(secrets.token_urlsafe(48))"`, different per environment |
+| `ANTHROPIC_API_KEY` (and `ANTHROPIC_WORKSPACE_ID`) | ✓ | | | |
+| `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_ENVIRONMENT`, `DODO_BUSINESS_ID` | ✓ | | | `test` in staging |
+| `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` | ✓ | | | per environment (OAuth redirect URIs, above) |
+| `RT_MAILER=ses`, `RT_MAIL_FROM`, `RT_SES_REGION`, `AWS_*` | ✓ | | | docs/email.md |
+| `RT_SLACK_WEBHOOK_URL` | | `budget-check` | | optional |
+| `RT_INVITE_ONLY`, `RT_BILLING_PRO_ENABLED` | ✓ | | | optional |
+| `PORT` | `8000` | | (Railway) | |
+| `BACKEND_URL` | | | ✓ | `http://api.railway.internal:8000`; used at build and runtime |
+| `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_GRIEVANCE_OFFICER_*` | | | ✓ | inlined at build (Dockerfile `ARG`s) |
+
+Railway passes service variables to a Dockerfile build only as declared `ARG`s; the frontend
+Dockerfile declares `BACKEND_URL` and the `NEXT_PUBLIC_*` ones. Never set
+`RT_DEV_RATE_LIMIT_SCALE` or `RT_TEST_*` on Railway.

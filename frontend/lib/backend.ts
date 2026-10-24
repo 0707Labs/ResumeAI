@@ -3,7 +3,7 @@
  * and the server-side reads in lib/site.ts and lib/session.ts. The browser never sees this
  * URL; it only talks to our own origin, which keeps auth cookies first-party.
  *
- * BACKEND_URL, e.g. http://backend.railway.internal:8080 (docs/deploy.md). RT_BACKEND_URL is
+ * BACKEND_URL, e.g. http://api.railway.internal:8000 (docs/deploy.md). RT_BACKEND_URL is
  * the old name and still works. Unset means http://localhost:8000, except in a production
  * build or server, which refuses to start rather than proxy to a backend that isn't there.
  */

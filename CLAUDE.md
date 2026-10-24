@@ -102,7 +102,7 @@ frontend/
 - Semantic color tokens only (bg-surface, text-muted, text-ok...); light/dark via CSS variables.
 - Status is never color-only: pair it with an icon and a word.
 - No network calls except our own origin: next.config.ts proxies /api/* and /health to FastAPI
-  (RT_BACKEND_URL). Same origin keeps auth cookies first-party. No analytics.
+  (BACKEND_URL, lib/backend.ts; set it for `next build` too). Same origin keeps auth cookies first-party. No analytics.
 - UI copy: warm, honest, mentor-like; never salesy.
 
 ## Verifier policy

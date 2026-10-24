@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "startCommand": "python -m app.auth.cli expire-invites",
+    "cronSchedule": "30 3 * * *",
+    "restartPolicyType": "NEVER"
+  }
+}

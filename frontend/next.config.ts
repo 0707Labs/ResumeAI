@@ -9,6 +9,8 @@ const BACKEND_URL = backendUrl();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // A self-contained server for the Docker image (frontend/Dockerfile).
+  output: "standalone",
   // /signin is the sign-in page; old /login links (bookmarks, emails) keep working.
   async redirects() {
     return [

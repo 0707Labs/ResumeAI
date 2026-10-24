@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
 
+import { backendUrl } from "./lib/backend";
+
 // The browser talks only to this origin; /api/* and /health are proxied to FastAPI.
 // Same origin keeps the auth cookies first-party (SameSite=Lax, no CORS credentials).
-const BACKEND_URL = (process.env.RT_BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Rewrites are fixed at build time: BACKEND_URL must be set for `next build` too.
+const BACKEND_URL = backendUrl();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

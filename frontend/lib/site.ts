@@ -1,13 +1,14 @@
 /**
  * Server-side reads for the public pages (landing, legal). They render on the
- * server, so they call FastAPI directly (RT_BACKEND_URL, as next.config.ts does)
+ * server, so they call FastAPI directly (BACKEND_URL, as next.config.ts does)
  * and fall back to safe defaults when it's unreachable: invite-only on, no prices.
  */
 import type { z } from "zod";
 
+import { backendUrl } from "./backend";
 import * as S from "./schemas";
 
-const BACKEND_URL = (process.env.RT_BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const BACKEND_URL = backendUrl();
 const REVALIDATE_S = 60;
 
 async function fetchPublic<T extends z.ZodType>(schema: T, path: string): Promise<z.infer<T> | null> {

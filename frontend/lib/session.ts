@@ -6,9 +6,10 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
 
+import { backendUrl } from "./backend";
 import * as S from "./schemas";
 
-const BACKEND_URL = (process.env.RT_BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const BACKEND_URL = backendUrl();
 
 export type SessionUser = S.Me | "signed_out" | "unknown";
 

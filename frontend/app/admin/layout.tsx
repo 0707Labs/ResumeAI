@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return (
       <main className="mx-auto max-w-xl px-4 py-12">
         <Alert tone="warn" title="We can't check your access right now">
-          The service didn't answer. Try again in a moment.
+          The service didn&apos;t answer. Try again in a moment.
         </Alert>
       </main>
     );

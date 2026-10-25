@@ -98,7 +98,7 @@ export default function WelcomePage() {
             <div>
               <h2 className="font-medium text-fg">Upload your base resume</h2>
               <p className="mt-1 text-sm text-muted">
-                We keep it so you don't have to upload it for every job. You can replace or delete it any time.
+                We keep it so you don&apos;t have to upload it for every job. You can replace or delete it any time.
               </p>
             </div>
             {saved ? (
@@ -107,8 +107,7 @@ export default function WelcomePage() {
               </p>
             ) : (
               <UploadDropzone busy={busy} onReject={setError} onFile={(file) => run(async () => {
-                let resume;
-                resume = await api.parseResumeFile(file);
+                const resume = await api.parseResumeFile(file);
                 await userApi.saveResume({ resume, source: "upload", file_name: file.name });
                 setSaved(file.name);
               }, () => {})} />

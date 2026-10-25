@@ -98,8 +98,12 @@ managed database where the migration user lacks CREATEROLE, create it once as an
 
 ```sql
 CREATE ROLE rt_app NOLOGIN NOINHERIT;
-GRANT rt_app TO <app_login_role>;
+GRANT rt_app TO <app_login_role> WITH ADMIN OPTION;
 ```
+
+`WITH ADMIN OPTION` matters: the migration's own `GRANT rt_app TO CURRENT_USER` fails
+without it ("must have admin option on role rt_app"). docs/deploy.md has the full setup
+for a deployment.
 
 The role must not have BYPASSRLS. Downgrading `0010` drops the grants and policies but
 leaves the role (other databases on the cluster may use it).

@@ -89,3 +89,9 @@ class Settings:
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def migration_database_url() -> str:
+    """Where Alembic connects: RT_MIGRATION_DATABASE_URL (direct, for deploys behind a pooler),
+    else RT_DATABASE_URL. The app itself never uses the first (docs/deploy.md)."""
+    return os.environ.get("RT_MIGRATION_DATABASE_URL") or get_settings().database_url

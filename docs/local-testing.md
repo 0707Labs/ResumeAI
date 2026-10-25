@@ -151,9 +151,9 @@ npm run dev
 The defaults in `.env.local` are right for local use (the frontend proxies `/api/*` to
 `http://localhost:8000`). When it prints `Ready`, open **http://localhost:3000**.
 
-> Always use `http://localhost:3000`, not `127.0.0.1:3000`. Sign-in cookies and the CSRF
-> check are tied to `RT_PUBLIC_URL`, and Next's dev server blocks its scripts for other
-> hostnames.
+> Use `http://localhost:3000`. Sign-in cookies and the CSRF check are tied to
+> `RT_PUBLIC_URL`, and Next's dev server blocks its scripts for other hostnames, so in
+> development a visit to `127.0.0.1` is forwarded to `localhost` automatically.
 
 ## 8. Create your account
 
@@ -320,7 +320,9 @@ More on the test suites: [testing.md](testing.md).
 | No email arrives | Emails are files, not real mail | Step 8.3: read `backend/.dev-outbox/` |
 | The magic link says expired or used | Links work once, for 15 minutes, in the browser that asked | Request a new one |
 | "Too many requests" when signing in | 5 magic links per 15 minutes per IP | Wait, or set `RT_DEV_RATE_LIMIT_SCALE=10` in `backend/.env` and restart |
-| Buttons do nothing, pages never become interactive | Opened `127.0.0.1` instead of `localhost` | Use `http://localhost:3000` |
+| Buttons stay grey, pages never become interactive | The page was opened on a host other than `localhost` (`127.0.0.1` forwards by itself; a LAN IP or custom hostname doesn't), or a code from before this fix is running | Use `http://localhost:3000` |
+| The email button is grey on the sign-in page | It waits for an address with an `@` | Type your email |
+| Google and GitHub buttons say "Provider unavailable" | No OAuth keys in `backend/.env` | Expected locally; see section 11 |
 | Signed in but every action fails with a CSRF error | The browser origin doesn't match `RT_PUBLIC_URL` | Keep both at `http://localhost:3000` |
 | `/admin` shows 404 | The account isn't staff | Step 9, then reload |
 | Sent to sign in when saving a setting | Superadmin step-up (sign-in older than 10 minutes) | Sign in again; you return to the page |

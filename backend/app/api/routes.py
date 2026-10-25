@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import re
 from pathlib import Path
 from typing import Literal
@@ -8,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import AnswerError, analyze, apply_answers, refine_with_llm
@@ -75,9 +77,23 @@ def claude_for(use_llm: bool, analysis: Analysis | None) -> tuple[LLM | None, st
     return llm, None
 
 
+HEALTH_DB_TIMEOUT_S = 3.0
+log = logging.getLogger(__name__)
+
+
 @router.get("/health")
-def health() -> dict:
-    return {"status": "ok", "llm_configured": get_settings().llm_configured}
+async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+    """The platform's readiness check: 503 until the database answers. Nothing else is
+    checked (Claude, Dodo and SES are optional or have their own status in the admin area)."""
+    try:
+        await asyncio.wait_for(db.execute(text("SELECT 1")), HEALTH_DB_TIMEOUT_S)
+        database = "ok"
+    except Exception as exc:  # noqa: BLE001 - unreachable, refused, timed out, bad credentials
+        log.warning("health: database unreachable (%s)", exc.__class__.__name__)
+        database = "unreachable"
+        response.status_code = 503
+    return {"status": "ok" if database == "ok" else "unavailable", "database": database,
+            "llm_configured": get_settings().llm_configured}
 
 
 @router.get("/api/ats/weights")

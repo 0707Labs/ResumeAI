@@ -1,5 +1,5 @@
 # Checks for every pull request and every push to master.
-# Required-check candidates (job names as GitHub shows them): backend, frontend, e2e, secret-scan.
+# Required-check candidates (job names as GitHub shows them): backend, frontend, e2e, docker, secret-scan.
 # dependency-audit always passes and only reports; don't make it required.
 #
 # Only fake values live here. Nothing reaches Anthropic, Dodo or SES:
@@ -174,6 +174,64 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 14
+
+  # Builds both production images and runs them the way Railway does: migrations (the
+  # pre-deploy command), the API with its /health check, each cron command, and the web
+  # server proxying to the API through BACKEND_URL.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resume_tailor
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images
+        run: |
+          docker build -t rt-api backend
+          docker build --build-arg BACKEND_URL=http://localhost:8000 -t rt-web frontend
+      - name: Images run as non-root
+        run: |
+          test "$(docker run --rm --entrypoint id rt-api -u)" = 10001
+          test "$(docker run --rm --entrypoint id rt-web -u)" = 1000
+      - name: Migrate (pre-deploy command)
+        run: docker run --rm --network host -e RT_DATABASE_URL rt-api python -m alembic upgrade head
+      - name: Cron commands
+        run: |
+          for cmd in "app.billing.cli refresh-aggregates" "app.billing.cli budget-check" \
+                     "app.billing.cli purge-expired" "app.auth.cli expire-invites"; do
+            docker run --rm --network host -e RT_DATABASE_URL rt-api python -m $cmd
+          done
+      - name: Start API and web
+        run: |
+          docker run -d --name api --network host -e RT_DATABASE_URL -e RT_AUTH_SECRET -e PORT=8000 rt-api
+          docker run -d --name web --network host -e BACKEND_URL=http://localhost:8000 -e PORT=3000 rt-web
+          for i in $(seq 1 30); do curl -fsS http://localhost:8000/health && break; sleep 2; done
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/robots.txt && break; sleep 2; done
+      - name: Smoke test
+        run: |
+          curl -fsS http://localhost:8000/health | grep -q '"database":"ok"'
+          curl -fsS -g "http://[::1]:8000/health" | grep -q '"database":"ok"'
+          curl -fsS http://localhost:3000/health | grep -q '"database":"ok"'
+          curl -fsS -o /dev/null -w "%{http_code}\n" http://localhost:3000/ | grep -q 200
+      - name: Health is 503 without the database
+        run: |
+          docker run -d --name api-down --network host -e RT_DATABASE_URL=postgresql+psycopg://x@127.0.0.1:1/x -e PORT=8001 rt-api
+          sleep 5
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health)" = 503
+      - name: Container logs
+        if: always()
+        run: docker logs api 2>&1 | tail -50; docker logs web 2>&1 | tail -50
 
   secret-scan:
     runs-on: ubuntu-latest

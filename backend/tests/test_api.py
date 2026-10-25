@@ -6,10 +6,30 @@ from tests.conftest import fixture_text
 client = TestClient(app)
 
 
-def test_health():
+def test_health_checks_the_database(client):
     res = client.get("/health")
     assert res.status_code == 200
-    assert res.json()["status"] == "ok"
+    assert res.json() == {"status": "ok", "database": "ok", "llm_configured": False}
+
+
+def test_health_is_503_when_the_database_is_unreachable(api_app, monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.db.session import get_db
+
+    monkeypatch.setattr("app.api.routes.HEALTH_DB_TIMEOUT_S", 1.0)
+    dead = async_sessionmaker(create_async_engine("postgresql+psycopg://nobody@127.0.0.1:1/none", poolclass=NullPool))
+
+    async def unreachable_db():
+        async with dead() as s:
+            yield s
+
+    api_app.dependency_overrides[get_db] = unreachable_db
+    with TestClient(api_app) as down:
+        res = down.get("/health")
+    assert res.status_code == 503
+    assert res.json() == {"status": "unavailable", "database": "unreachable", "llm_configured": False}
 
 
 def test_ats_weights_endpoint():

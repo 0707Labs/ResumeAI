@@ -20,6 +20,7 @@ dependencies = [
     "httpx2>=2.15",
     "joserfc>=1.7",
     "dodopayments[webhooks]>=1.121",
+    "sentry-sdk[fastapi]>=2.73",  # optional error reporting, off without SENTRY_DSN
 ]
 
 [project.optional-dependencies]

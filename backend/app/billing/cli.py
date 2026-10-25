@@ -32,6 +32,7 @@ import asyncio
 import sys
 import uuid
 
+from app import observability
 from app.billing import aggregates, budget, ledger
 from app.billing.admin import alerts
 from app.billing.config import get_billing_config
@@ -110,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     agg.add_argument("--days", type=int, default=3)
     sub.add_parser("budget-check", help="send Claude budget alerts (50/80/100%%), once each")
     args = parser.parse_args(argv)
+    observability.init("cron")  # scheduled jobs and staff commands report crashes too
     if args.command == "check-alerts":
         return asyncio.run(check_alerts())
     if args.command == "adjust-credits":

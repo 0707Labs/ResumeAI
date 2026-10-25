@@ -29,6 +29,7 @@ from app.api.routes import router
 from app.api.signin import router as signin_router
 from app.api.support import router as support_router
 from app.auth.mailer import get_mailer
+from app import observability
 from app.config import get_settings
 
 
@@ -44,6 +45,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    observability.init("api")  # before the app is built, so its integrations wrap it
     get_mailer()  # fail at startup, not at the first sign-in, if RT_MAILER is misconfigured
     app = FastAPI(title="Resume Tailor", version="0.1.0", lifespan=lifespan)
     app.add_middleware(

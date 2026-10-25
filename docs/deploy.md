@@ -1,8 +1,8 @@
 # Deploying Resume Tailor
 
 How the backend and frontend run outside a laptop: the database, how the frontend reaches
-the backend on one app domain, the Railway services, and email. Sentry and the release
-checklist come next.
+the backend on one app domain, the Railway services, email, and optional error reporting.
+The release checklist comes next.
 
 ## Database connections
 
@@ -254,6 +254,7 @@ Postgres service's variables instead of pasting passwords.
 | `RT_MAILER=ses`, `RT_MAIL_FROM`, `RT_SES_REGION`, `AWS_*` | ✓ | | | docs/email.md |
 | `RT_SLACK_WEBHOOK_URL` | | `budget-check` | | optional |
 | `RT_INVITE_ONLY`, `RT_BILLING_PRO_ENABLED` | ✓ | | | optional |
+| `SENTRY_DSN` (optional), `SENTRY_TRACES_SAMPLE_RATE` | ✓ | ✓ | | Error reporting, below |
 | `PORT` | `8000` | | (Railway) | |
 | `BACKEND_URL` | | | ✓ | `http://api.railway.internal:8000`; used at build and runtime |
 | `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_GRIEVANCE_OFFICER_*` | | | ✓ | inlined at build (Dockerfile `ARG`s) |
@@ -266,3 +267,47 @@ docs/email.md.
 Railway passes service variables to a Dockerfile build only as declared `ARG`s; the frontend
 Dockerfile declares `BACKEND_URL` and the `NEXT_PUBLIC_*` ones. Never set
 `RT_DEV_RATE_LIMIT_SCALE` or `RT_TEST_*` on Railway.
+
+## Error reporting: Sentry (optional)
+
+Off unless `SENTRY_DSN` is set. Set it on `api` and on the cron services (one Sentry
+project is enough; events carry a `component` tag of `api` or `cron`). Code:
+`backend/app/observability.py`, started by `create_app` and by both CLIs.
+
+| Variable | Default | |
+|---|---|---|
+| `SENTRY_DSN` | unset (off) | the project's DSN |
+| `SENTRY_ENVIRONMENT` | `RAILWAY_ENVIRONMENT_NAME`, else `development` | so staging and production separate |
+| `SENTRY_RELEASE` | `RAILWAY_GIT_COMMIT_SHA` | ties errors to a deploy |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` (errors only) | 0–1; performance traces |
+
+**What leaves the server.** Resumes and job descriptions are the most sensitive data we hold,
+and session cookies and sign-in links are credentials, so events say *where* something failed,
+never *what* anyone sent. Two layers:
+
+1. The SDK collects nothing user-supplied: `data_collection` turns off request bodies,
+   headers, cookies, query strings, user info, stack-frame variables, database query data and
+   AI inputs and outputs. The last matters: the Anthropic integration would otherwise attach
+   prompts, which contain resumes. Breadcrumbs are off.
+2. `scrub` (before every event and transaction) rebuilds the event from an allowlist instead
+   of hunting for sensitive fields, because resume text also turns up in exception messages
+   (pydantic validation errors include the input), log arguments and CLI arguments
+   (`create-invite --email`). An event keeps: request method and path (no query), exception
+   types and stack frames (file, function, line, our source lines; no message, no
+   variables), the log message template (no arguments), runtime/OS, the `component` tag,
+   release and environment, and span operation, description and timing.
+
+`backend/tests/test_observability.py` sends a request whose body, query string, headers,
+cookies, exception message, pydantic error and log arguments all contain a marker, plus a CLI
+crash with an email in `sys.argv`, and checks that neither the marker nor the email appears
+anywhere in the captured events, while the exception type, route and failing function do.
+With `scrub` disabled, those tests fail even with `data_collection` on, which is why both layers
+stay.
+
+Missing an exception message is the trade-off. When an error needs more context, add it as a
+log line that follows the logging rules (ids and status codes, never content) and reproduce
+locally.
+
+**Frontend.** No browser Sentry: CLAUDE.md allows the browser to call only our own origin,
+and a browser SDK would also see page content. Server-side Next errors show in the `web`
+service's logs.

@@ -17,6 +17,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
+from app import observability
 from app.admin import audit
 from app.auth.invites import generate_code, hash_code
 from app.config import get_settings
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> None:
     boot.add_argument("--force", action="store_true", help="even though a superadmin exists")
     sub.add_parser("expire-invites", help="revoke expired, unused personal invites so their slots come back")
     args = parser.parse_args(argv)
+    observability.init("cron")  # scheduled jobs and staff commands report crashes too
 
     engine = create_engine(get_settings().database_url)
     with Session(engine) as db:

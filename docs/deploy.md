@@ -1,8 +1,12 @@
 # Deploying Resume Tailor
 
 How the backend and frontend run outside a laptop: the database, how the frontend reaches
-the backend on one app domain, the Railway services, email, and optional error reporting.
-The release checklist comes next.
+the backend on one app domain, the Railway services, email, optional error reporting, and
+how to release to staging, then production, and roll back.
+
+Placeholders: `<app-domain>` is the product's domain (not chosen yet), `<api-staging>` and
+`<api-production>` are the `api` service's Railway domains (`*.up.railway.app`, or a custom
+`api.` subdomain).
 
 ## Database connections
 
@@ -12,7 +16,7 @@ port differ.
 | Variable | Used by | Connects to |
 |---|---|---|
 | `RT_DATABASE_URL` | the API, scheduled jobs, the admin CLIs (`app.auth.cli`, `app.billing.cli`) | the pooler (PgBouncer, `pool_mode = transaction`), or Postgres directly when there is no pooler |
-| `RT_MIGRATION_DATABASE_URL` | `alembic upgrade head` (the pre-deploy step) | Postgres directly, never a transaction pooler |
+| `RT_MIGRATION_DATABASE_URL` | the pre-deploy step (`python -m app.migrate`, which runs `alembic upgrade head`) and any manual `alembic` command | Postgres directly, never a transaction pooler |
 
 Alembic uses `RT_MIGRATION_DATABASE_URL` when it is set, else `RT_DATABASE_URL`
 (`backend/alembic/env.py`). The app itself never reads `RT_MIGRATION_DATABASE_URL`.
@@ -202,7 +206,7 @@ Nixpacks or Railpack.
 
 | Service | Root directory | Config file (absolute path) | What runs |
 |---|---|---|---|
-| `api` | `/backend` | `/backend/railway.json` | `python -m app.serve`; pre-deploy `python -m alembic upgrade head`; health check `/health` |
+| `api` | `/backend` | `/backend/railway.json` | `python -m app.serve`; pre-deploy `python -m app.migrate`; health check `/health` |
 | `web` | `/frontend` | `/frontend/railway.json` | `node server.js` (Next standalone); health check `/robots.txt` |
 | `cron-refresh-aggregates` | `/backend` | `/backend/railway/cron-refresh-aggregates.json` | `python -m app.billing.cli refresh-aggregates`, `*/15 * * * *` |
 | `cron-budget-check` | `/backend` | `/backend/railway/cron-budget-check.json` | `python -m app.billing.cli budget-check`, `*/5 * * * *` |
@@ -221,9 +225,11 @@ Nixpacks or Railpack.
   Railway runs them on UTC, at most every 5 minutes, and skips a run while the previous one is
   still going. Each command exits when done (`restartPolicyType: NEVER`; the next tick is the
   retry). All four are safe to run twice.
-- **Migrations** run only in the `api` service's pre-deploy step, with
-  `RT_MIGRATION_DATABASE_URL` when there's a pooler. A failed migration fails the deploy and the
-  old version keeps serving. The `web` and cron services deploy independently and may run
+- **Migrations** run only in the `api` service's pre-deploy step (`python -m app.migrate`),
+  with `RT_MIGRATION_DATABASE_URL` when there's a pooler. A failed migration fails the deploy
+  and the old version keeps serving. When the database is already ahead of the code being
+  deployed (a rollback), the step says so and exits 0 instead of failing the way plain
+  `alembic upgrade head` does ("Can't locate revision"); `tests/test_migrate.py`. The `web` and cron services deploy independently and may run
   against the new schema with old code for a few minutes, so migrations must stay additive (add
   columns and tables; drop them a release later).
 - **One replica, one worker** for `api`: rate limits are kept in process memory. Scaling out
@@ -311,3 +317,189 @@ locally.
 **Frontend.** No browser Sentry: CLAUDE.md allows the browser to call only our own origin,
 and a browser SDK would also see page content. Server-side Next errors show in the `web`
 service's logs.
+
+## URLs to register
+
+Everything users see is on the app domain. The `api` service's own domain is used only by
+Dodo's webhooks (and for checking `/health` directly).
+
+| What | Staging | Production | Registered in |
+|---|---|---|---|
+| App (`web`) | `https://staging.<app-domain>` | `https://<app-domain>` | DNS → Railway `web` custom domain |
+| API (`api`) | `https://<api-staging>` | `https://<api-production>` | Railway `api` → generate domain |
+| Dodo webhook | `https://<api-staging>/api/billing/webhooks/dodo` (test-mode endpoint) | `https://<api-production>/api/billing/webhooks/dodo` (live-mode endpoint) | Dodo → Developer → Webhooks; events in docs/billing.md section 3 |
+| Google OAuth redirect | `https://staging.<app-domain>/api/auth/google/callback` | `https://<app-domain>/api/auth/google/callback` | Google Cloud → Credentials → OAuth client → Authorized redirect URIs |
+| GitHub OAuth callback | `https://staging.<app-domain>/api/auth/github/callback` | `https://<app-domain>/api/auth/github/callback` | GitHub → org settings → OAuth Apps (one app per environment: one callback URL each) |
+| Magic links | `https://staging.<app-domain>/auth/email#token=…` | `https://<app-domain>/auth/email#token=…` | nothing: built from `RT_PUBLIC_URL` |
+| Dodo checkout return, customer-portal return | `RT_PUBLIC_URL/…` | `RT_PUBLIC_URL/…` | nothing: sent with each checkout |
+
+- **Why Dodo goes straight to the API.** The webhook then doesn't depend on the `web`
+  service being up, there's no extra hop that could touch the body the signature covers, and
+  Dodo's retries (8 over about a day) reach the service that records them. The app-domain URL
+  (`https://<app-domain>/api/billing/webhooks/dodo`, through the Next proxy) also works, and is
+  what `/admin` → Integrations displays because it builds the URL from `RT_PUBLIC_URL`; register
+  the direct one.
+- **The API domain serves the whole API**, not just the webhook. That's safe: session and
+  CSRF cookies are host-only on the app domain, so browsers never send them to the API
+  domain, and state-changing calls need the app's `Origin`.
+- **Google:** a web-application OAuth client per environment (or one client listing both
+  redirect URIs). The flow is server-side, so no JavaScript origins are needed. On the consent
+  screen, add the app domain under *Authorized domains* with the privacy and terms URLs, and
+  publish it ("In production") before launch: in *Testing* only listed test users can sign in.
+- **GitHub:** OAuth Apps allow one callback URL, so staging and production are separate apps
+  with separate `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
+
+## Release checklist
+
+Staging first, on the exact commit that will go to production. Production repeats it with live
+values. Run one-off commands (notices, invites, the first superadmin) in the `api` service's
+container: `railway ssh` (or the dashboard's *Copy SSH Command* on the service). Locally they
+can't reach the private database. For SQL, `railway connect` opens a `psql` shell on the
+Postgres service.
+
+### Once, before the first deploy
+
+- [ ] Domains chosen; `staging.<app-domain>` and `<app-domain>` point at Railway's `web`
+      custom domains (Railway shows the CNAME; it issues the TLS certificates).
+- [ ] Railway project with `staging` and `production` environments and the seven services in
+      "Railway" above (root directory and config-file path set on each).
+- [ ] Postgres: a login role that owns the schema instead of the template's superuser, and the
+      `rt_app` role (docs/admin.md, "Row-level security"). As the `postgres` user, once per
+      environment:
+
+      ```sql
+      CREATE ROLE rt_owner LOGIN PASSWORD '<generated>';
+      CREATE ROLE rt_app NOLOGIN NOINHERIT;
+      GRANT rt_app TO rt_owner WITH ADMIN OPTION;
+      ALTER DATABASE railway OWNER TO rt_owner;   -- the template's database name
+      ALTER SCHEMA public OWNER TO rt_owner;
+      ```
+
+      `WITH ADMIN OPTION` is required: migration `0010` runs `GRANT rt_app TO CURRENT_USER`,
+      which Postgres refuses without it ("must have admin option on role rt_app"). Checked on
+      Postgres 15: as `rt_owner`, `python -m app.migrate` reaches head, `rt_owner` owns the
+      tables, and `SET LOCAL ROLE rt_app` sees no rows without `app.user_id`.
+
+      `RT_DATABASE_URL` (and `RT_MIGRATION_DATABASE_URL`, if there's a pooler) connect as
+      `rt_owner` (Database connections, above).
+- [ ] Backups: Railway's backups for the Postgres volume (check the plan includes them) or a
+      scheduled `pg_dump` to storage outside Railway. Restore one into a scratch database once.
+- [ ] GitHub ruleset on `master`: required checks `backend`, `frontend`, `docker`,
+      `secret-scan` (and `e2e` if you decide to); no direct pushes.
+- [ ] Railway: `staging` deploys `master` automatically with **Wait for CI** on; `production`
+      deploys the same commit by hand once staging passes.
+- [ ] `check-alerts`: docs/billing.md section 4 asks for `python -m app.billing.cli
+      check-alerts` at least hourly, paging someone when it exits 1. That's not one of the four
+      cron services yet. Add a fifth (same pattern, `0 * * * *`), or rely on the Slack budget
+      alerts and the admin dashboard.
+
+### Staging
+
+Infrastructure and variables
+
+- [ ] Variables per "Railway → Variables": `RT_PUBLIC_URL` and `CORS_ORIGINS` =
+      `https://staging.<app-domain>`, a new `RT_AUTH_SECRET`, `PORT=8000` on `api`,
+      `BACKEND_URL=http://api.railway.internal:8000` and the `NEXT_PUBLIC_*` values on `web`.
+- [ ] Payments in test mode: `DODO_ENVIRONMENT=test`, test API key, the test-mode webhook
+      endpoint's secret.
+- [ ] Email: `RT_MAILER=ses`, staging send-only key; the sandbox is fine (verify the testers'
+      addresses; docs/email.md, "Staging").
+- [ ] OAuth: the staging Google client and staging GitHub app.
+- [ ] Optional: `SENTRY_DSN`.
+
+Deploy
+
+- [ ] `api` deploys: the pre-deploy log ends at the head revision; the deploy goes live, so
+      `/health` passed. `https://<api-staging>/health` and `https://staging.<app-domain>/health`
+      both say `"database": "ok"`.
+- [ ] `web` and the four cron services deploy; each cron service shows its schedule.
+
+Data
+
+- [ ] Consent notices with the real text: `python -m app.auth.cli publish-notice PURPOSE
+      VERSION URL --body-file FILE` for `service`, `age_18_plus`, `waitlist`, `research`
+      (docs/local-testing.md section 4 shows the loop).
+- [ ] An invite (`python -m app.auth.cli create-invite`), sign up with it, then
+      `ADMIN_BOOTSTRAP_EMAIL=you@… python -m app.auth.cli bootstrap-admin` (docs/admin.md
+      section 6).
+
+Integrations
+
+- [ ] Dodo: **Send example** on the test webhook endpoint gets 200; the "unknown payment"
+      review it creates is expected (resolve it).
+- [ ] Sign in with Google, with GitHub, and with a magic link (headers show SPF, DKIM and
+      DMARC pass; docs/email.md section 2).
+- [ ] `/admin` → Integrations: database, Claude, Dodo, email and both providers show their
+      expected state.
+
+Smoke test
+
+- [ ] Tailor a resume end to end; `/health` shows `"llm_configured": true`.
+- [ ] Hit the paywall, buy with a test card, see credits arrive (webhook), download the file.
+- [ ] Client IP check (Railway → "Client IPs behind the proxy").
+- [ ] Cron logs: `budget-check` within 5 minutes, `refresh-aggregates` within 15; run
+      `purge-expired` and `expire-invites` once by hand in the shell.
+- [ ] If Sentry is on: the first event shows route, exception type and frames, and no request
+      data (Error reporting, above).
+- [ ] Rollback drill: roll `api` back one deployment and forward again (Rollback, below).
+
+### Production
+
+- [ ] Staging passed on this commit.
+- [ ] docs/billing.md section 4 (Dodo go-live: compliance OK, live products and prices, fees)
+      and docs/email.md section 4 (SES production access, DMARC) are done.
+- [ ] Production variables: `RT_PUBLIC_URL`/`CORS_ORIGINS` = `https://<app-domain>`, its own
+      `RT_AUTH_SECRET` (never staging's), `DODO_ENVIRONMENT=live` with the live key and the
+      live webhook endpoint's secret, production SES key, production Google client (consent
+      screen published) and GitHub app.
+- [ ] `RT_INVITE_ONLY` (and `/admin/settings` → `invite_only`) as intended for launch;
+      no maintenance banner.
+- [ ] Deploy `api`, then `web`, then the cron services. Check `/health` on both domains.
+- [ ] Repeat the staging "Data", "Integrations" and "Smoke test" items with live values. The
+      purchase is one small real payment, refunded afterwards (docs/billing.md section 4).
+- [ ] Every test-mode Dodo subscription cancelled (they keep sending webhooks).
+
+## Rollback
+
+First find out what broke; most fixes don't touch the database.
+
+**A deploy failed.** Nothing to undo: Railway keeps the previous deployment serving until the
+new one's health check passes. The deploy log says why: the migration step's error, or the
+startup refusal, which names the missing variable (mail, `BACKEND_URL`).
+
+**Bad code is live.** In the service's *Deployments* list, use the three-dot menu on the last
+good deployment and choose **Rollback**. Railway restores that deployment's image **and its
+variables**, so a variable change made since (a rotated key, say) is undone too: re-apply it
+afterwards. Deployments older than the plan's image retention can't be rolled back; redeploy
+an older commit instead.
+- `api`: the older deployment's pre-deploy step finds the database ahead of its code, prints
+  "a rollback. Not migrating." and exits 0, so the rollback goes live with the newer schema.
+  That works because migrations are additive.
+- `web`: its `BACKEND_URL` and `NEXT_PUBLIC_*` values were fixed when that image was built.
+- Cron services run their own deployment's image: roll them back separately if the bug is in a
+  job.
+- Then `/health` on both domains and the smoke test's sign-in and tailoring steps.
+
+**A variable is wrong.** Change it back. Railway redeploys the service. For `web`, a change to
+`BACKEND_URL` or a `NEXT_PUBLIC_*` value only takes effect after that rebuild.
+
+**A migration is wrong.** In order of preference:
+1. Roll the code back (above) and leave the schema. An additive migration does no harm.
+2. Fix forward: a new migration that corrects it, deployed as usual.
+3. Only if the schema itself must go back: take a backup, roll `api` back, then in its shell
+   run `alembic downgrade <revision>` (connects through `RT_MIGRATION_DATABASE_URL`).
+   Downgrades drop what the migration added, including rows written since.
+   `tests/test_db_schema.py` checks every downgrade runs, not that it keeps your data.
+
+**Data is damaged.** Stop writes first (below), restore the latest good backup into a new
+database, point `RT_DATABASE_URL` (and `RT_MIGRATION_DATABASE_URL`) at it, redeploy `api` and
+the cron services. Payments made since the backup are replayed from Dodo; see docs/billing.md
+section 7, and never grant a purchase by hand while its webhook is pending.
+
+**Payments while the API is down.** Dodo retries failed webhooks 8 times over about a day, and
+deliveries are deduplicated by `webhook-id`, so once the API is back they apply exactly once.
+Check `/admin/billing` → *Webhooks not yet processed* (docs/billing.md section 7).
+
+**Without a deploy** (`/admin/settings`, superadmin): `analyses_paused` stops new tailorings,
+`budget_kill_switch` stops Claude spend, `maintenance_banner` tells every visitor, and
+`invite_only` closes sign-up. Each change is audited.

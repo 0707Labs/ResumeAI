@@ -4,12 +4,10 @@ The URL is RT_MIGRATION_DATABASE_URL, else RT_DATABASE_URL, unless a caller (the
 fixtures) sets `sqlalchemy.url` on the Config object. Deploys point RT_MIGRATION_DATABASE_URL
 at a direct (unpooled) connection as the same login role (docs/deploy.md)."""
 
-import os
-
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from app.config import get_settings
+from app.config import migration_database_url
 from app.db.models import Base
 
 config = context.config
@@ -17,8 +15,7 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    return (config.get_main_option("sqlalchemy.url") or os.environ.get("RT_MIGRATION_DATABASE_URL")
-            or get_settings().database_url)
+    return config.get_main_option("sqlalchemy.url") or migration_database_url()
 
 
 def run_migrations_offline() -> None:

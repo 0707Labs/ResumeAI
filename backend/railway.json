@@ -5,7 +5,7 @@
   },
   "deploy": {
     "preDeployCommand": [
-      "python -m alembic upgrade head"
+      "python -m app.migrate"
     ],
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,

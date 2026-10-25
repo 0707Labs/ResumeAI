@@ -205,7 +205,7 @@ jobs:
           test "$(docker run --rm --entrypoint id rt-api -u)" = 10001
           test "$(docker run --rm --entrypoint id rt-web -u)" = 1000
       - name: Migrate (pre-deploy command)
-        run: docker run --rm --network host -e RT_DATABASE_URL rt-api python -m alembic upgrade head
+        run: docker run --rm --network host -e RT_DATABASE_URL rt-api python -m app.migrate
       - name: Cron commands
         run: |
           for cmd in "app.billing.cli refresh-aggregates" "app.billing.cli budget-check" \

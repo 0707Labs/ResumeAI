@@ -1,5 +1,6 @@
 // Small inline icon set (no icon font, no network). Decorative by default:
 // pass a `label` when the icon carries meaning on its own.
+// Many paths come from Lucide (ISC); the notice is in docs/assets.md.
 import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement> & { label?: string };
@@ -88,3 +89,5 @@ export const DownloadIcon = (p: IconProps) => (
 export const HelpIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01" /></Icon>
 );
+export const MenuIcon = (p: IconProps) => <Icon {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Icon>;
+export const CloseIcon = (p: IconProps) => <Icon {...p}><path d="M6 6l12 12M18 6 6 18" /></Icon>;

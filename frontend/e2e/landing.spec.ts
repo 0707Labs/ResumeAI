@@ -47,9 +47,29 @@ test("landing: legal pages render and the page fits a phone", async ({ page }) =
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 
+  // The section links live in a menu on phones.
+  const banner = page.getByRole("banner");
+  await expect(banner.getByRole("link", { name: "FAQ" })).toBeHidden();
+  await banner.getByRole("button", { name: "Open menu" }).click();
+  await banner.locator("#site-menu").getByRole("link", { name: "FAQ" }).click();
+  await expect(page).toHaveURL(/#faq$/);
+  await expect(banner.locator("#site-menu")).toHaveCount(0);
+
   for (const [path, title] of [["/legal/terms", "Terms of Service"], ["/legal/privacy", "Privacy Policy"],
     ["/legal/refunds", "Refund Policy"], ["/legal/grievance", "Grievance redressal"]]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
   }
+});
+
+test("landing: scroll reveals run only without a reduced-motion preference", async ({ page }) => {
+  const animation = () => page.locator("#faq .reveal").first().evaluate((el) => getComputedStyle(el).animationName);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  expect(await animation()).toBe("reveal");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await animation()).toBe("none");
+  // At rest the content is fully visible.
+  await expect(page.getByRole("heading", { level: 2, name: "Good to know" })).toHaveCSS("opacity", "1");
 });

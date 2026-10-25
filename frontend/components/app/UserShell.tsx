@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { Avatar } from "@/components/app/Avatar";
+import { BrandLogo } from "@/components/BrandLogo";
 import { ThemeToggle } from "@/components/AppShell";
 import { OutOfCreditsModal } from "@/components/billing/OutOfCreditsModal";
 import { CreditsLive } from "@/components/CreditsLive";
@@ -48,8 +49,11 @@ export function UserShell({ me, initialTheme, children }: { me: Me | null; initi
       </a>
       <MaintenanceBanner />
       <header className="sticky top-0 z-30 border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
-          <Link href="/app/dashboard" className="text-base font-semibold text-fg">Resume Tailor</Link>
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-(--gutter)">
+          <Link href="/app/dashboard" className="text-base font-semibold text-fg">
+            <BrandLogo />
+            <span className="sr-only"> dashboard</span>
+          </Link>
           <div className="flex items-center gap-1 sm:gap-2">
             <PlanChip pathname={pathname} />
             <CreditsLive />
@@ -57,17 +61,17 @@ export function UserShell({ me, initialTheme, children }: { me: Me | null; initi
           </div>
         </div>
       </header>
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-24 pt-6 sm:px-6 md:pb-10 md:pt-8">
+      <div className="mx-auto flex max-w-7xl gap-8 px-(--gutter) pb-24 pt-6 md:pb-10 md:pt-8">
         <nav aria-label="Sections" className="hidden w-52 shrink-0 md:block">
-          <ul className="sticky top-20 space-y-1">
+          <ul className="sticky top-20 space-y-0.5">
             {USER_NAV.map(({ href, label, Icon }) => {
               const current = isCurrentSection(pathname, href);
               return (
                 <li key={href}>
                   <Link href={href} aria-current={current ? "page" : undefined}
                     className={`flex min-h-10 items-center gap-2.5 rounded-lg px-3 text-sm ${
-                      current ? "bg-surface-2 font-medium text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"}`}>
-                    <Icon />{label}
+                      current ? "bg-accent-soft font-medium text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"}`}>
+                    <Icon className={`h-4 w-4 ${current ? "text-accent" : ""}`} />{label}
                   </Link>
                 </li>
               );
@@ -94,8 +98,10 @@ function BottomNav({ pathname }: { pathname: string }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
-  const cell = (current: boolean) => `flex min-h-14 w-full flex-col items-center justify-center gap-0.5 px-1 text-[11px] ${
-    current ? "font-medium text-accent" : "text-muted hover:text-fg"}`;
+  // The current cell gets a bar along its top edge as well as the accent colour.
+  const cell = (current: boolean) => `relative flex min-h-14 w-full flex-col items-center justify-center gap-0.5 px-1 text-[11px] ${
+    current ? "font-medium text-accent before:absolute before:inset-x-4 before:top-0 before:h-0.5 before:rounded-full before:bg-accent"
+      : "text-muted hover:text-fg"}`;
   return (
     <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
       {open && (

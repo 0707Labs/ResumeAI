@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, mightBeSignedIn } from "@/lib/api";
 import { captureReferral } from "@/lib/referrals";
 import type { Me } from "@/lib/schemas";
 import { useSession } from "@/lib/store";
@@ -85,6 +85,7 @@ export function AppShell({ children, initialTheme }: { children: React.ReactNode
 function AccountLink({ pathname }: { pathname: string }) {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   useEffect(() => {
+    if (!mightBeSignedIn()) { setMe(null); return; }
     let live = true;
     api.me().then((m) => { if (live) setMe(m); }).catch(() => { if (live) setMe(null); });
     return () => { live = false; };

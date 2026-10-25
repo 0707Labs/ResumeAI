@@ -1,8 +1,8 @@
 # Deploying Resume Tailor
 
-How the backend and frontend run outside a laptop. So far: the database, and how the
-frontend reaches the backend on one app domain. Railway services, SES, Sentry and the
-release checklist come next.
+How the backend and frontend run outside a laptop: the database, how the frontend reaches
+the backend on one app domain, the Railway services, and email. Sentry and the release
+checklist come next.
 
 ## Database connections
 
@@ -257,6 +257,11 @@ Postgres service's variables instead of pasting passwords.
 | `PORT` | `8000` | | (Railway) | |
 | `BACKEND_URL` | | | ✓ | `http://api.railway.internal:8000`; used at build and runtime |
 | `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_GRIEVANCE_OFFICER_*` | | | ✓ | inlined at build (Dockerfile `ARG`s) |
+
+**Email.** The `api` service refuses to start on a non-localhost `RT_PUBLIC_URL` unless
+`RT_MAILER=ses` and its settings are complete, so a deploy with mail misconfigured never goes
+live. SES setup, DNS (DKIM, SPF, DMARC), leaving the sandbox and the per-environment values:
+docs/email.md.
 
 Railway passes service variables to a Dockerfile build only as declared `ARG`s; the frontend
 Dockerfile declares `BACKEND_URL` and the `NEXT_PUBLIC_*` ones. Never set

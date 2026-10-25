@@ -12,9 +12,16 @@ The SES mailer (`backend/app/auth/mailer.py`) signs requests itself with SigV4. 
 no AWS SDK, so credentials come only from the environment (see "Credentials" below).
 Every email has a plain-text part and a simple HTML part with the same link.
 
-The app **refuses to start** when `RT_MAILER=ses` is missing `RT_MAIL_FROM`,
-`AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`. It also refuses to start for an unknown
-`RT_MAILER`. If SES rejects a send or can't be reached, the sign-in request gets
+The app **refuses to start** (`create_app`, so the deploy's health check never passes and
+the previous version keeps serving) when:
+
+- `RT_PUBLIC_URL` is not localhost and `RT_MAILER` is `outbox` or unset. On a deployment the
+  outbox would write sign-in links to a file in the container that nobody reads. Staging and
+  production both need `RT_MAILER=ses`.
+- `RT_MAILER=ses` is missing `RT_MAIL_FROM`, `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`.
+- `RT_MAILER` is anything other than `outbox` or `ses`.
+
+The error names the missing variable, never a value. Tests: `backend/tests/test_mailer.py`. If SES rejects a send or can't be reached, the sign-in request gets
 `503 email_unavailable` (the page suggests Google or GitHub), and an auth event
 `magic_link_failed` is logged with only the status (`ses_400`, `network`, ...). The address,
 token and link are never logged. SES error bodies can name the recipient, so they are
@@ -32,10 +39,22 @@ subdomain. Use the real names.
    domain". Without this, SPF only covers `amazonses.com` and doesn't align with your domain.
 3. **Publish the DNS records** in section 2 below. Wait until the identity shows
    *DKIM: Successful* and *MAIL FROM: Successful*. This usually takes minutes, up to 72 hours.
-4. **Leave the sandbox.** Account dashboard → *Request production access*. Use case:
-   transactional sign-in links only, sent on request, about N per day, no marketing. Bounces
-   and complaints go to the account suppression list. In the sandbox, SES delivers only to
-   verified addresses, 200 per day.
+4. **Leave the sandbox** (production only; see "Staging" below). In the sandbox SES
+   delivers only to verified addresses, at most 200 messages a day and 1 per second.
+   Account dashboard → *Request production access*, in ap-south-1 (access is per account
+   **and** per region). What to write:
+   - Mail type: *Transactional*. Website URL: the production app domain (it must be live,
+     with the privacy policy reachable).
+   - Use case: "Single-use sign-in links and account notices (invites, support replies) sent
+     only when a user asks for them on our site. No marketing, no purchased or imported
+     lists; every recipient typed their own address into our sign-in form."
+   - Volume: expected messages per day at launch (a few hundred is fine to ask for).
+   - Bounces and complaints: "The account-level suppression list is on for bounces and
+     complaints; a configuration set publishes bounce and complaint events to SNS with a
+     CloudWatch alarm; we never resend to a suppressed address."
+   AWS answers within about a day. A rejection usually asks for more detail on the above;
+   reply in the same case. Once granted, check *Account dashboard*: "Production access" and
+   the daily quota.
 5. **Suppression list.** Account dashboard → Suppression list: make sure **Bounces and
    complaints** are both on. Then SES stops sending to addresses that hard-bounced or
    complained.
@@ -102,9 +121,31 @@ Notes:
   It should show `SPF: PASS`, `DKIM: PASS` and `DMARC: PASS`, all with `mail.example.com`
   or `bounce.mail.example.com`.
 
+### Staging
+
+Staging uses the same AWS account, region and identity as production, with its own
+send-only IAM key (so a leaked staging key can be revoked alone). If production access
+hasn't been granted yet, staging still works in the sandbox: verify each tester's address
+under Identities → Create identity → Email address, and only those receive links. Others
+get `503 email_unavailable` (SES answers `MessageRejected`), which is the expected sandbox
+behaviour, not a bug.
+
 ## 3. App configuration
 
-In the backend's production environment (never in a committed file):
+Set these on the backend (`api`) service in each Railway environment (docs/deploy.md,
+"Railway"), never in a committed file. The cron services send no email and don't need them.
+
+| Variable | Staging | Production | Notes |
+|---|---|---|---|
+| `RT_MAILER` | `ses` | `ses` | required whenever `RT_PUBLIC_URL` isn't localhost |
+| `RT_MAIL_FROM` | `Resume Tailor (staging) <no-reply@mail.example.com>` | `Resume Tailor <no-reply@mail.example.com>` | the address must match the IAM policy's `ses:FromAddress` |
+| `RT_SES_REGION` | `ap-south-1` | `ap-south-1` | default; the identity's region |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | staging key | production key | send-only IAM user per environment |
+| `RT_SES_CONFIGURATION_SET` | optional | `magic-links` | event publishing for bounces and complaints |
+| `AWS_SESSION_TOKEN` | | | only with temporary credentials |
+| `RT_PUBLIC_URL` | `https://staging.<app-domain>` | `https://<app-domain>` | links are built from it |
+
+The same thing as shell variables:
 
 ```bash
 RT_MAILER=ses
@@ -127,7 +168,7 @@ AWS_SESSION_TOKEN=...
 - [ ] Account suppression list on for bounces and complaints.
 - [ ] Send-only IAM credentials in the production secret store, not in `.env` on a laptop.
 - [ ] Production env sets `RT_MAILER=ses`, `RT_MAIL_FROM`, the AWS keys and `RT_PUBLIC_URL`.
-      The server starts, so the startup check passed.
+      The deploy goes live (its health check passed), so the startup check passed too.
 - [ ] A real sign-in from a fresh Gmail and Outlook address lands in the inbox, and the
       headers show SPF/DKIM/DMARC pass.
 - [ ] Optional: a bounce/complaint alarm (configuration set → SNS/EventBridge → CloudWatch).

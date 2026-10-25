@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,12 @@ class Settings:
     public_url: str = field(
         default_factory=lambda: os.environ.get("RT_PUBLIC_URL", "http://localhost:3000").rstrip("/")
     )
+    @property
+    def local_origin(self) -> bool:
+        """RT_PUBLIC_URL is localhost (dev, tests, e2e). Anything else is a deployment, which
+        must have real secrets and real email (app.auth.signing, app.auth.mailer)."""
+        return urlsplit(self.public_url).hostname in {"localhost", "127.0.0.1"}
+
     # Invite-only mode: new accounts need an invite (on by default). Off = open signup;
     # an invite typed anyway is still checked and used up.
     invite_only: bool = field(

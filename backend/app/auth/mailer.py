@@ -183,12 +183,18 @@ _override: Mailer | None = None
 
 
 def get_mailer() -> Mailer:
-    """Raises RuntimeError for an unknown RT_MAILER or a provider missing its settings.
-    create_app calls this once so a misconfigured server fails at startup."""
+    """Raises RuntimeError for an unknown RT_MAILER, a provider missing its settings, or the
+    dev outbox on a deployment (RT_PUBLIC_URL not localhost), where sign-in links would land
+    in a file nobody reads. create_app calls this once so a misconfigured server fails at
+    startup."""
     if _override is not None:
         return _override
-    kind = get_settings().mailer
+    settings = get_settings()
+    kind = settings.mailer
     if kind == "outbox":
+        if not settings.local_origin:
+            raise RuntimeError(f"RT_MAILER=outbox is for localhost only; {settings.public_url} needs RT_MAILER=ses"
+                               " (see docs/email.md)")
         return OutboxMailer()
     if kind == "ses":
         return _ses_from_settings()

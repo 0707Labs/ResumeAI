@@ -74,6 +74,34 @@ def test_ses_without_settings_fails_at_startup(ses_env, monkeypatch, missing):
         create_app()
 
 
+@pytest.mark.parametrize("mailer", [None, "outbox"])
+def test_a_deployment_without_ses_fails_at_startup(monkeypatch, mailer):
+    """RT_MAILER unset (the outbox default) on a real domain would write sign-in links to a file."""
+    monkeypatch.setenv("RT_PUBLIC_URL", "https://app.example.com")
+    if mailer:
+        monkeypatch.setenv("RT_MAILER", mailer)
+    else:
+        monkeypatch.delenv("RT_MAILER", raising=False)
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="RT_MAILER=outbox is for localhost only"):
+        create_app()
+
+
+@pytest.mark.parametrize("url", ["http://localhost:3000", "http://127.0.0.1:3100"])
+def test_the_outbox_works_on_localhost(monkeypatch, url):
+    monkeypatch.setenv("RT_PUBLIC_URL", url)
+    monkeypatch.delenv("RT_MAILER", raising=False)
+    assert isinstance(get_mailer(), OutboxMailer)
+
+
+def test_a_deployment_with_ses_starts(ses_env, monkeypatch):
+    monkeypatch.setenv("RT_PUBLIC_URL", "https://app.example.com")
+    from app.main import create_app
+
+    create_app()
+
+
 def test_unknown_mailer_fails_at_startup(monkeypatch):
     monkeypatch.setenv("RT_MAILER", "carrier-pigeon")
     from app.main import create_app

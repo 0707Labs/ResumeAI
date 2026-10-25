@@ -9,7 +9,6 @@ import time
 from collections import deque
 from collections.abc import Callable
 
-from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 
@@ -46,7 +45,7 @@ def scaled(limit: int) -> int:
     """The limit, times RT_DEV_RATE_LIMIT_SCALE on a localhost origin only (end-to-end
     runs sign up more accounts than 5 magic links per 15 minutes allow)."""
     settings = get_settings()
-    if settings.dev_rate_limit_scale > 1 and urlsplit(settings.public_url).hostname in {"localhost", "127.0.0.1"}:
+    if settings.dev_rate_limit_scale > 1 and settings.local_origin:
         return limit * settings.dev_rate_limit_scale
     return limit
 

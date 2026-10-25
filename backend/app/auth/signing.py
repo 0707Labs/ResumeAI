@@ -7,7 +7,6 @@ import hashlib
 import hmac
 import secrets
 from functools import lru_cache
-from urllib.parse import urlsplit
 
 from app.config import get_settings
 
@@ -21,7 +20,7 @@ def secret_key() -> bytes:
     settings = get_settings()
     if settings.auth_secret:
         return settings.auth_secret.encode()
-    if urlsplit(settings.public_url).hostname in {"localhost", "127.0.0.1"}:
+    if settings.local_origin:
         return _dev_key()
     raise RuntimeError("RT_AUTH_SECRET must be set when RT_PUBLIC_URL is not localhost")
 

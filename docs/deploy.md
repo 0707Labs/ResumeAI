@@ -1,7 +1,8 @@
 # Deploying Resume Tailor
 
-How the backend and frontend run outside a laptop. This page covers the database so far.
-The rewrite target, Railway services, SES, Sentry and the release checklist come next.
+How the backend and frontend run outside a laptop. So far: the database, and how the
+frontend reaches the backend on one app domain. Railway services, SES, Sentry and the
+release checklist come next.
 
 ## Database connections
 
@@ -106,3 +107,82 @@ connection limit. Neither URL in the app changes when you do; only the host and 
 | Laptop | default `postgresql+psycopg:///resume_tailor` (local socket, your OS user) | same URL |
 | pytest | a throwaway `rt_test_*` database via `RT_TEST_ADMIN_DATABASE_URL` | the fixture runs Alembic itself |
 | CI (`.github/workflows/ci.yml`) | `postgres:postgres@localhost:5432/resume_tailor` (Postgres 15 service); PgBouncer on `localhost:6432` for the pooling test | same URL |
+
+## Frontend to backend: `BACKEND_URL`
+
+The browser only ever talks to the frontend's origin (the app domain). The Next.js server
+forwards `/api/*` and `/health` to FastAPI (the rewrites in `frontend/next.config.ts`), and
+server-rendered pages read from FastAPI directly (`lib/site.ts`, `lib/session.ts`). All three
+take the backend's address from `BACKEND_URL` (`frontend/lib/backend.ts`).
+
+- **Set it at build time too.** Next fixes rewrites when it builds (they're written into
+  `.next/routes-manifest.json`). Tested: a build made with `BACKEND_URL=http://127.0.0.1:18182`
+  and started with `BACKEND_URL=http://127.0.0.1:18181` still proxied `/health` and `/api/*`
+  to `:18182`, while `lib/site.ts`/`lib/session.ts` read the runtime value. Use the same value
+  for both. On Railway, service variables are available to the build, so setting it once on the
+  frontend service covers both.
+- **Production refuses to guess.** `next build` and `next start` fail with "BACKEND_URL must be
+  set" when it's missing. Outside production it defaults to `http://localhost:8000`.
+- **Origin only:** `http(s)://host[:port]`, no path. A trailing slash is fine.
+- **Old name:** `RT_BACKEND_URL` still works; `BACKEND_URL` wins if both are set.
+- **Use the private address.** On Railway the backend is reachable from the frontend at
+  `http://<backend-service-name>.railway.internal:<port>` on the private network. That traffic
+  never leaves Railway, needs no TLS, and the backend's public domain is then used only by Dodo
+  webhooks (and `/health` checks). The private network isn't reachable during the build. That's
+  fine: the rewrite only stores the string, and the landing page's build-time fetch falls back to
+  safe defaults (invite-only, no prices) and refreshes within 60 s at runtime.
+
+| Environment | Frontend `BACKEND_URL` (build and runtime) | Backend `RT_PUBLIC_URL` = the app domain | Backend `CORS_ORIGINS` |
+|---|---|---|---|
+| Local | unset (`http://localhost:8000`) | unset (`http://localhost:3000`) | unset |
+| CI | `http://localhost:8000` (`next build`); Playwright sets its own | unset | unset |
+| Staging | `http://backend.railway.internal:8000` (staging environment) | `https://staging.<app-domain>` | `https://staging.<app-domain>` |
+| Production | `http://backend.railway.internal:8000` (production environment) | `https://<app-domain>` | `https://<app-domain>` |
+
+`backend` is the backend service's name and `8000` the port it listens on (set `PORT=8000` on
+the service so the address stays fixed). Each Railway environment has its own private network,
+so the same hostname reaches staging's backend from staging and production's from production.
+`<app-domain>` is a placeholder until the domains are chosen. Whatever it becomes, `RT_PUBLIC_URL`
+must match the browser's origin exactly: scheme, host (including or excluding `www.`
+consistently), no path, no trailing slash.
+
+### Everything the browser sees is on the app domain
+
+The backend builds every URL and cookie from `RT_PUBLIC_URL`. It never uses the request's
+`Host` (which, behind the proxy, is the backend's private host) or `X-Forwarded-Host`.
+`backend/tests/test_app_domain.py` checks this with requests that arrive as they do in
+production: `Host: backend.internal:8000`, `X-Forwarded-Host: evil.example`, and
+`RT_PUBLIC_URL=https://app.example.com`.
+
+| What | How it's built | Checked by |
+|---|---|---|
+| Session, CSRF, OAuth-flow and pending-sign-up cookies | `__Host-` names over https: `Secure`, `Path=/`, no `Domain`, so they're host-only on the app domain the browser called. `SameSite=Lax`. | `test_cookies_are_host_only_on_the_app_domain`, `test_oauth_redirect_uri_is_on_the_app_domain` |
+| CSRF | `Origin` (or `Referer`) must equal `RT_PUBLIC_URL` exactly, plus the double-submit token. The backend's own origin, http, and other hosts get 403. | `test_csrf_accepts_only_the_app_origin` |
+| OAuth callbacks | `redirect_uri` = `RT_PUBLIC_URL/api/auth/{google,github}/callback`, which the rewrite carries to the backend. After the callback, redirects are relative paths. | `test_oauth_redirect_uri_is_on_the_app_domain` |
+| Magic links | `RT_PUBLIC_URL/auth/email#token=…` | `test_magic_link_is_on_the_app_domain` |
+| Other links | Referral and invite links, Dodo checkout return and customer-portal return, support and budget-alert emails: all `RT_PUBLIC_URL/…` | by construction (`grep -rn public_url backend/app`) |
+
+OAuth redirect URIs to register, per environment, in the Google and GitHub apps:
+
+```
+https://staging.<app-domain>/api/auth/google/callback
+https://staging.<app-domain>/api/auth/github/callback
+https://<app-domain>/api/auth/google/callback
+https://<app-domain>/api/auth/github/callback
+```
+
+GitHub OAuth apps allow one callback URL each, so staging and production need separate GitHub
+apps (or a single app whose callback is the production one, leaving staging on Google and
+magic links).
+
+### Open: client IPs behind the proxy (fix in the Railway step)
+
+Rate limits and the audit log key on `request.client.host`. Behind the Next.js proxy that is the
+frontend server's address, not the visitor's, unless uvicorn trusts the proxy's
+`X-Forwarded-For`. What the proxy sends was checked with `next start`: Next passes an incoming
+`X-Forwarded-For` through unchanged and adds nothing when there is none, so the visitor's address
+reaches the backend only if Railway's edge sets it. Uvicorn trusts forwarded headers only from
+127.0.0.1 by default, so on Railway every visitor would share one rate-limit bucket (for example
+5 magic links per 15 minutes for the whole site). The Railway step sets uvicorn's
+`--forwarded-allow-ips` to the frontend's private address and checks the IP the backend sees
+in staging.

@@ -49,7 +49,7 @@ export default defineConfig({
       command: `npx next dev --port ${port(WEB)}`,
       url: WEB,
       // The browser calls this origin; Next proxies /api/* and /health to the backend.
-      env: { RT_BACKEND_URL: API },
+      env: { BACKEND_URL: API },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

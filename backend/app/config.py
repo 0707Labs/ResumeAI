@@ -58,6 +58,16 @@ class Settings:
     aws_access_key_id: str = field(default_factory=lambda: os.environ.get("AWS_ACCESS_KEY_ID", ""))
     aws_secret_access_key: str = field(default_factory=lambda: os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
     aws_session_token: str = field(default_factory=lambda: os.environ.get("AWS_SESSION_TOKEN", ""))
+    # Optional error reporting (app/observability.py): off unless SENTRY_DSN is set. Environment
+    # and release default to Railway's own variables; tracing is off unless a rate is given.
+    sentry_dsn: str = field(default_factory=lambda: os.environ.get("SENTRY_DSN", "").strip())
+    sentry_environment: str = field(default_factory=lambda: (
+        os.environ.get("SENTRY_ENVIRONMENT") or os.environ.get("RAILWAY_ENVIRONMENT_NAME") or "development").strip())
+    sentry_release: str = field(default_factory=lambda: (
+        os.environ.get("SENTRY_RELEASE") or os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "").strip())
+    sentry_traces_sample_rate: float = field(
+        default_factory=lambda: min(max(float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE") or 0), 0.0), 1.0)
+    )
     # Optional Slack incoming webhook for budget alerts (https://hooks.slack.com/... only).
     slack_webhook_url: str = field(default_factory=lambda: os.environ.get("RT_SLACK_WEBHOOK_URL", "").strip())
     # OAuth apps (owned by 0707Labs). A provider with either value missing shows as unavailable.
